@@ -10,6 +10,13 @@ echo "🚀 Starting Deployment Process..."
 # Navigate to project directory
 cd $APP_DIR || { echo "❌ Directory $APP_DIR not found"; exit 1; }
 
+# Check Redis
+echo "🔍 Checking Redis service..."
+if ! systemctl is-active --quiet redis-server; then
+    echo "⚠️ Redis is not running. Attempting to start..."
+    sudo systemctl start redis-server
+fi
+
 # Pull latest code
 echo "📥 Pulling latest code from GitHub..."
 git pull origin main

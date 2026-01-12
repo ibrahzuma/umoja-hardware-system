@@ -43,7 +43,13 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
     Run these commands on the server:
     ```bash
     sudo apt update && sudo apt upgrade -y
-    sudo apt install python3-pip python3-venv python3-dev libpq-dev nginx git pkg-config libcairo2-dev libpango-1.0-0 libpangoft2-1.0-0 -y
+    sudo apt install python3-pip python3-venv python3-dev libpq-dev nginx git pkg-config libcairo2-dev libpango-1.0-0 libpangoft2-1.0-0 redis-server -y
+    ```
+
+4.  **Enable Redis**:
+    ```bash
+    sudo systemctl enable redis-server
+    sudo systemctl start redis-server
     ```
 
 ---
