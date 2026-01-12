@@ -5,222 +5,297 @@
     <style>
         @page {
             size: A4;
-            margin: 2cm;
+            margin: 1.5cm;
         }
 
         body {
             font-family: 'Helvetica', 'Arial', sans-serif;
-            color: #333;
-            line-height: 1.5;
-        }
-
-        .header {
-            text-align: center;
-            border-bottom: 2px solid #4361ee;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            color: #4361ee;
+            color: #444;
+            line-height: 1.6;
             margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+            padding: 0;
         }
 
-        .info-section {
+        .header-table {
             width: 100%;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
         }
 
-        .info-section td {
-            vertical-align: top;
-            width: 50%;
+        .company-info {
+            font-size: 14px;
+            color: #555;
         }
 
-        .label {
+        .company-name {
+            font-size: 18px;
             font-weight: bold;
-            color: #666;
-            font-size: 0.9em;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .logo-box {
+            border: 1px solid #f3e9e3;
+            border-radius: 8px;
+            width: 280px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background-color: #fff;
+        }
+
+        .invoice-title {
+            text-align: right;
+            font-size: 42px;
+            font-weight: 700;
+            color: #c5825d;
+            letter-spacing: 6px;
+            margin: 40px 0;
             text-transform: uppercase;
         }
 
-        .value {
-            font-size: 1.1em;
+        .details-table {
+            width: 100%;
+            margin-bottom: 40px;
+        }
+
+        .bill-to-label {
+            color: #c5825d;
+            font-weight: bold;
+            font-size: 13px;
             margin-bottom: 10px;
         }
 
-        table.items {
+        .recipient-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .meta-label {
+            color: #c5825d;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: right;
+            padding-right: 15px;
+        }
+
+        .meta-value {
+            text-align: right;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .items-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 30px;
         }
 
-        table.items th {
-            background-color: #f8faff;
-            border-bottom: 2px solid #dee2e6;
-            padding: 12px;
+        .items-table th {
+            background-color: #c5825d;
+            color: white;
+            padding: 12px 15px;
             text-align: left;
-            color: #4361ee;
+            font-size: 14px;
+            text-transform: uppercase;
+            font-weight: bold;
         }
 
-        table.items td {
-            padding: 12px;
-            border-bottom: 1px solid #eee;
+        .items-table td {
+            padding: 15px;
+            border-bottom: 1px solid #f3e9e3;
+            font-size: 14px;
         }
 
-        .totals {
+        .summary-wrapper {
             float: right;
             width: 300px;
+            margin-top: 20px;
+        }
+
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .summary-table td {
+            padding: 8px 0;
+            font-size: 14px;
+        }
+
+        .summary-label {
+            color: #666;
+            text-align: right;
+            padding-right: 20px;
+        }
+
+        .summary-value {
+            text-align: right;
+            font-weight: 500;
         }
 
         .total-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 10px 0;
-            border-top: 1px solid #eee;
+            border-top: 2px solid #f3e9e3;
+            border-bottom: 2px solid #f3e9e3;
         }
 
-        .total-grand {
-            font-size: 1.4em;
+        .total-label {
+            color: #c5825d;
             font-weight: bold;
-            color: #4361ee;
-            border-top: 2px solid #4361ee;
-            margin-top: 10px;
-            padding-top: 10px;
+            font-size: 16px;
+            padding: 15px 20px 15px 0 !important;
         }
 
-        .footer {
-            position: fixed;
-            bottom: 0;
-            width: 100%;
+        .total-value {
+            color: #c5825d;
+            font-weight: bold;
+            font-size: 16px;
+            padding: 15px 0 !important;
+        }
+
+        .terms-section {
+            margin-top: 100px;
+            clear: both;
+        }
+
+        .terms-title {
+            color: #c5825d;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .terms-text {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .stamp-container {
+            margin-top: 40px;
             text-align: center;
-            font-size: 0.8em;
-            color: #999;
-            border-top: 1px solid #eee;
-            padding-top: 10px;
         }
     </style>
 </head>
 
 <body>
-    <div class="header">
-        <h1>Umoja Hardware System</h1>
-        <p>Premium Quality Hardware & Construction Materials</p>
-    </div>
-
-    <table class="info-section">
+    <!-- Header -->
+    <table class="header-table">
         <tr>
-            <td>
-                <div class="label">Invoice To:</div>
-                <div class="value">
-                    <strong>{{ sale.customer_name }}</strong><br>
-                    {% if sale.customer %}
-                    {{ sale.customer.phone }}<br>
-                    {{ sale.customer.address }}
-                    {% endif %}
-                </div>
+            <td class="company-info" style="vertical-align: top;">
+                <div class="company-name">Umoja Hardware System</div>
+                1234 Company St.<br>
+                Dar es Salaam, TZ 11145
             </td>
             <td style="text-align: right;">
-                <div class="label">Invoice Number:</div>
-                <div class="value">#{{ sale.invoice_number }}</div>
-                <div class="label">Date:</div>
-                <div class="value">{{ sale.created_at|date:"D, d M Y" }}</div>
-                <div class="label">Status:</div>
-                <div class="value" style="color: #2e7d32; font-weight: bold;">{{ sale.get_status_display }}</div>
+                <div class="logo-box">
+                    <img src="C:\Users\admin\Downloads\Umoja Hadware System\static\img\logo.png" alt="Logo"
+                        style="max-width: 60px; height: auto; opacity: 0.8;">
+                    <div style="color: #c5825d; font-size: 14px; margin-top: 5px;">Umoja Hardware</div>
+                </div>
             </td>
         </tr>
     </table>
 
-    <table class="items">
+    <div class="invoice-title">Invoice</div>
+
+    <!-- Recipient & Meta -->
+    <table class="details-table">
+        <tr>
+            <td width="60%">
+                <div class="bill-to-label">Bill to:</div>
+                <div class="recipient-name">{{ sale.customer_name }}</div>
+                {% if sale.customer %}
+                <div style="font-size: 14px; color: #555;">
+                    {{ sale.customer.phone }}<br>
+                    {{ sale.customer.address|default:"Customer Address, City, TZ" }}
+                </div>
+                {% endif %}
+            </td>
+            <td width="40%">
+                <table style="width: 100%;">
+                    <tr>
+                        <td class="meta-label">Invoice #</td>
+                        <td class="meta-value">{{ sale.invoice_number }}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Invoice date</td>
+                        <td class="meta-value">{{ sale.created_at|date:"d-m-Y" }}</td>
+                    </tr>
+                    <tr>
+                        <td class="meta-label">Due date</td>
+                        <td class="meta-value">{{ sale.created_at|date:"d-m-Y" }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Items Table -->
+    <table class="items-table">
         <thead>
             <tr>
-                <th>Product Description</th>
-                <th style="text-align: center;">Qty</th>
-                <th style="text-align: right;">Unit Price</th>
-                <th style="text-align: right;">Amount</th>
+                <th width="10%">Qty</th>
+                <th width="50%">Description</th>
+                <th width="20%" style="text-align: right;">Unit Price</th>
+                <th width="20%" style="text-align: right;">Amount</th>
             </tr>
         </thead>
         <tbody>
             {% for item in sale.items.all %}
             <tr>
+                <td>{{ item.quantity|floatformat:2 }}</td>
                 <td>{{ item.product.name }}</td>
-                <td style="text-align: center;">{{ item.quantity }}</td>
-                <td style="text-align: right;">TZS {{ item.price_at_sale|floatformat:2 }}</td>
-                <td style="text-align: right;">TZS {{ item.subtotal|floatformat:2 }}</td>
+                <td style="text-align: right;">{{ item.price_at_sale|floatformat:2 }}</td>
+                <td style="text-align: right;">{{ item.subtotal|floatformat:2 }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    <div style="width: 100%; overflow: hidden;">
-        <div style="float: right; width: 40%;">
-            <table style="width: 100%;">
-                <tr>
-                    <td class="label">Subtotal:</td>
-                    <td style="text-align: right;">TZS {{ sale.total_amount|floatformat:2 }}</td>
-                </tr>
-                <tr>
-                    <td class="label">Tax (0%):</td>
-                    <td style="text-align: right;">TZS 0.00</td>
-                </tr>
-                <tr class="total-grand">
-                    <td style="padding-top: 10px;">Total Amount:</td>
-                    <td style="text-align: right; padding-top: 10px;">TZS {{ sale.total_amount|floatformat:2 }}</td>
-                </tr>
-            </table>
-        </div>
-    </div>
-
-    <div style="margin-top: 50px;">
-        <div class="label">Authorization:</div>
-        <table style="width: 100%; margin-top: 20px;">
+    <!-- Summary -->
+    <div class="summary-wrapper">
+        <table class="summary-table">
             <tr>
-                <td style="width: 33%;">
-                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 150px;"></div>
-                    <div class="small">Approved By: {{ sale.approved_by.get_full_name|default:sale.approved_by.username
-                        }}</div>
-                </td>
-                <td style="width: 33%; text-align: center;">
-                    <div
-                        style="border-top: 1px solid #333; margin-top: 20px; width: 150px; margin-left: auto; margin-right: auto;">
-                    </div>
-                    <div class="small">Customer Signature</div>
-                </td>
-                <td style="width: 33%; text-align: center; vertical-align: middle;">
-                    {% if sale.status == 'approved' or sale.status == 'dispatched' %}
-                    <div style="text-align: center; position: relative;">
-                        <img src="C:\Users\admin\Downloads\Umoja Hadware System\static\img\approved_stamp.png"
-                            width="140" height="auto" alt="APPROVED">
-                        <div style="
-                                position: absolute;
-                                bottom: 25px; 
-                                left: 0; 
-                                right: 0; 
-                                text-align: center;
-                                font-size: 9px; 
-                                color: #15803d; 
-                                font-weight: bold;
-                                font-family: monospace;
-                            ">
-                            {{ sale.approved_at|date:"d M Y"|upper }}
-                        </div>
-                    </div>
-                    {% else %}
-                    <div
-                        style="border-top: 1px solid #333; margin-top: 20px; width: 150px; margin-left: auto; margin-right: auto;">
-                    </div>
-                    <div class="small">Stamp</div>
-                    {% endif %}
-                </td>
+                <td class="summary-label">Subtotal</td>
+                <td class="summary-value">TZS {{ sale.total_amount|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <td class="summary-label">Sales Tax (0%)</td>
+                <td class="summary-value">0.00</td>
+            </tr>
+            <tr class="total-row">
+                <td class="summary-label total-label">Total (TZS)</td>
+                <td class="summary-value total-value">TZS {{ sale.total_amount|floatformat:2 }}</td>
             </tr>
         </table>
     </div>
 
-    <div class="footer">
-        Thank you for choosing Umoja Hardware System. <br>
-        This is a computer-generated document. No signature is required unless specified.
+    <!-- Terms and Conditions -->
+    <div class="terms-section">
+        <div class="terms-title">Terms and Conditions</div>
+        <div class="terms-text">
+            Payment is due within 15 days.<br>
+            Please make checks payable to: Umoja Hardware System.
+        </div>
     </div>
+
+    <!-- Stamp if Approved -->
+    {% if sale.status == 'approved' or sale.status == 'dispatched' %}
+    <div class="stamp-container">
+        <div style="display: inline-block; position: relative;">
+            <img src="C:\Users\admin\Downloads\Umoja Hadware System\static\img\approved_stamp.png" width="120"
+                alt="APPROVED">
+            <div
+                style="position: absolute; bottom: 20px; left: 0; right: 0; font-size: 8px; color: #15803d; font-weight: bold; font-family: monospace;">
+                {{ sale.approved_at|date:"d M Y"|upper }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </body>
 
 </html>
