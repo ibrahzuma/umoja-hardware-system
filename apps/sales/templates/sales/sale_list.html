@@ -86,12 +86,16 @@
         data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         data.forEach(s => {
-            let statusBadge = '<span class="badge bg-secondary">Unknown</span>';
-            const status = s.payment_status || 'Paid';
+            let paymentBadge = '<span class="badge bg-secondary">Unknown</span>';
+            const pStatus = s.payment_status || 'Paid';
+            if (pStatus === 'Paid') paymentBadge = '<span class="badge bg-success">Paid</span>';
+            else if (pStatus === 'Partial') paymentBadge = '<span class="badge bg-warning text-dark">Partial</span>';
+            else paymentBadge = '<span class="badge bg-danger">Credit</span>';
 
-            if (status === 'Paid') statusBadge = '<span class="badge bg-success">Paid</span>';
-            else if (status === 'Partial') statusBadge = '<span class="badge bg-warning text-dark">Partial</span>';
-            else statusBadge = '<span class="badge bg-danger">Credit</span>';
+            let deliveryBadge = '<span class="badge bg-secondary">Pending</span>';
+            if (s.status === 'approved') deliveryBadge = '<span class="badge bg-info text-dark">Approved</span>';
+            else if (s.status === 'dispatched') deliveryBadge = '<span class="badge bg-primary">Dispatched</span>';
+            else if (s.status === 'cancelled') deliveryBadge = '<span class="badge bg-dark">Cancelled</span>';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -100,7 +104,10 @@
                 <td>${s.customer_name}</td>
                 <td><span class="badge bg-light text-dark border">Branch ${s.branch}</span></td>
                 <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
-                <td>${statusBadge}</td>
+                <td>
+                    ${paymentBadge}
+                    <div class="mt-1">${deliveryBadge}</div>
+                </td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt(${s.id})">
                         <i class="bi bi-eye"></i> View

@@ -449,7 +449,7 @@
             })),
             payment_details: {
                 method: document.querySelector('input[name="payment_method"]:checked').value,
-                amount: cart.reduce((acc, item) => acc + (item.price * item.qty), 0)
+                amount: document.querySelector('input[name="payment_method"]:checked').value === 'credit' ? 0 : cart.reduce((acc, item) => acc + (item.price * item.qty), 0)
             }
         };
 

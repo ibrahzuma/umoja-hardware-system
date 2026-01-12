@@ -56,9 +56,6 @@ class SaleSerializer(serializers.ModelSerializer):
         return obj.total_amount - self.get_amount_paid(obj)
 
     def get_payment_status(self, obj):
-        if obj.status != 'dispatched':
-            return 'Pending Process'
-            
         paid = self.get_amount_paid(obj)
         if paid >= obj.total_amount:
             return 'Paid'
