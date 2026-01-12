@@ -247,7 +247,7 @@
             }
 
             activities.forEach(act => {
-                addActivityItem(act.description, act.activity_type === 'low_stock' ? 'danger' : 'info', act.icon_class, act.time_ago);
+                addActivityItem(act.description, act.activity_type === 'low_stock' ? 'danger' : 'info', act.icon_class, act.time_ago, false);
             });
         } catch (e) { console.error(e); }
     }
@@ -376,7 +376,7 @@
         });
     }
 
-    function addActivityItem(text, type, icon = 'bi-info-circle', time = 'Just now') {
+    function addActivityItem(text, type, icon = 'bi-info-circle', time = 'Just now', prepend = true) {
         const list = document.getElementById('stock-updates-list');
         const placeholder = document.getElementById('activity-placeholder');
         if (placeholder) placeholder.remove();
@@ -407,7 +407,12 @@
                 <span class="text-muted smaller ms-2" style="white-space: nowrap;">${time}</span>
             </div>
         `;
-        list.prepend(item);
+
+        if (prepend) {
+            list.prepend(item);
+        } else {
+            list.appendChild(item);
+        }
 
         // Keep only last 15
         if (list.children.length > 15) list.lastChild.remove();
