@@ -24,16 +24,20 @@ def broadcast_activity(activity):
 
 @receiver(post_save, sender='sales.Sale')
 def sale_activity(sender, instance, created, **kwargs):
-    if created:
+    # Only create activity if it has a total amount
+    # This avoids logging 0.00 during the initial creation in the serializer
+    if instance.total_amount > 0:
         from .models import SystemActivity
-        desc = f"New Sale #{instance.invoice_number} - TZS {instance.total_amount:,.2f}"
-        activity = SystemActivity.objects.create(
-            user=instance.user,
-            activity_type='sale',
-            description=desc,
-            icon_class='bi-cart-check-fill'
-        )
-        broadcast_activity(activity)
+        # Check if we already logged this sale to avoid duplicates on status updates
+        if not SystemActivity.objects.filter(activity_type='sale', description__contains=instance.invoice_number).exists():
+            desc = f"New Sale #{instance.invoice_number} - TZS {instance.total_amount:,.2f}"
+            activity = SystemActivity.objects.create(
+                user=instance.user,
+                activity_type='sale',
+                description=desc,
+                icon_class='bi-cart-check-fill'
+            )
+            broadcast_activity(activity)
 
 @receiver(post_save, sender='inventory.StockAdjustment')
 def stock_adj_activity(sender, instance, created, **kwargs):
