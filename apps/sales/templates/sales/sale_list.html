@@ -19,6 +19,7 @@
                         <th>Invoice #</th>
                         <th>Customer</th>
                         <th>Branch</th>
+                        <th>Created By</th>
                         <th>Total Amount</th>
                         <th>Status</th>
                         <th class="text-end pe-4">Actions</th>
@@ -103,6 +104,7 @@
                 <td class="fw-bold text-primary">${s.invoice_number}</td>
                 <td>${s.customer_name}</td>
                 <td><span class="badge bg-light text-dark border">Branch ${s.branch}</span></td>
+                <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
                 <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
                 <td>
                     ${paymentBadge}

@@ -58,6 +58,7 @@
                             <tr>
                                 <th class="ps-4">Invoice #</th>
                                 <th>Customer</th>
+                                <th>Seller</th>
                                 <th>Amount</th>
                                 <th>Status</th>
                                 <th>Approved At</th>
@@ -201,6 +202,7 @@
             tr.innerHTML = `
                 <td class="ps-4 fw-bold">#${o.invoice_number}</td>
                 <td>${o.customer_name}</td>
+                <td><small class="text-muted">${o.created_by_name || 'System'}</small></td>
                 <td>TZS ${parseFloat(o.total_amount).toLocaleString()}</td>
                 <td>${getStatusBadge(o.status)}</td>
                 <td>${o.approved_at ? new Date(o.approved_at).toLocaleString() : '-'}</td>

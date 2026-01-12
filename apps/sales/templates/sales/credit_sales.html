@@ -14,6 +14,7 @@
                     <tr>
                         <th class="ps-4">Date</th>
                         <th>Customer</th>
+                        <th>Seller</th>
                         <th>Invoice #</th>
                         <th>Total</th>
                         <th>Paid</th>
@@ -109,6 +110,7 @@
             tr.innerHTML = `
                 <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleDateString()}</td>
                 <td class="fw-bold">${s.customer_name}</td>
+                <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
                 <td><small class="text-muted">${s.invoice_number}</small></td>
                 <td>TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
                 <td class="text-success">TZS ${parseFloat(s.amount_paid).toFixed(2)}</td>

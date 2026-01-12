@@ -16,6 +16,7 @@
                         <th class="ps-4">Time</th>
                         <th>Invoice</th>
                         <th>Customer</th>
+                        <th>Seller</th>
                         <th>Amount</th>
                         <th>Status</th>
                     </tr>
@@ -63,6 +64,7 @@
                     <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleString()}</td>
                     <td class="fw-bold">${s.invoice_number}</td>
                     <td>${s.customer_name}</td>
+                    <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
                     <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
                     <td>${statusBadge}</td>
                 `;

@@ -32,6 +32,7 @@ class SaleSerializer(serializers.ModelSerializer):
     store_keeper_name = serializers.CharField(source='store_keeper.username', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.username', read_only=True)
     dispatch_manager_name = serializers.CharField(source='dispatch_manager.username', read_only=True)
+    created_by_name = serializers.CharField(source='user.username', read_only=True)
     
     vehicle_details = VehicleSerializer(source='vehicle', read_only=True)
     vehicle = serializers.PrimaryKeyRelatedField(
@@ -41,7 +42,7 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = [
-            'id', 'invoice_number', 'status', 'branch', 'user', 'customer_name', 
+            'id', 'invoice_number', 'status', 'branch', 'user', 'created_by_name', 'customer_name', 
             'total_amount', 'created_at', 'items', 'items_response', 'payment_details', 
             'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name', 
             'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper', 
