@@ -37,3 +37,9 @@ class StockConsumer(AsyncWebsocketConsumer):
             'type': 'sales_notification',
             'data': message
         }))
+
+    async def activity_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'activity_update',
+            'data': event['data']
+        }))

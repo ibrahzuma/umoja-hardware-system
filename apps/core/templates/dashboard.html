@@ -225,8 +225,32 @@
     document.addEventListener('DOMContentLoaded', () => {
         initChart();
         loadStats();
+        loadActivities();
         initSocket();
     });
+
+    async function loadActivities() {
+        try {
+            const data = await api.get('/api/activities/');
+            const activities = Array.isArray(data) ? data : data.results;
+            const list = document.getElementById('stock-updates-list');
+            list.innerHTML = '';
+
+            if (activities.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-4 text-muted" id="activity-placeholder">
+                        <i class="bi bi-broadcast text-success animate__animated animate__pulse animate__infinite fs-4"></i>
+                        <p class="small mb-0 mt-2 fw-bold">System Live</p>
+                        <p class="small text-muted mb-0">Waiting for events...</p>
+                    </div>`;
+                return;
+            }
+
+            activities.forEach(act => {
+                addActivityItem(act.description, act.activity_type === 'low_stock' ? 'danger' : 'info', act.icon_class, act.time_ago);
+            });
+        } catch (e) { console.error(e); }
+    }
 
     function initChart() {
         const ctx = document.getElementById('salesChart').getContext('2d');
@@ -343,37 +367,50 @@
         socket.connect();
 
         socket.on('stock_update', (data) => {
-            addActivityItem(`Stock adjustment: ${data.data.quantity} left`, 'info');
             loadStats();
         });
 
-        socket.on('low_stock_alert', (data) => {
-            addActivityItem(`CRITICAL: ${data.data.product_name} is low stock!`, 'danger');
+        socket.on('activity_update', (data) => {
+            addActivityItem(data.description, data.type === 'low_stock' ? 'danger' : 'info', data.icon, data.time);
             loadStats();
         });
     }
 
-    function addActivityItem(text, type) {
+    function addActivityItem(text, type, icon = 'bi-info-circle', time = 'Just now') {
         const list = document.getElementById('stock-updates-list');
         const placeholder = document.getElementById('activity-placeholder');
         if (placeholder) placeholder.remove();
 
         const item = document.createElement('div');
-        item.className = 'update-item animate__animated animate__fadeInLeft';
-        if (type === 'danger') item.style.borderLeftColor = '#f44336';
+        item.className = 'update-item animate__animated animate__fadeInLeft mb-2';
 
-        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // Custom styling based on activity type
+        let borderStyle = 'border-left: 3px solid var(--accent-primary)';
+        let iconColor = 'text-primary';
+
+        if (type === 'danger') {
+            borderStyle = 'border-left: 3px solid #f44336';
+            iconColor = 'text-danger';
+        } else if (type === 'sale') {
+            borderStyle = 'border-left: 3px solid #2ec4b6';
+            iconColor = 'text-success';
+        }
+
+        item.style = borderStyle;
 
         item.innerHTML = `
-            <div class="d-flex justify-content-between">
-                <span class="small fw-bold">${text}</span>
-                <span class="text-muted smaller">${now}</span>
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi ${icon} ${iconColor}"></i>
+                    <span class="small fw-bold">${text}</span>
+                </div>
+                <span class="text-muted smaller ms-2" style="white-space: nowrap;">${time}</span>
             </div>
         `;
         list.prepend(item);
 
-        // Keep only last 10
-        if (list.children.length > 10) list.lastChild.remove();
+        // Keep only last 15
+        if (list.children.length > 15) list.lastChild.remove();
     }
 </script>
 {% endblock %}

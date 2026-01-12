@@ -2,8 +2,10 @@ from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import F, Sum
 from django.utils import timezone
+
 from apps.sales.models import Sale, Vehicle
 from apps.inventory.models import Stock
+
 
 class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "dashboard.html"
@@ -12,13 +14,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         
-        if user.is_superuser or user.is_manager or user.is_admin_role:
+        if user.is_superuser or user.role == 'manager' or user.is_admin_role:
             context['ready_to_dispatch'] = Sale.objects.filter(status='approved').count()
             context['active_vehicles'] = Vehicle.objects.filter(status='active').count()
-            # Simple low stock count
             context['low_stock_alert'] = Stock.objects.filter(quantity__lte=F('low_stock_threshold')).count()
-            
-            # Recent approved orders
             context['recent_approved'] = Sale.objects.filter(status='approved').order_by('-approved_at')[:5]
 
         if user.is_superuser or getattr(user, 'is_sales_manager', False):

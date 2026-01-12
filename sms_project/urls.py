@@ -5,11 +5,11 @@ from rest_framework.routers import DefaultRouter
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet
-from apps.users.views import UserViewSet, GroupViewSet
-
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
+from apps.core.api_views import ActivityViewSet
 
 router = DefaultRouter()
+router.register(r'activities', ActivityViewSet)
 router.register(r'branches', BranchViewSet)
 router.register(r'categories', CategoryViewSet)
 router.register(r'products', ProductViewSet)
