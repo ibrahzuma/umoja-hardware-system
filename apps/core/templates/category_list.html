@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Categories</h2>
+    <button class="btn btn-primary" onclick="openModal()">
+        <i class="bi bi-plus-lg"></i> Add Category
+    </button>
+</div>
+
+<!-- Search & Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search categories..."
+                    onkeyup="filterCategories()">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Categories Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="categoryTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Name</th>
+                        <th>Description</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="categoryTableBody">
+                    <!-- Data loaded via JS -->
+                    <tr>
+                        <td colspan="3" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="categoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="modalTitle">Add Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="categoryForm">
+                    <input type="hidden" id="categoryId">
+                    <div class="mb-3">
+                        <label for="categoryName" class="form-label">Category Name</label>
+                        <input type="text" class="form-control" id="categoryName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="categoryDesc" class="form-label">Description</label>
+                        <textarea class="form-control" id="categoryDesc" rows="3"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">Save Category</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let categories = [];
+    let modal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        modal = new bootstrap.Modal(document.getElementById('categoryModal'));
+        fetchCategories();
+
+        document.getElementById('categoryForm').addEventListener('submit', handleFormSubmit);
+    });
+
+    // --- API Interactions ---
+    async function fetchCategories() {
+        try {
+            const response = await fetch('/api/categories/');
+            if (!response.ok) throw new Error('Failed to fetch');
+            categories = await response.json();
+            renderTable(categories);
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Could not load categories', 'error');
+        }
+    }
+
+    async function handleFormSubmit(e) {
+        e.preventDefault();
+        const id = document.getElementById('categoryId').value;
+        const name = document.getElementById('categoryName').value;
+        const description = document.getElementById('categoryDesc').value;
+
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/categories/${id}/` : '/api/categories/';
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF_TOKEN
+                },
+                body: JSON.stringify({ name, description })
+            });
+
+            if (response.ok) {
+                modal.hide();
+                Swal.fire('Success', `Category ${id ? 'updated' : 'created'} successfully!`, 'success');
+                fetchCategories();
+            } else {
+                Swal.fire('Error', 'Failed to save category', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'An unexpected error occurred', 'error');
+        }
+    }
+
+    async function deleteCategory(id) {
+        const result = await Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const response = await fetch(`/api/categories/${id}/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': CSRF_TOKEN }
+                });
+
+                if (response.ok) {
+                    Swal.fire('Deleted!', 'Category has been deleted.', 'success');
+                    fetchCategories();
+                } else {
+                    Swal.fire('Error', 'Failed to delete category', 'error');
+                }
+            } catch (error) {
+                console.error(error);
+                Swal.fire('Error', 'An unexpected error occurred', 'error');
+            }
+        }
+    }
+
+    // --- UI/UX Helpers ---
+    function renderTable(data) {
+        const tbody = document.getElementById('categoryTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-muted">No categories found</td></tr>';
+            return;
+        }
+
+        data.forEach(cat => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 fw-medium">${cat.name}</td>
+                <td class="text-muted">${cat.description || '-'}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-primary me-2" onclick="editCategory(${cat.id})">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteCategory(${cat.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openModal() {
+        document.getElementById('categoryForm').reset();
+        document.getElementById('categoryId').value = '';
+        document.getElementById('modalTitle').innerText = 'Add Category';
+        modal.show();
+    }
+
+    function editCategory(id) {
+        const cat = categories.find(c => c.id === id);
+        if (cat) {
+            document.getElementById('categoryId').value = cat.id;
+            document.getElementById('categoryName').value = cat.name;
+            document.getElementById('categoryDesc').value = cat.description;
+            document.getElementById('modalTitle').innerText = 'Edit Category';
+            modal.show();
+        }
+    }
+
+    function filterCategories() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = categories.filter(c =>
+            c.name.toLowerCase().includes(term) ||
+            (c.description && c.description.toLowerCase().includes(term))
+        );
+        renderTable(filtered);
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+<!-- Metrics Grid -->
+<div class="row g-4 mb-4">
+    <!-- Revenue Card (Admin Only) -->
+    {% if user.is_superuser or user.is_admin_role or user.is_sales_manager %}
+    <div class="col-md-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-currency-dollar"></i>
+                </div>
+                <h6 class="text-muted fw-semibold">Monthly Revenue</h6>
+                <h3 class="fw-bold mb-1" id="monthly-revenue">TZS 0</h3>
+                <div class="trend-indicator trend-up">
+                    <i class="bi bi-arrow-up-short"></i> +12.5%
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Sales Card -->
+    <div class="col-md-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-bag-check"></i>
+                </div>
+                <h6 class="text-muted fw-semibold">Total Orders</h6>
+                <h3 class="fw-bold mb-1" id="total-sales-count">0</h3>
+                <div class="trend-indicator trend-up">
+                    <i class="bi bi-arrow-up-short"></i> +5.2%
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Inventory Card (Admin Only) -->
+    {% if user.is_superuser or user.is_admin_role %}
+    <div class="col-md-3">
+        <div class="card metric-card h-100">
+            <div class="card-body">
+                <div class="metric-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-boxes"></i>
+                </div>
+                <h6 class="text-muted fw-semibold">Inventory Value</h6>
+                <h3 class="fw-bold mb-1" id="stock-value">TZS 0</h3>
+                <div class="trend-indicator trend-down">
+                    <i class="bi bi-arrow-down-short"></i> -1.8%
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    <!-- Alert Card -->
+    <div class="col-md-3">
+        <div class="card metric-card h-100 border-start border-danger border-4">
+            <div class="card-body">
+                <div class="metric-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-exclamation-octagon"></i>
+                </div>
+                <h6 class="text-muted fw-semibold">Low Stock Items</h6>
+                <h3 class="fw-bold mb-1 text-danger" id="low-stock-count">0</h3>
+                <p class="text-muted small mb-0">Requires immediate attention</p>
+            </div>
+        </div>
+    </div>
+</div>

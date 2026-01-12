@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card shadow-sm border-0 border-top border-primary border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-primary mb-0"><i class="bi bi-person-plus me-2"></i>Add Customer</h4>
+            </div>
+            <div class="card-body">
+                <form id="customerForm">
+                    <div class="mb-3">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" class="form-control" id="name" required>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Phone</label>
+                            <input type="text" class="form-control" id="phone">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <textarea class="form-control" id="address" rows="3"></textarea>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">Save Customer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const customerId = urlParams.get('id');
+
+    if (customerId) {
+        document.querySelector('h4').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Customer';
+        document.querySelector('button[type="submit"]').innerText = 'Update Customer';
+        fetchCustomerData(customerId);
+    }
+
+    async function fetchCustomerData(id) {
+        try {
+            const res = await fetch(`/api/customers/${id}/`);
+            const data = await res.json();
+            document.getElementById('name').value = data.name;
+            document.getElementById('phone').value = data.phone;
+            document.getElementById('email').value = data.email;
+            document.getElementById('address').value = data.address;
+        } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('customerForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            name: document.getElementById('name').value,
+            phone: document.getElementById('phone').value,
+            email: document.getElementById('email').value,
+            address: document.getElementById('address').value
+        };
+
+        const method = customerId ? 'PUT' : 'POST';
+        const url = customerId ? `/api/customers/${customerId}/` : '/api/customers/';
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                Swal.fire({
+                    icon: 'success',
+                    title: customerId ? 'Customer Updated' : 'Customer Added',
+                    showConfirmButton: false,
+                    timer: 1500
+                }).then(() => {
+                    window.location.href = "{% url 'sales:customers_list' %}";
+                });
+            } else {
+                Swal.fire('Error', 'Failed to save customer', 'error');
+            }
+        } catch (e) { console.error(e); }
+    });
+</script>
+{% endblock %}

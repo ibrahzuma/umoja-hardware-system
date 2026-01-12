@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #7209b7;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #7209b7;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .info-section {
+            width: 100%;
+            margin-bottom: 30px;
+        }
+
+        .info-section td {
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .value {
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        table.items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        table.items th {
+            background-color: #f3e5f5;
+            border-bottom: 2px solid #dee2e6;
+            padding: 12px;
+            text-align: left;
+            color: #7209b7;
+        }
+
+        table.items td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .logistics-box {
+            background-color: #f8f9fa;
+            border: 1px solid #eee;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 0.8em;
+            color: #999;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>DELIVERY NOTE</h1>
+        <p>Umoja Hardware System Logistics</p>
+    </div>
+
+    <table class="info-section">
+        <tr>
+            <td>
+                <div class="label">Ship To:</div>
+                <div class="value">
+                    <strong>{{ sale.customer_name }}</strong><br>
+                    {% if sale.customer %}
+                    {{ sale.customer.phone }}<br>
+                    {{ sale.customer.address }}
+                    {% endif %}
+                </div>
+            </td>
+            <td style="text-align: right;">
+                <div class="label">Invoice Ref:</div>
+                <div class="value">#{{ sale.invoice_number }}</div>
+                <div class="label">Dispatch Date:</div>
+                <div class="value">{% now "D, d M Y" %}</div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="logistics-box">
+        <table style="width: 100%;">
+            <tr>
+                <td>
+                    <div class="label">Lorry/Vehicle Info:</div>
+                    <div class="value"><strong>{{ sale.lorry_info }}</strong></div>
+                </td>
+                <td>
+                    <div class="label">Assigned Store Keeper:</div>
+                    <div class="value"><strong>{{ sale.store_keeper.get_full_name|default:sale.store_keeper.username
+                            }}</strong></div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <table class="items">
+        <thead>
+            <tr>
+                <th>Product Description</th>
+                <th style="text-align: center;">Ordered Qty</th>
+                <th style="text-align: center;">Delivered Qty</th>
+                <th>Remarks</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.items.all %}
+            <tr>
+                <td style="width: 50%;">{{ item.product.name }}</td>
+                <td style="text-align: center; width: 15%;">{{ item.quantity }}</td>
+                <td style="text-align: center; width: 15%; border-bottom: 1px solid #333;"></td>
+                <td></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="margin-top: 50px;">
+        <div class="label">Confirmation of Receipt:</div>
+        <p class="small">I hereby confirm that the goods listed above have been received in good condition.</p>
+        <table style="width: 100%; margin-top: 30px;">
+            <tr>
+                <td style="width: 50%;">
+                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 200px;"></div>
+                    <div class="small">Receiver's Name & Signature</div>
+                </td>
+                <td style="width: 50%; text-align: right;">
+                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 200px; margin-left: auto;"></div>
+                    <div class="small">Date Received</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        Umoja Hardware System - Building the Future Together. <br>
+        For inquiries regarding this delivery, please contact our logistics department.
+    </div>
+</body>
+
+</html>

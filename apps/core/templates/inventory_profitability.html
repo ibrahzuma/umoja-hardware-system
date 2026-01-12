@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="text-primary fw-bold mb-4">Profitability Report</h2>
+<div class="card shadow-sm">
+    <div class="card-body">
+        <table class="table table-hover align-middle mb-0" id="profitTable">
+            <thead class="bg-light">
+                <tr>
+                    <th>Product</th>
+                    <th>Cost</th>
+                    <th>Selling Price</th>
+                    <th>Margin</th>
+                    <th>Markup %</th>
+                </tr>
+            </thead>
+            <tbody id="profitBody">
+                <tr>
+                    <td colspan="5">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const resp = await fetch('/api/products/');
+        const products = await resp.json();
+        const tbody = document.getElementById('profitBody');
+        tbody.innerHTML = '';
+
+        products.forEach(p => {
+            const cost = parseFloat(p.cost);
+            const price = parseFloat(p.price);
+            const margin = price - cost;
+            const markup = cost > 0 ? ((margin / cost) * 100).toFixed(1) : 0;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="fw-bold">${p.name}</td>
+                    <td>TZS ${cost.toFixed(2)}</td>
+                    <td>TZS ${price.toFixed(2)}</td>
+                    <td class="text-success fw-bold">TZS ${margin.toFixed(2)}</td>
+                    <td>${markup}%</td>
+                </tr>`;
+        });
+    });
+</script>
+{% endblock %}

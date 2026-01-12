@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Stock Transfers</h2>
+    <button class="btn btn-primary" onclick="openTransferModal()">
+        <i class="bi bi-arrow-left-right"></i> New Transfer
+    </button>
+</div>
+
+<!-- Transfers Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Product</th>
+                        <th>From Branch</th>
+                        <th>To Branch</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody id="transferTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Transfer Modal -->
+<div class="modal fade" id="transferModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">New Stock Transfer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="transferForm">
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <select id="tProduct" class="form-select" required>
+                            <option>Loading...</option>
+                        </select>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">From Branch</label>
+                            <select id="tFrom" class="form-select" required>
+                                <option>Loading...</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">To Branch</label>
+                            <select id="tTo" class="form-select" required>
+                                <option>Loading...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" id="tQty" class="form-control" min="1" required>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Transfer Stock</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let modal;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+        modal = new bootstrap.Modal(document.getElementById('transferModal'));
+        await Promise.all([fetchTransfers(), loadDropdowns()]);
+
+        document.getElementById('transferForm').addEventListener('submit', handleTransfer);
+    });
+
+    async function fetchTransfers() {
+        const resp = await fetch('/api/transfers/');
+        const data = await resp.json();
+        const tbody = document.getElementById('transferTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No transfers recorded</td></tr>';
+            return;
+        }
+
+        data.forEach(t => {
+            const date = new Date(t.date).toLocaleDateString();
+            tbody.innerHTML += `
+                <tr>
+                    <td class="ps-4 text-muted small">${date}</td>
+                    <td class="fw-medium">${t.product_name}</td>
+                    <td>${t.from_branch_name}</td>
+                    <td>${t.to_branch_name}</td>
+                    <td class="fw-bold">${t.quantity}</td>
+                </tr>
+            `;
+        });
+    }
+
+    async function loadDropdowns() {
+        const [pResp, bResp] = await Promise.all([
+            fetch('/api/products/'),
+            fetch('/api/branches/')
+        ]);
+        const products = await pResp.json();
+        const branches = await bResp.json();
+
+        const pSelect = document.getElementById('tProduct');
+        pSelect.innerHTML = '<option value="">Select Product...</option>' +
+            products.map(p => `<option value="${p.id}">${p.name} (${p.sku})</option>`).join('');
+
+        const bOpts = '<option value="">Select Branch...</option>' +
+            branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+        document.getElementById('tFrom').innerHTML = bOpts;
+        document.getElementById('tTo').innerHTML = bOpts;
+    }
+
+    async function handleTransfer(e) {
+        e.preventDefault();
+        const data = {
+            product: document.getElementById('tProduct').value,
+            from_branch: document.getElementById('tFrom').value,
+            to_branch: document.getElementById('tTo').value,
+            quantity: document.getElementById('tQty').value
+        };
+
+        if (data.from_branch === data.to_branch) {
+            Swal.fire('Error', 'Source and Destination branches must be different', 'error');
+            return;
+        }
+
+        try {
+            const resp = await fetch('/api/transfers/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(data)
+            });
+
+            if (resp.ok) {
+                modal.hide();
+                Swal.fire('Success', 'Transfer Complete', 'success');
+                fetchTransfers();
+            } else {
+                Swal.fire('Error', 'Failed to transfer. Check stock levels.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function openTransferModal() {
+        document.getElementById('transferForm').reset();
+        modal.show();
+    }
+</script>
+{% endblock %}

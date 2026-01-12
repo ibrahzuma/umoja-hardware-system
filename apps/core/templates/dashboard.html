@@ -1,0 +1,377 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --glass-bg: rgba(255, 255, 255, 0.7);
+        --glass-border: rgba(255, 255, 255, 0.3);
+        --accent-primary: #4361ee;
+        --accent-secondary: #3f37c9;
+        --success-glow: rgba(76, 175, 80, 0.2);
+        --danger-glow: rgba(244, 67, 54, 0.2);
+        --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    }
+
+    .dashboard-container {
+        padding: 1.5rem;
+        background: #f8faff;
+        min-height: calc(100vh - 60px);
+    }
+
+    .metric-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid var(--glass-border);
+        border-radius: 20px;
+        box-shadow: var(--card-shadow);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.12);
+    }
+
+    .metric-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .chart-container {
+        background: white;
+        border-radius: 20px;
+        padding: 1.5rem;
+        box-shadow: var(--card-shadow);
+    }
+
+    .quick-action-card {
+        background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+        color: white;
+        border-radius: 15px;
+        padding: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        text-decoration: none;
+        transition: opacity 0.2s;
+        border: none;
+    }
+
+    .quick-action-card:hover {
+        opacity: 0.9;
+        color: white;
+    }
+
+    .status-dot {
+        height: 8px;
+        width: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 5px;
+    }
+
+    .update-item {
+        border-left: 3px solid var(--accent-primary);
+        margin-bottom: 0.5rem;
+        background: white;
+        border-radius: 0 8px 8px 0;
+        padding: 0.75rem 1rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    }
+
+    .trend-indicator {
+        font-size: 0.8rem;
+        padding: 2px 8px;
+        border-radius: 50px;
+        font-weight: 600;
+    }
+
+    .trend-up {
+        background: var(--success-glow);
+        color: #2e7d32;
+    }
+
+    .trend-down {
+        background: var(--danger-glow);
+        color: #c62828;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold text-dark mb-0">Command Center</h2>
+            <p class="text-muted small mb-0">Welcome back, {{ user.get_full_name|default:user.username }}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-white shadow-sm border-0 bg-white px-3 py-2 rounded-pill" onclick="loadStats()">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+            <div class="dropdown">
+                <button class="btn btn-primary shadow-sm px-3 py-2 rounded-pill dropdown-toggle" type="button"
+                    data-bs-toggle="dropdown">
+                    <i class="bi bi-lightning-charge-fill me-1"></i> Quick Tasks
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                    <li><a class="dropdown-item py-2" href="{% url 'sales:pos' %}"><i
+                                class="bi bi-cart-plus me-2 text-primary"></i> New Sale</a></li>
+                    <li><a class="dropdown-item py-2" href="{% url 'inventory:product_create' %}"><i
+                                class="bi bi-box-seam me-2 text-primary"></i> Add Product</a></li>
+                    <li><a class="dropdown-item py-2" href="{% url 'finance:expense_create' %}"><i
+                                class="bi bi-receipt me-2 text-primary"></i> Record Expense</a></li>
+                    {% if user.is_superuser or user.is_manager %}
+                    <li><a class="dropdown-item py-2" href="{% url 'sales:dispatch_dashboard' %}"><i
+                                class="bi bi-truck me-2 text-primary"></i> Dispatch Board</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manager Operations -->
+    {% include 'partials/dashboard_manager_operations.html' %}
+
+    <!-- Sales Operations -->
+    {% include 'partials/dashboard_sales_operations.html' %}
+
+    <!-- Metrics Grid -->
+    {% include 'partials/dashboard_metrics.html' %}
+
+    <div class="row g-4">
+        <!-- Main Chart -->
+        {% include 'partials/dashboard_charts.html' %}
+
+        <!-- Real-time Updates -->
+        {% include 'partials/dashboard_live_activity.html' %}
+    </div>
+
+    <!-- Quick Services -->
+    <div class="row g-4 mt-2">
+        <div class="col-md-4">
+            <a href="{% url 'sales:pos' %}" class="quick-action-card">
+                <div class="metric-icon bg-white bg-opacity-20 mb-0">
+                    <i class="bi bi-pc-display"></i>
+                </div>
+                <div>
+                    <h6 class="mb-0 fw-bold">Open POS</h6>
+                    <small class="opacity-75">Record new transaction</small>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4">
+            <a href="{% url 'inventory:inventory_list' %}" class="quick-action-card"
+                style="background: linear-gradient(135deg, #4cc9f0, #4895ef);">
+                <div class="metric-icon bg-white bg-opacity-20 mb-0">
+                    <i class="bi bi-clipboard-pulse"></i>
+                </div>
+                <div>
+                    <h6 class="mb-0 fw-bold">Inventory Check</h6>
+                    <small class="opacity-75">View current availability</small>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-4">
+            <a href="{% url 'finance:expenses_list' %}" class="quick-action-card"
+                style="background: linear-gradient(135deg, #7209b7, #560bad);">
+                <div class="metric-icon bg-white bg-opacity-20 mb-0">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <div>
+                </div>
+            </a>
+        </div>
+        {% if user.is_superuser or user.is_manager %}
+        <div class="col-md-4">
+            <a href="{% url 'sales:dispatch_dashboard' %}" class="quick-action-card"
+                style="background: linear-gradient(135deg, #ff9f1c, #f3722c);">
+                <div class="metric-icon bg-white bg-opacity-20 mb-0">
+                    <i class="bi bi-truck"></i>
+                </div>
+                <div>
+                    <h6 class="mb-0 fw-bold">Dispatch Board</h6>
+                    <small class="opacity-75">View pending deliveries</small>
+                </div>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/static/js/api_service.js"></script>
+<script src="/static/js/socket_service.js"></script>
+<script>
+    const api = new ApiService();
+    const socket = new SocketService('stock');
+    let salesChart;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initChart();
+        loadStats();
+        initSocket();
+    });
+
+    function initChart() {
+        const ctx = document.getElementById('salesChart').getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, 'rgba(67, 97, 238, 0.4)');
+        gradient.addColorStop(1, 'rgba(67, 97, 238, 0)');
+
+        salesChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
+                datasets: [{
+                    label: 'Revenue',
+                    data: [350, 410, 390, 480, 520, 610, 580],
+                    borderColor: '#4361ee',
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3,
+                    pointRadius: 0,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { display: false },
+                        ticks: {
+                            callback: value => 'TZS ' + value.toLocaleString()
+                        }
+                    },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    async function loadStats() {
+        try {
+            const [productsData, salesData, stockData] = await Promise.all([
+                api.get('/api/products/'),
+                api.get('/api/sales/'),
+                api.get('/api/stocks/')
+            ]);
+
+            const products = Array.isArray(productsData) ? productsData : productsData.results;
+            const sales = Array.isArray(salesData) ? salesData : salesData.results;
+            const stocks = Array.isArray(stockData) ? stockData : stockData.results;
+
+            // Monthly Revenue (Aggregate current month)
+            const currentMonth = new Date().getMonth();
+            const monthlyTotal = sales.reduce((acc, sale) => {
+                const saleDate = new Date(sale.created_at);
+                if (saleDate.getMonth() === currentMonth) {
+                    return acc + parseFloat(sale.total_amount);
+                }
+                return acc;
+            }, 0);
+
+            document.getElementById('monthly-revenue').innerText = 'TZS ' + monthlyTotal.toLocaleString();
+            document.getElementById('total-sales-count').innerText = sales.length.toLocaleString();
+
+            // Stock Value (Quantity * Cost)
+            let totalStockVal = 0;
+            let lowStockCount = 0;
+
+            stocks.forEach(s => {
+                const p = products.find(x => x.id === s.product);
+                if (p) totalStockVal += s.quantity * parseFloat(p.cost || 0);
+                if (s.quantity <= s.low_stock_threshold) lowStockCount++;
+            });
+
+            document.getElementById('stock-value').innerText = 'TZS ' + totalStockVal.toLocaleString();
+            document.getElementById('low-stock-count').innerText = lowStockCount;
+
+            // Update Chart Data (Mocking last 7 points for demo)
+            updateDashboardChart(sales);
+
+        } catch (error) {
+            console.error("Failed to load dashboard data", error);
+        }
+    }
+
+    function updateDashboardChart(sales) {
+        // Group sales by day (last 7 days)
+        const labels = [];
+        const data = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            labels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+
+            const dayTotal = sales.reduce((acc, sale) => {
+                const sDate = new Date(sale.created_at);
+                if (sDate.toDateString() === d.toDateString()) {
+                    return acc + parseFloat(sale.total_amount);
+                }
+                return acc;
+            }, 0);
+            data.push(dayTotal / 1000); // K shorthand
+        }
+
+        salesChart.data.labels = labels;
+        salesChart.data.datasets[0].data = data;
+        salesChart.data.datasets[0].label = 'Revenue (K)';
+        salesChart.update();
+    }
+
+    function initSocket() {
+        socket.connect();
+
+        socket.on('stock_update', (data) => {
+            addActivityItem(`Stock adjustment: ${data.data.quantity} left`, 'info');
+            loadStats();
+        });
+
+        socket.on('low_stock_alert', (data) => {
+            addActivityItem(`CRITICAL: ${data.data.product_name} is low stock!`, 'danger');
+            loadStats();
+        });
+    }
+
+    function addActivityItem(text, type) {
+        const list = document.getElementById('stock-updates-list');
+        const placeholder = document.getElementById('activity-placeholder');
+        if (placeholder) placeholder.remove();
+
+        const item = document.createElement('div');
+        item.className = 'update-item animate__animated animate__fadeInLeft';
+        if (type === 'danger') item.style.borderLeftColor = '#f44336';
+
+        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        item.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <span class="small fw-bold">${text}</span>
+                <span class="text-muted smaller">${now}</span>
+            </div>
+        `;
+        list.prepend(item);
+
+        // Keep only last 10
+        if (list.children.length > 10) list.lastChild.remove();
+    }
+</script>
+{% endblock %}

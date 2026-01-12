@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card shadow-sm border-0 border-top border-warning border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-warning mb-0"><i class="bi bi-pencil-square me-2"></i>Edit User</h4>
+            </div>
+            <div class="card-body">
+                <form id="editUserForm">
+                    <input type="hidden" id="userId" value="{{ view.kwargs.pk }}">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Password (Optional)</label>
+                        <input type="password" class="form-control" id="password"
+                            placeholder="Leave blank to keep current">
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Role (Group)</label>
+                            <select class="form-select" id="roleSelect">
+                                <option value="">Select Role...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Branch</label>
+                            <select class="form-select" id="branchSelect">
+                                <option value="">Select Branch...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-warning btn-lg fw-bold text-white">Update User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        const userId = '{{ view.kwargs.pk }}' || window.location.pathname.split("/")[3];
+
+        // Populate and Fetch Data
+        try {
+            const [branchRes, roleRes, userRes] = await Promise.all([
+                fetch('/api/branches/'),
+                fetch('/api/roles/'),
+                fetch(`/api/users/${userId}/`)
+            ]);
+
+            const branches = await branchRes.json();
+            const roles = await roleRes.json();
+            const user = await userRes.json();
+
+            const bSelect = document.getElementById('branchSelect');
+            branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
+            bSelect.value = user.branch || "";
+
+            const rSelect = document.getElementById('roleSelect');
+            roles.forEach(r => rSelect.add(new Option(r.name, r.id)));
+            // Assuming user.groups is list of keys or objects. API usually returns list.
+            // If user.groups is [1]
+            if (user.groups && user.groups.length > 0) {
+                rSelect.value = user.groups[0];
+            }
+
+            document.getElementById('username').value = user.username;
+            document.getElementById('email').value = user.email;
+
+        } catch (e) { console.error(e); }
+
+        document.getElementById('editUserForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                username: document.getElementById('username').value,
+                email: document.getElementById('email').value,
+                branch: document.getElementById('branchSelect').value || null
+            };
+
+            const pwd = document.getElementById('password').value;
+            if (pwd) data.password = pwd;
+
+            const role = document.getElementById('roleSelect').value;
+            if (role) data.groups = [role];
+            else data.groups = [];
+
+            try {
+                const res = await fetch(`/api/users/${userId}/`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'User Updated',
+                        showConfirmButton: false,
+                        timer: 1500
+                    }).then(() => {
+                        window.location.href = "{% url 'users_list' %}";
+                    });
+                } else {
+                    const err = await res.json();
+                    Swal.fire('Error', 'Failed to update user', 'error');
+                }
+            } catch (e) { console.error(e); }
+        });
+    });
+</script>
+{% endblock %}

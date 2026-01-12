@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Products</h2>
+    <div>
+        <a href="{% url 'inventory:product_import' %}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-upload"></i> Import
+        </a>
+        <button class="btn btn-primary" onclick="openModal()">
+            <i class="bi bi-plus-lg"></i> Add Product
+        </button>
+    </div>
+</div>
+
+<!-- Search & Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search by name or SKU..."
+                    onkeyup="filterProducts()">
+            </div>
+            <div class="col-md-3">
+                <select id="categoryFilter" class="form-select" onchange="filterProducts()">
+                    <option value="">All Categories</option>
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="productTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">SKU</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th class="text-end">Cost</th>
+                        <th class="text-end">Price</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="productTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="productModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="modalTitle">Add Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <input type="hidden" id="productId">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="productName" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="productName" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productSku" class="form-label">SKU (Optional)</label>
+                            <input type="text" class="form-control" id="productSku">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productCategory" class="form-label">Category</label>
+                            <select class="form-select" id="productCategory" required>
+                                <option value="">Select Category...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productType" class="form-label">Type</label>
+                            <select class="form-select" id="productType">
+                                <option value="product">Product</option>
+                                <option value="service">Service</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productCost" class="form-label">Cost Price</label>
+                            <input type="number" step="0.01" class="form-control" id="productCost" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productPrice" class="form-label">Selling Price</label>
+                            <input type="number" step="0.01" class="form-control" id="productPrice" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="openingStock" class="form-label">Opening Stock</label>
+                            <input type="number" class="form-control" id="openingStock" value="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="lowStock" class="form-label">Low Stock Alert</label>
+                            <input type="number" class="form-control" id="lowStock" value="10">
+                        </div>
+                        <div class="col-12">
+                            <label for="productDesc" class="form-label">Description</label>
+                            <textarea class="form-control" id="productDesc" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">Save Product</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let products = [];
+    let categories = [];
+    let modal;
+
+    // Inject resource from Django view. Default to 'products' if not set.
+    // If resource contains query params (e.g. products?product_type=service), we use that.
+    const RESOURCE = "{{ resource|default:'products' }}";
+
+    // Check if we are in "service" mode based on text or resource content
+    const IS_SERVICE_MODE = RESOURCE.includes('service') || "{{ title }}".toLowerCase().includes('service');
+    const IS_CREATE_MODE = window.location.pathname.includes('/create/');
+
+    document.addEventListener('DOMContentLoaded', async function () {
+        modal = new bootstrap.Modal(document.getElementById('productModal'));
+
+        // Adjust UI for Service mode
+        if (IS_SERVICE_MODE) {
+            document.getElementById('modalTitle').innerText = 'Add Service';
+            // Optional: Hide Import button if desired, or keep it.
+            // document.querySelector('.btn-outline-primary').style.display = 'none'; 
+        }
+
+        await Promise.all([fetchCategories(), fetchProducts()]);
+
+        document.getElementById('productForm').addEventListener('submit', handleFormSubmit);
+
+        // Auto-open modal if this is a 'create' route
+        if (IS_CREATE_MODE) {
+            openModal();
+        }
+    });
+
+    // --- API Methods ---
+    async function fetchCategories() {
+        try {
+            const resp = await fetch('/api/categories/');
+            categories = await resp.json();
+            populateCategorySelects();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function populateCategorySelects() {
+        const filterSelect = document.getElementById('categoryFilter');
+        const formSelect = document.getElementById('productCategory');
+
+        // Reset
+        filterSelect.innerHTML = '<option value="">All Categories</option>';
+        formSelect.innerHTML = '<option value="">Select Category...</option>';
+
+        categories.forEach(cat => {
+            filterSelect.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+            formSelect.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+        });
+    }
+
+    async function fetchProducts() {
+        try {
+            // Use the injected RESOURCE variable which might include Custom Query Params
+            let url;
+            if (RESOURCE.includes('?')) {
+                const parts = RESOURCE.split('?');
+                url = `/api/${parts[0]}/?${parts[1]}`;
+            } else {
+                url = `/api/${RESOURCE}/`;
+            }
+
+            const resp = await fetch(url);
+            const data = await resp.json();
+            // Handle both pagination (results array) and flat list
+            products = Array.isArray(data) ? data : data.results;
+
+            renderTable(products);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('productTableBody').innerHTML = '<tr><td colspan="7" class="text-center text-danger">Failed to load data</td></tr>';
+        }
+    }
+
+    async function handleFormSubmit(e) {
+        e.preventDefault();
+        const id = document.getElementById('productId').value;
+        const data = {
+            name: document.getElementById('productName').value,
+            sku: document.getElementById('productSku').value,
+            category: document.getElementById('productCategory').value,
+            product_type: document.getElementById('productType').value,
+            cost: document.getElementById('productCost').value,
+            price: document.getElementById('productPrice').value,
+            opening_stock: document.getElementById('openingStock').value,
+            low_stock_threshold: document.getElementById('lowStock').value,
+            description: document.getElementById('productDesc').value,
+        };
+
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/products/${id}/` : '/api/products/';
+
+        try {
+            const resp = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF_TOKEN
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (resp.ok) {
+                modal.hide();
+                Swal.fire('Success', IS_SERVICE_MODE ? 'Service saved!' : 'Product saved!', 'success');
+                fetchProducts();
+                // If we were on a specific 'create' page, maybe redirect back to list?
+                // For now, staying on page is fine, or simple reload.
+            } else {
+                Swal.fire('Error', 'Failed to save. Check inputs.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Server Error', 'error');
+        }
+    }
+
+    async function deleteProduct(id) {
+        if (await confirmAction()) {
+            try {
+                const resp = await fetch(`/api/products/${id}/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': CSRF_TOKEN }
+                });
+                if (resp.ok) {
+                    Swal.fire('Deleted', 'Item removed', 'success');
+                    fetchProducts();
+                } else {
+                    Swal.fire('Error', 'Failed to delete', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }
+
+    // --- Helpers ---
+    function renderTable(data) {
+        const tbody = document.getElementById('productTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No items found</td></tr>';
+            return;
+        }
+
+        data.forEach(p => {
+            const catName = categories.find(c => c.id === p.category)?.name || 'Unknown';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 font-monospace small">${p.sku}</td>
+                <td class="fw-medium">${p.name}</td>
+                <td><span class="badge bg-light text-dark border">${catName}</span></td>
+                <td><small class="text-uppercase">${p.product_type}</small></td>
+                <td class="text-end">TZS ${parseFloat(p.cost).toFixed(2)}</td>
+                <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toFixed(2)}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct(${p.id})">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct(${p.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function editProduct(id) {
+        const p = products.find(i => i.id === id);
+        if (p) {
+            document.getElementById('productId').value = p.id;
+            document.getElementById('productName').value = p.name;
+            document.getElementById('productSku').value = p.sku;
+            document.getElementById('productCategory').value = p.category;
+            document.getElementById('productType').value = p.product_type;
+            document.getElementById('productCost').value = p.cost;
+            document.getElementById('productPrice').value = p.price;
+            document.getElementById('productDesc').value = p.description;
+            document.getElementById('modalTitle').innerText = IS_SERVICE_MODE ? 'Edit Service' : 'Edit Product';
+            modal.show();
+        }
+    }
+
+    function openModal() {
+        document.getElementById('productForm').reset();
+        document.getElementById('productId').value = '';
+        document.getElementById('modalTitle').innerText = IS_SERVICE_MODE ? 'Add Service' : 'Add Product';
+
+        // If in service mode, pre-select Service type
+        if (IS_SERVICE_MODE) {
+            document.getElementById('productType').value = 'service';
+        }
+
+        modal.show();
+    }
+
+    function filterProducts() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const catId = document.getElementById('categoryFilter').value;
+
+        const filtered = products.filter(p => {
+            const matchesTerm = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term);
+            const matchesCat = catId ? p.category == catId : true;
+            return matchesTerm && matchesCat;
+        });
+        renderTable(filtered);
+    }
+
+    function confirmAction() {
+        return Swal.fire({
+            title: 'Are you sure?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        }).then(result => result.isConfirmed);
+    }
+</script>
+{% endblock %}

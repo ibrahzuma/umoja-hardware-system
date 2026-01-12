@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #4361ee;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #4361ee;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .info-section {
+            width: 100%;
+            margin-bottom: 30px;
+        }
+
+        .info-section td {
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+
+        .value {
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        table.items {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        table.items th {
+            background-color: #f8faff;
+            border-bottom: 2px solid #dee2e6;
+            padding: 12px;
+            text-align: left;
+            color: #4361ee;
+        }
+
+        table.items td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .totals {
+            float: right;
+            width: 300px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-top: 1px solid #eee;
+        }
+
+        .total-grand {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #4361ee;
+            border-top: 2px solid #4361ee;
+            margin-top: 10px;
+            padding-top: 10px;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 0.8em;
+            color: #999;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>Umoja Hardware System</h1>
+        <p>Premium Quality Hardware & Construction Materials</p>
+    </div>
+
+    <table class="info-section">
+        <tr>
+            <td>
+                <div class="label">Invoice To:</div>
+                <div class="value">
+                    <strong>{{ sale.customer_name }}</strong><br>
+                    {% if sale.customer %}
+                    {{ sale.customer.phone }}<br>
+                    {{ sale.customer.address }}
+                    {% endif %}
+                </div>
+            </td>
+            <td style="text-align: right;">
+                <div class="label">Invoice Number:</div>
+                <div class="value">#{{ sale.invoice_number }}</div>
+                <div class="label">Date:</div>
+                <div class="value">{{ sale.created_at|date:"D, d M Y" }}</div>
+                <div class="label">Status:</div>
+                <div class="value" style="color: #2e7d32; font-weight: bold;">{{ sale.get_status_display }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="items">
+        <thead>
+            <tr>
+                <th>Product Description</th>
+                <th style="text-align: center;">Qty</th>
+                <th style="text-align: right;">Unit Price</th>
+                <th style="text-align: right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.items.all %}
+            <tr>
+                <td>{{ item.product.name }}</td>
+                <td style="text-align: center;">{{ item.quantity }}</td>
+                <td style="text-align: right;">TZS {{ item.price_at_sale|floatformat:2 }}</td>
+                <td style="text-align: right;">TZS {{ item.subtotal|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="width: 100%; overflow: hidden;">
+        <div style="float: right; width: 40%;">
+            <table style="width: 100%;">
+                <tr>
+                    <td class="label">Subtotal:</td>
+                    <td style="text-align: right;">TZS {{ sale.total_amount|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Tax (0%):</td>
+                    <td style="text-align: right;">TZS 0.00</td>
+                </tr>
+                <tr class="total-grand">
+                    <td style="padding-top: 10px;">Total Amount:</td>
+                    <td style="text-align: right; padding-top: 10px;">TZS {{ sale.total_amount|floatformat:2 }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div style="margin-top: 50px;">
+        <div class="label">Authorization:</div>
+        <table style="width: 100%; margin-top: 20px;">
+            <tr>
+                <td style="width: 33%;">
+                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 150px;"></div>
+                    <div class="small">Approved By: {{ sale.approved_by.get_full_name|default:sale.approved_by.username
+                        }}</div>
+                </td>
+                <td style="width: 33%; text-align: center;">
+                    <div
+                        style="border-top: 1px solid #333; margin-top: 20px; width: 150px; margin-left: auto; margin-right: auto;">
+                    </div>
+                    <div class="small">Customer Signature</div>
+                </td>
+                <td style="width: 33%; text-align: center; vertical-align: middle;">
+                    {% if sale.status == 'approved' or sale.status == 'dispatched' %}
+                    <div style="text-align: center; position: relative;">
+                        <img src="C:\Users\admin\Downloads\Umoja Hadware System\static\img\approved_stamp.png"
+                            width="140" height="auto" alt="APPROVED">
+                        <div style="
+                                position: absolute;
+                                bottom: 25px; 
+                                left: 0; 
+                                right: 0; 
+                                text-align: center;
+                                font-size: 9px; 
+                                color: #15803d; 
+                                font-weight: bold;
+                                font-family: monospace;
+                            ">
+                            {{ sale.approved_at|date:"d M Y"|upper }}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div
+                        style="border-top: 1px solid #333; margin-top: 20px; width: 150px; margin-left: auto; margin-right: auto;">
+                    </div>
+                    <div class="small">Stamp</div>
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        Thank you for choosing Umoja Hardware System. <br>
+        This is a computer-generated document. No signature is required unless specified.
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card shadow-sm border-0 border-top border-primary border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-primary mb-0"><i class="bi bi-cart-plus me-2"></i>Record New Purchase</h4>
+            </div>
+            <div class="card-body">
+                <form id="purchaseForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Supplier</label>
+                            <select class="form-select" id="supplierSelect" required>
+                                <option value="">Select Supplier...</option>
+                            </select>
+                            <div class="form-text"><a href="{% url 'inventory:manage_supplier' %}"
+                                    class="text-decoration-none">Add new supplier</a></div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Destination Branch</label>
+                            <select class="form-select" id="branchSelect" required>
+                                <option value="">Select Branch...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="card bg-light mb-3">
+                        <div class="card-body">
+                            <h6 class="fw-bold mb-3">Item Details</h6>
+                            <div class="mb-3">
+                                <label class="form-label">Product</label>
+                                <select class="form-select" id="productSelect" required>
+                                    <option value="">Select Product...</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label class="form-label">Quantity</label>
+                                    <input type="number" class="form-control" id="quantity" min="1" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Unit Cost</label>
+                                    <input type="number" class="form-control" id="unitCost" step="0.01" min="0"
+                                        required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Total Cost</label>
+                                    <input type="text" class="form-control bg-white" id="totalCost" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                            <i class="bi bi-plus-circle me-1"></i> Record Purchase
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent Added Feedback -->
+        <div class="mt-4" id="recentAddedSection" style="display:none;">
+            <h5 class="text-muted">Just Added</h5>
+            <ul class="list-group shadow-sm" id="addedList">
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    // State
+    let products = [];
+    let suppliers = [];
+    let branches = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await fetchData();
+
+        // Auto-calculate total
+        const qtyInput = document.getElementById('quantity');
+        const costInput = document.getElementById('unitCost');
+
+        [qtyInput, costInput].forEach(inp => {
+            inp.addEventListener('input', () => {
+                const q = parseFloat(qtyInput.value) || 0;
+                const c = parseFloat(costInput.value) || 0;
+                document.getElementById('totalCost').value = (q * c).toFixed(2);
+            });
+        });
+
+        document.getElementById('purchaseForm').addEventListener('submit', handlePurchase);
+    });
+
+    async function fetchData() {
+        try {
+            const [prodRes, suppRes, branchRes] = await Promise.all([
+                fetch('/api/products/'),
+                fetch('/api/suppliers/'),
+                fetch('/api/branches/')
+            ]);
+            products = await prodRes.json();
+            suppliers = await suppRes.json();
+            branches = await branchRes.json();
+
+            // Populate Selects
+            const pSelect = document.getElementById('productSelect');
+            products.forEach(p => pSelect.add(new Option(`${p.name} (${p.sku})`, p.id)));
+
+            const sSelect = document.getElementById('supplierSelect');
+            suppliers.forEach(s => sSelect.add(new Option(s.name, s.id)));
+
+            const bSelect = document.getElementById('branchSelect');
+            branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
+
+        } catch (e) { console.error(e); }
+    }
+
+    async function handlePurchase(e) {
+        e.preventDefault();
+
+        const data = {
+            supplier: document.getElementById('supplierSelect').value,
+            branch: document.getElementById('branchSelect').value,
+            product: document.getElementById('productSelect').value,
+            quantity: document.getElementById('quantity').value,
+            unit_cost: document.getElementById('unitCost').value
+        };
+
+        try {
+            const res = await fetch('/api/purchases/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                const purchase = await res.json();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Stock Added',
+                    text: `Successfully added ${purchase.quantity} units.`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+                // Add to "Just Added" list
+                document.getElementById('recentAddedSection').style.display = 'block';
+                const list = document.getElementById('addedList');
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center animate__animated animate__fadeIn';
+                const prodName = products.find(p => p.id == data.product)?.name;
+                li.innerHTML = `
+                    <span>Added <strong>${data.quantity}</strong> x ${prodName}</span>
+                    <span class="badge bg-success">Success</span>
+                `;
+                list.prepend(li);
+
+                // Reset item fields but keep Supplier/Branch
+                document.getElementById('productSelect').value = '';
+                document.getElementById('quantity').value = '';
+                document.getElementById('unitCost').value = '';
+                document.getElementById('totalCost').value = '';
+            } else {
+                Swal.fire('Error', 'Failed to add record', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Connection Failed', 'error');
+        }
+    }
+</script>
+{% endblock %}

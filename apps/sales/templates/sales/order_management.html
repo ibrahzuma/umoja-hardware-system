@@ -1,0 +1,391 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="fw-bold"><i class="bi bi-diagram-3 me-2"></i>Order Workflow Management</h2>
+            <p class="text-muted">Approve pending orders and manage logistics dispatch.</p>
+        </div>
+    </div>
+
+    <!-- Stats Summary -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase small">Pending Approval</h6>
+                    <h3 class="fw-bold mb-0" id="countPending">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase small">Approved (Awaiting Dispatch)</h6>
+                    <h3 class="fw-bold mb-0" id="countApproved">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase small">Dispatched Today</h6>
+                    <h3 class="fw-bold mb-0" id="countDispatched">0</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <div class="row align-items-center">
+                <div class="col">
+                    <h5 class="mb-0 fw-bold">Active Orders</h5>
+                </div>
+                <div class="col-auto">
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary btn-sm active"
+                            onclick="filterOrders('pending')">Pending</button>
+                        <button class="btn btn-outline-secondary btn-sm"
+                            onclick="filterOrders('approved')">Approved</button>
+                        <button class="btn btn-outline-secondary btn-sm"
+                            onclick="filterOrders('dispatched')">Dispatched</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Invoice #</th>
+                            <th>Customer</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTableBody">
+                        <tr>
+                            <td colspan="6" class="text-center py-5">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <p class="mt-2 mb-0">Loading orders...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Dispatch Modal -->
+<div class="modal fade" id="dispatchModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">Dispatch Order</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="dispatchForm">
+                <div class="modal-body p-4">
+                    <input type="hidden" id="dispatchSaleId">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Assign Store Keeper</label>
+                        <select class="form-select" id="storeKeeperSelect" required>
+                            <option value="">Select Personnel...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Lorry / Vehicle Details</label>
+                        <input type="text" class="form-control" id="lorryInfo" placeholder="e.g. Scania T123 ABC"
+                            required>
+                    </div>
+                    <div class="alert alert-info small mb-0">
+                        <i class="bi bi-info-circle me-2"></i> Confirming dispatch will deduct stock from the main
+                        inventory and generate documents.
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4">Proceed to Dispatch</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Approval Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold">Approve Order</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="approveForm">
+                <div class="modal-body p-4">
+                    <input type="hidden" id="approveSaleId">
+                    <p class="mb-0">Are you sure you want to approve this order? It will be forwarded to <strong>Store
+                            Managers</strong> for dispatch.</p>
+                </div>
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success px-4">Approve Order</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="/static/js/api_service.js"></script>
+<script>
+    const api = new ApiService();
+    let currentFilter = 'pending';
+    const dispatchModal = new bootstrap.Modal(document.getElementById('dispatchModal'));
+    const approveModal = new bootstrap.Modal(document.getElementById('approveModal'));
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadOrders();
+        loadUsers(); // For store keeper assignment
+
+        // Handle Approve Form Submit
+        document.getElementById('approveForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await confirmApproval();
+        });
+
+        // Handle Dispatch Form Submit
+        document.getElementById('dispatchForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            confirmDispatch();
+        });
+    });
+
+    // ... (other functions)
+
+    async function confirmApproval() {
+        const id = document.getElementById('approveSaleId').value;
+        try {
+            await api.post(`/api/sales/${id}/approve/`, {});
+            approveModal.hide();
+            Swal.fire('Approved!', 'Order has been approved and sent to Store Managers.', 'success');
+            loadOrders();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to approve order: ' + (e.error || 'Unknown error'), 'error');
+        }
+    }
+
+    async function loadUsers() {
+        try {
+            const data = await api.get('/api/users/');
+            const users = Array.isArray(data) ? data : data.results;
+            const select = document.getElementById('storeKeeperSelect');
+            const managerSelect = document.getElementById('managerSelect');
+
+            // Clear existing options except first
+            select.innerHTML = '<option value="">Select Personnel...</option>';
+            managerSelect.innerHTML = '<option value="">Choose Manager...</option>';
+
+            users.forEach(u => {
+                const name = u.full_name || u.username;
+
+                // Populate Store Keeper select
+                const opt1 = document.createElement('option');
+                opt1.value = u.id;
+                opt1.text = name;
+                select.appendChild(opt1);
+
+                // Populate Manager select
+                const opt2 = document.createElement('option');
+                opt2.value = u.id;
+                opt2.text = name;
+                managerSelect.appendChild(opt2);
+            });
+        } catch (e) {
+            console.error("Failed to load users", e);
+        }
+    }
+
+    async function loadOrders() {
+        try {
+            const data = await api.get('/api/sales/');
+            const orders = Array.isArray(data) ? data : data.results;
+
+            // Update counts
+            document.getElementById('countPending').innerText = orders.filter(o => o.status === 'pending').length;
+            document.getElementById('countApproved').innerText = orders.filter(o => o.status === 'approved').length;
+            document.getElementById('countDispatched').innerText = orders.filter(o => {
+                const today = new Date().toDateString();
+                const od = new Date(o.created_at).toDateString();
+                return o.status === 'dispatched' && today === od;
+            }).length;
+
+            renderTable(orders.filter(o => o.status === currentFilter));
+        } catch (e) {
+            console.error(e);
+            document.getElementById('ordersTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Failed to load orders</td></tr>`;
+        }
+    }
+
+    function renderTable(orders) {
+        const tbody = document.getElementById('ordersTableBody');
+        tbody.innerHTML = '';
+
+        if (orders.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-5 text-muted">No ${currentFilter} orders found</td></tr>`;
+            return;
+        }
+
+        orders.forEach(o => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 fw-bold">#${o.invoice_number}</td>
+                <td>${o.customer_name}</td>
+                <td>TZS ${parseFloat(o.total_amount).toLocaleString()}</td>
+                <td>${getStatusBadge(o.status)}</td>
+                <td>${new Date(o.created_at).toLocaleString()}</td>
+                <td class="text-end pe-4">
+                    ${getActionButtons(o)}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function getStatusBadge(status) {
+        const configs = {
+            'pending': 'bg-warning text-dark',
+            'approved': 'bg-primary',
+            'dispatched': 'bg-success',
+            'cancelled': 'bg-danger'
+        };
+        return `<span class="badge ${configs[status] || 'bg-secondary'}">${status.toUpperCase()}</span>`;
+    }
+
+    function getActionButtons(o) {
+        if (o.status === 'pending') {
+            return `
+                <button class="btn btn-sm btn-success" onclick="approveOrder(${o.id})">
+                    <i class="bi bi-check-lg"></i> Approve
+                </button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="declineOrder(${o.id})">
+                    <i class="bi bi-x-lg"></i> Decline
+                </button>
+            `;
+        } else if (o.status === 'approved') {
+            return `
+                <button class="btn btn-sm btn-primary" onclick="openDispatchModal(${o.id})">
+                    <i class="bi bi-truck"></i> Dispatch
+                </button>
+                <a href="/api/sales/${o.id}/receipt/" target="_blank" class="btn btn-sm btn-outline-primary ms-1">
+                    <i class="bi bi-file-pdf"></i> Invoice
+                </a>
+            `;
+        } else if (o.status === 'dispatched') {
+            return `
+                <a href="/api/sales/${o.id}/receipt/" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-pdf"></i> Invoice
+                </a>
+                <a href="/api/sales/${o.id}/delivery_note/" target="_blank" class="btn btn-sm btn-outline-secondary ms-1">
+                    <i class="bi bi-truck-flatbed"></i> Delivery Note
+                </a>
+                <button class="btn btn-sm btn-danger ms-1" onclick="deleteSale(${o.id})">
+                    <i class="bi bi-trash"></i> Delete
+                </button>
+            `;
+        }
+        return '';
+    }
+
+    function filterOrders(filter) {
+        currentFilter = filter;
+        // Update active class on buttons
+        document.querySelectorAll('.btn-group .btn').forEach(btn => {
+            if (btn.innerText.toLowerCase() === filter) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+        loadOrders();
+    }
+
+    function approveOrder(id) {
+        document.getElementById('approveSaleId').value = id;
+        approveModal.show();
+    }
+
+    async function confirmApproval() {
+        const id = document.getElementById('approveSaleId').value;
+
+        try {
+            await api.post(`/api/sales/${id}/approve/`, {});
+            approveModal.hide();
+            Swal.fire('Approved!', 'Order has been approved and forwarded to Store Managers.', 'success');
+            loadOrders();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to approve order: ' + (e.error || 'Unknown error'), 'error');
+        }
+    }
+
+    function openDispatchModal(id) {
+        document.getElementById('dispatchSaleId').value = id;
+        dispatchModal.show();
+    }
+
+    async function confirmDispatch() {
+        const id = document.getElementById('dispatchSaleId').value;
+        const data = {
+            store_keeper: document.getElementById('storeKeeperSelect').value,
+            lorry_info: document.getElementById('lorryInfo').value
+        };
+
+        try {
+            const res = await api.post(`/api/sales/${id}/dispatch_order/`, data);
+            dispatchModal.hide();
+
+            Swal.fire({
+                title: 'Dispatched!',
+                html: `Order has been dispatched. < br > <br>
+                <a href="${res.invoice_url}" target="_blank" class="btn btn-outline-primary btn-sm me-2">Download Invoice</a>
+                <a href="${res.delivery_note_url}" target="_blank" class="btn btn-outline-secondary btn-sm">Delivery Note</a>`,
+                icon: 'success'
+            });
+            loadOrders();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to dispatch: ' + (e.message || 'Check stock levels'), 'error');
+        }
+    }
+
+    async function declineOrder(id) {
+        const result = await Swal.fire({
+            title: 'Decline Order?',
+            text: "This action cannot be undone. The order status will be set to Cancelled.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, decline it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await api.post(`/api/sales/${id}/decline/`);
+                Swal.fire('Declined!', 'Order has been declined.', 'success');
+                loadOrders();
+            } catch (e) {
+                console.error(e);
+                Swal.fire('Error', 'Failed to decline order.', 'error');
+            }
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,403 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Inventory Management</h2>
+    <div>
+        <button class="btn btn-success me-2" onclick="openTransferModal()">
+            <i class="bi bi-arrow-left-right"></i> Transfer Stock
+        </button>
+        <div class="dropdown d-inline-block">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="exportDropdown"
+                data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-download"></i> Export
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="exportDropdown">
+                <li><a class="dropdown-item" href="#">Export to CSV</a></li>
+                <li><a class="dropdown-item" href="#">Export to PDF</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2">Total Items</h6>
+                <h3 class="fw-bold mb-0" id="totalItems">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2">Low Stock Items</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="lowStockItems">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2">Total Value</h6>
+                <h3 class="fw-bold mb-0" id="totalValue">TZS 0.00</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search & Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search product name or SKU..."
+                    onkeyup="filterStock()">
+            </div>
+            <div class="col-md-3">
+                <select id="branchFilter" class="form-select" onchange="filterStock()">
+                    <option value="">All Branches</option>
+                    <!-- Branches loaded via JS -->
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="lowStockFilter" onchange="filterStock()">
+                    <label class="form-check-label" for="lowStockFilter">Show Low Stock Only</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stock Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="stockTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Product</th>
+                        <th>SKU</th>
+                        <th>Branch</th>
+                        <th class="text-center">Quantity</th>
+                        <th class="text-end pe-4">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="stockTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">Loading stock data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Transfer Modal -->
+<div class="modal fade" id="transferModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Transfer Stock</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="transferForm">
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <select class="form-select" id="transferProduct" required>
+                            <option value="">Select Product...</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">From Branch</label>
+                            <select class="form-select" id="transferFrom" required>
+                                <option value="">Source...</option>
+                            </select>
+                            <small class="text-muted" id="sourceStockDisplay">Available: -</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">To Branch</label>
+                            <select class="form-select" id="transferTo" required>
+                                <option value="">Destination...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="transferQuantity" min="1" required>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Confirm Transfer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let allStocks = [];
+    let branches = [];
+    let products = [];
+    let transferModal;
+    let ws;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        transferModal = new bootstrap.Modal(document.getElementById('transferModal'));
+        fetchInitialData();
+        setupWebSocket();
+
+        document.getElementById('transferForm').addEventListener('submit', handleTransfer);
+        document.getElementById('transferProduct').addEventListener('change', updateSourceStockDisplay);
+        document.getElementById('transferFrom').addEventListener('change', updateSourceStockDisplay);
+    });
+
+    async function fetchInitialData() {
+        try {
+            const [stockRes, branchRes, productRes] = await Promise.all([
+                fetch('/api/stocks/'),
+                fetch('/api/branches/'),
+                fetch('/api/products/')
+            ]);
+
+            allStocks = await stockRes.json();
+            branches = await branchRes.json();
+            products = await productRes.json();
+
+            populateFilters();
+            renderTable(allStocks);
+            updateStats();
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            Swal.fire('Error', 'Failed to load inventory data', 'error');
+        }
+    }
+
+    function setupWebSocket() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws/inventory/`);
+
+        ws.onmessage = function (e) {
+            const data = JSON.parse(e.data);
+            if (data.type === 'stock_update') {
+                handleStockUpdate(data.data);
+            } else if (data.type === 'low_stock_alert') {
+                showLowStockToast(data.data);
+            }
+        };
+
+        ws.onclose = function () {
+            console.log('WebSocket closed, retrying in 5s...');
+            setTimeout(setupWebSocket, 5000);
+        };
+    }
+
+    function handleStockUpdate(msg) {
+        // Find and update the stock item
+        const index = allStocks.findIndex(s => s.id === msg.stock_id);
+        if (index !== -1) {
+            allStocks[index].quantity = msg.quantity;
+            // Re-render if necessary (optimization: update DOM directly)
+            renderTable(allStocks);
+            updateStats();
+        }
+    }
+
+    function showLowStockToast(msg) {
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true
+        });
+
+        Toast.fire({
+            icon: 'warning',
+            title: `Low Stock Alert: ${msg.product_name} at ${msg.branch_name}`
+        });
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('stockTableBody');
+        tbody.innerHTML = '';
+
+        // Filter based on UI controls
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const branchId = document.getElementById('branchFilter').value;
+        const showLowStock = document.getElementById('lowStockFilter').checked;
+
+        const filtered = data.filter(item => {
+            const matchesTerm = (
+                (item.product_details?.name || 'Unknown').toLowerCase().includes(term) ||
+                (item.product_details?.sku || '').toLowerCase().includes(term)
+            );
+            const matchesBranch = branchId ? item.branch === parseInt(branchId) : true;
+            const matchesLowStock = showLowStock ? item.quantity <= item.low_stock_threshold : true;
+
+            return matchesTerm && matchesBranch && matchesLowStock;
+        });
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No stock items found</td></tr>';
+            return;
+        }
+
+        filtered.forEach(item => {
+            // Need to map IDs to names if serializer doesn't provide depth
+            const productName = getProductName(item.product);
+            const productSku = getProductSku(item.product);
+            const branchName = getBranchName(item.branch);
+
+            const isLow = item.quantity <= item.low_stock_threshold;
+
+            const tr = document.createElement('tr');
+            if (isLow) tr.classList.add('table-danger', 'bg-opacity-10');
+
+            tr.innerHTML = `
+                <td class="ps-4 fw-medium">${productName}</td>
+                <td class="text-muted">${productSku}</td>
+                <td><span class="badge bg-light text-dark border">${branchName}</span></td>
+                <td class="text-center fw-bold ${isLow ? 'text-danger' : ''}">${item.quantity}</td>
+                <td class="text-end pe-4">
+                    ${isLow
+                    ? '<span class="badge bg-danger">Low Stock</span>'
+                    : '<span class="badge bg-success">In Stock</span>'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // --- Helpers to resolve IDs if serializer handles IDs only ---
+    // (Ideally serializer should return nested objects or we create a map)
+    function getProductName(id) {
+        const p = products.find(x => x.id === id);
+        return p ? p.name : `Product #${id}`;
+    }
+
+    function getProductSku(id) {
+        const p = products.find(x => x.id === id);
+        return p ? p.sku : '-';
+    }
+
+    function getBranchName(id) {
+        const b = branches.find(x => x.id === id);
+        return b ? b.name : `Branch #${id}`;
+    }
+
+    function populateFilters() {
+        const branchSelect = document.getElementById('branchFilter');
+        const transferFrom = document.getElementById('transferFrom');
+        const transferTo = document.getElementById('transferTo');
+
+        // Clear except first option
+        branchSelect.innerHTML = '<option value="">All Branches</option>';
+        transferFrom.innerHTML = '<option value="">Source...</option>';
+        transferTo.innerHTML = '<option value="">Destination...</option>';
+
+        branches.forEach(b => {
+            branchSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+            transferFrom.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+            transferTo.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+        });
+
+        const productSelect = document.getElementById('transferProduct');
+        productSelect.innerHTML = '<option value="">Select Product...</option>';
+        products.forEach(p => {
+            productSelect.innerHTML += `<option value="${p.id}">${p.name} (${p.sku})</option>`;
+        });
+    }
+
+    function updateStats() {
+        document.getElementById('totalItems').innerText = allStocks.reduce((acc, curr) => acc + curr.quantity, 0);
+        const lowCount = allStocks.filter(s => s.quantity <= s.low_stock_threshold).length;
+        document.getElementById('lowStockItems').innerText = lowCount;
+
+        // Calculate value if we have cost/price access. 
+        // Logic: quantity * product.cost
+        let totalVal = 0;
+        allStocks.forEach(s => {
+            const p = products.find(x => x.id === s.product);
+            if (p) totalVal += s.quantity * parseFloat(p.cost || 0);
+        });
+        document.getElementById('totalValue').innerText = 'TZS ' + totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    }
+
+    // --- Transfer Logic ---
+    function openTransferModal() {
+        transferModal.show();
+    }
+
+    function updateSourceStockDisplay() {
+        const prodId = parseInt(document.getElementById('transferProduct').value);
+        const branchId = parseInt(document.getElementById('transferFrom').value);
+        const display = document.getElementById('sourceStockDisplay');
+
+        if (prodId && branchId) {
+            const stockItem = allStocks.find(s => s.product === prodId && s.branch === branchId);
+            const qty = stockItem ? stockItem.quantity : 0;
+            display.innerText = `Available: ${qty}`;
+
+            // Set max on input
+            document.getElementById('transferQuantity').max = qty;
+        } else {
+            display.innerText = 'Available: -';
+        }
+    }
+
+    async function handleTransfer(e) {
+        e.preventDefault();
+
+        const data = {
+            product: document.getElementById('transferProduct').value,
+            from_branch: document.getElementById('transferFrom').value,
+            to_branch: document.getElementById('transferTo').value,
+            quantity: document.getElementById('transferQuantity').value
+        };
+
+        // Basic validation
+        if (data.from_branch === data.to_branch) {
+            Swal.fire('Error', 'Source and Destination branches cannot be the same', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/stock-transfers/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                transferModal.hide();
+                Swal.fire('Success', 'Stock transfer completed successfully', 'success');
+                fetchInitialData(); // Refresh data
+                document.getElementById('transferForm').reset();
+            } else {
+                const err = await response.json();
+                Swal.fire('Error', JSON.stringify(err), 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Transfer failed', 'error');
+        }
+    }
+
+    function filterStock() {
+        renderTable(allStocks);
+    }
+</script>
+{% endblock %}

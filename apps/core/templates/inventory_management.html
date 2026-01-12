@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Inventory Management</h2>
+    <div>
+        <button class="btn btn-outline-primary" onclick="openAdjustmentModal()">
+            <i class="bi bi-sliders"></i> Adjust Stock
+        </button>
+    </div>
+</div>
+
+<!-- Adjustment Modal -->
+<div class="modal fade" id="adjustmentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Adjust Stock Levels</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="adjustmentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <select class="form-select" id="adjProduct" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="adjBranch" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Adjustment Type</label>
+                        <select class="form-select" id="adjType" required>
+                            <option value="addition">Addition (+)</option>
+                            <option value="deduction">Deduction (-)</option>
+                            <option value="correction">Set Quantity (=)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="adjQty" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason</label>
+                        <textarea class="form-control" id="adjReason" rows="2"
+                            placeholder="e.g. Damascus damage, Stock count correction" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Apply Adjustment</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="stockTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Product</th>
+                        <th>SKU</th>
+                        <th>Branch</th>
+                        <th>Quantity</th>
+                        <th>Low Stock Alert</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="stockTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let products = [];
+    let branches = [];
+
+    async function fetchStocks() {
+        try {
+            const resp = await fetch('/api/stocks/');
+            const stocks = await resp.json();
+            const tbody = document.getElementById('stockTableBody');
+            tbody.innerHTML = '';
+
+            if (stocks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No stock records found</td></tr>';
+                return;
+            }
+
+            stocks.forEach(s => {
+                const statusBadge = s.quantity <= s.low_stock_threshold
+                    ? '<span class="badge bg-danger">Low Stock</span>'
+                    : '<span class="badge bg-success">Good</span>';
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="ps-4 fw-medium">${s.product_name}</td>
+                        <td class="font-monospace small">${s.product_sku || '-'}</td>
+                        <td>${s.branch_name}</td>
+                        <td class="fw-bold">${s.quantity}</td>
+                        <td class="text-muted">${s.low_stock_threshold}</td>
+                        <td>${statusBadge}</td>
+                    </tr>
+                `;
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function openAdjustmentModal() {
+        if (products.length === 0) {
+            const [pRes, bRes] = await Promise.all([
+                fetch('/api/products/'),
+                fetch('/api/branches/')
+            ]);
+            products = await pRes.json();
+            branches = await bRes.json();
+
+            const pSelect = document.getElementById('adjProduct');
+            products.forEach(p => pSelect.add(new Option(`${p.name} (${p.sku})`, p.id)));
+
+            const bSelect = document.getElementById('adjBranch');
+            branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
+        }
+        new bootstrap.Modal(document.getElementById('adjustmentModal')).show();
+    }
+
+    document.getElementById('adjustmentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            product: document.getElementById('adjProduct').value,
+            branch: document.getElementById('adjBranch').value,
+            adjustment_type: document.getElementById('adjType').value,
+            quantity: document.getElementById('adjQty').value,
+            reason: document.getElementById('adjReason').value
+        };
+
+        try {
+            const resp = await fetch('/api/stock-adjustments/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (resp.ok) {
+                Swal.fire('Success', 'Stock adjusted successfully', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('adjustmentModal')).hide();
+                fetchStocks();
+            } else {
+                Swal.fire('Error', 'Failed to adjust stock', 'error');
+            }
+        } catch (err) {
+            Swal.fire('Error', 'Connection failed', 'error');
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', fetchStocks);
+</script>
+{% endblock %}

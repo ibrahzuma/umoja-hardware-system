@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold">Vehicle Management</h2>
+        <p class="text-muted mb-0">Manage delivery vehicles and drivers.</p>
+    </div>
+    <button class="btn btn-primary shadow-sm" onclick="openVehicleModal()">
+        <i class="bi bi-plus-lg"></i> Add Vehicle
+    </button>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Registration #</th>
+                        <th>Type</th>
+                        <th>Driver</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="vehicleTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-5">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal fade" id="vehicleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold" id="modalTitle">Add Vehicle</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="vehicleForm">
+                <div class="modal-body p-4">
+                    <input type="hidden" id="vehicleId">
+                    <div class="mb-3">
+                        <label class="form-label">Registration Number</label>
+                        <input type="text" class="form-control" id="regNumber" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Vehicle Type</label>
+                        <select class="form-select" id="vehicleType">
+                            <option value="lorry">Lorry</option>
+                            <option value="van">Van</option>
+                            <option value="pickup">Pickup</option>
+                            <option value="truck">Truck</option>
+                            <option value="bike">Motorbike</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Driver Name</label>
+                        <input type="text" class="form-control" id="driverName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="status">
+                            <option value="active">Active</option>
+                            <option value="maintenance">Maintenance</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4">Save Vehicle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="/static/js/api_service.js"></script>
+<script>
+    const api = new ApiService();
+    const modal = new bootstrap.Modal(document.getElementById('vehicleModal'));
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadVehicles();
+        document.getElementById('vehicleForm').addEventListener('submit', handleSave);
+    });
+
+    async function loadVehicles() {
+        try {
+            const data = await api.get('/api/vehicles/');
+            const vehicles = Array.isArray(data) ? data : data.results;
+            const tbody = document.getElementById('vehicleTableBody');
+            tbody.innerHTML = '';
+
+            vehicles.forEach(v => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4 fw-bold">${v.registration_number}</td>
+                    <td class="text-capitalize">${v.vehicle_type}</td>
+                    <td>${v.driver_name}</td>
+                    <td>${getStatusBadge(v.status)}</td>
+                    <td class="text-end pe-4">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick='editVehicle(${JSON.stringify(v)})'>
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteVehicle(${v.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    function getStatusBadge(status) {
+        const colors = { 'active': 'success', 'maintenance': 'warning', 'inactive': 'secondary' };
+        return `<span class="badge bg-${colors[status] || 'secondary'} text-capitalize">${status}</span>`;
+    }
+
+    function openVehicleModal() {
+        document.getElementById('vehicleForm').reset();
+        document.getElementById('vehicleId').value = '';
+        document.getElementById('modalTitle').innerText = 'Add Vehicle';
+        modal.show();
+    }
+
+    function editVehicle(v) {
+        document.getElementById('vehicleId').value = v.id;
+        document.getElementById('regNumber').value = v.registration_number;
+        document.getElementById('vehicleType').value = v.vehicle_type;
+        document.getElementById('driverName').value = v.driver_name;
+        document.getElementById('status').value = v.status;
+        document.getElementById('modalTitle').innerText = 'Edit Vehicle';
+        modal.show();
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const id = document.getElementById('vehicleId').value;
+        const payload = {
+            registration_number: document.getElementById('regNumber').value,
+            vehicle_type: document.getElementById('vehicleType').value,
+            driver_name: document.getElementById('driverName').value,
+            status: document.getElementById('status').value
+        };
+
+        try {
+            if (id) {
+                await api.put(`/api/vehicles/${id}/`, payload);
+            } else {
+                await api.post('/api/vehicles/', payload);
+            }
+            modal.hide();
+            Swal.fire('Saved!', 'Vehicle saved successfully.', 'success');
+            loadVehicles();
+        } catch (e) {
+            Swal.fire('Error', 'Failed to save vehicle.', 'error');
+        }
+    }
+
+    async function deleteVehicle(id) {
+        if (await Swal.fire({ title: 'Delete?', text: 'Cannot be undone', icon: 'warning', showCancelButton: true }).then(r => r.isConfirmed)) {
+            try {
+                await api.delete(`/api/vehicles/${id}/`);
+                loadVehicles();
+                Swal.fire('Deleted', '', 'success');
+            } catch (e) { Swal.fire('Error', 'Failed to delete', 'error'); }
+        }
+    }
+</script>
+{% endblock %}

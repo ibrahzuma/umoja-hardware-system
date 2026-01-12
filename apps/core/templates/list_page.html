@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">{{ title }}</h4>
+        <button class="btn btn-primary" onclick="openCreateModal()">
+            <i class="bi bi-plus-lg"></i> Add New
+        </button>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover" id="data-table">
+                <thead>
+                    <tr id="table-headers">
+                        <!-- Headers will be injected by JS -->
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <tr>
+                        <td colspan="5" class="text-center">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Generic Create/Edit Modal -->
+<div class="modal fade" id="formModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">Add Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="genericBoxForm">
+                    <!-- Fields injected by JS -->
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="submitForm()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/api_service.js"></script>
+<script>
+    const RESOURCE = "{{ resource }}";
+    const api = new ApiService();
+    let fields = []; // To be defined based on resource
+
+    async function loadData() {
+        try {
+            let url;
+            if (RESOURCE.includes('?')) {
+                const parts = RESOURCE.split('?');
+                url = `/api/${parts[0]}/?${parts[1]}`;
+            } else {
+                url = `/api/${RESOURCE}/`;
+            }
+            const data = await api.get(url);
+            const items = Array.isArray(data) ? data : data.results;
+            renderTable(items);
+        } catch (error) {
+            console.error(error);
+            document.getElementById('table-body').innerHTML = `<tr><td class="text-danger">Error loading data</td></tr>`;
+        }
+    }
+
+    function renderTable(items) {
+        const thead = document.getElementById('table-headers');
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+        thead.innerHTML = '';
+
+        if (items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="100%" class="text-center">No data found</td></tr>';
+            return;
+        }
+
+        // Auto-detect columns from first item (naive approach, can be improved with config)
+        const columns = Object.keys(items[0]).filter(k => !['id', 'created_at'].includes(k));
+
+        // Render Headers
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.innerText = col.replace(/_/g, ' ').toUpperCase();
+            thead.appendChild(th);
+        });
+        const actionTh = document.createElement('th');
+        actionTh.innerText = 'ACTIONS';
+        thead.appendChild(actionTh);
+
+        // Render Rows
+        items.forEach(item => {
+            const tr = document.createElement('tr');
+            columns.forEach(col => {
+                const td = document.createElement('td');
+                td.innerText = item[col] || '-';
+                tr.appendChild(td);
+            });
+
+            // Actions
+            const actionsTd = document.createElement('td');
+            actionsTd.innerHTML = `
+                <button class="btn btn-sm btn-info" onclick="editItem(${item.id})"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="deleteItem(${item.id})"><i class="bi bi-trash"></i></button>
+            `;
+            tr.appendChild(actionsTd);
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Very basic placeholder for Create/Edit
+    function openCreateModal() {
+        const modal = new bootstrap.Modal(document.getElementById('formModal'));
+        modal.show();
+    }
+
+    function editItem(id) {
+        alert("Edit not implemented in this quick demo yet: " + id);
+    }
+
+    async function deleteItem(id) {
+        if (confirm("Are you sure?")) {
+            await api.delete(`/api/${RESOURCE}/${id}/`);
+            loadData();
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadData);
+</script>
+{% endblock %}

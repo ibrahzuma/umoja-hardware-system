@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-receipt me-2"></i>Record Expense</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+
+                        {% if form.errors %}
+                        <div class="alert alert-danger">
+                            Please correct the errors below.
+                        </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <label for="{{ form.category.id_for_label }}" class="form-label">Category</label>
+                            {{ form.category }}
+                            {% if form.category.errors %}
+                            <div class="text-danger small">{{ form.category.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.amount.id_for_label }}" class="form-label">Amount</label>
+                            <div class="input-group">
+                                <span class="input-group-text">KES</span>
+                                {{ form.amount }}
+                            </div>
+                            {% if form.amount.errors %}
+                            <div class="text-danger small">{{ form.amount.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.date_incurred.id_for_label }}" class="form-label">Date</label>
+                            {{ form.date_incurred }}
+                            {% if form.date_incurred.errors %}
+                            <div class="text-danger small">{{ form.date_incurred.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="text-danger small">{{ form.description.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="{{ form.receipt_image.id_for_label }}" class="form-label">Receipt Image</label>
+                            {{ form.receipt_image }}
+                            <div class="form-text">Take a photo or upload a receipt image.</div>
+                            {% if form.receipt_image.errors %}
+                            <div class="text-danger small">{{ form.receipt_image.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save me-2"></i>Save Expense
+                            </button>
+                            <a href="{% url 'finance:expenses_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

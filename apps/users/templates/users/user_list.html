@@ -1,0 +1,203 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">System Users</h2>
+    <a href="{% url 'user_create' %}" class="btn btn-primary">
+        <i class="bi bi-person-plus"></i> Add User
+    </a>
+</div>
+
+<!-- Search and Filter -->
+<div class="card shadow-sm mb-4 border-0 bg-light">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0 ps-0" id="searchInput"
+                        placeholder="Search username, email...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="roleFilter">
+                    <option value="">All Roles</option>
+                    <!-- Populated dynamically or hardcoded if simple -->
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" id="branchFilter">
+                    <option value="">All Branches</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-outline-secondary" onclick="resetFilters()">Reset</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Username</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Branch</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let allUsers = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await Promise.all([loadReferences(), loadUsers()]);
+
+        // Event Listeners
+        document.getElementById('searchInput').addEventListener('keyup', filterUsers);
+        document.getElementById('roleFilter').addEventListener('change', filterUsers);
+        document.getElementById('branchFilter').addEventListener('change', filterUsers);
+    });
+
+    async function loadReferences() {
+        try {
+            const [roleRes, branchRes] = await Promise.all([
+                fetch('/api/roles/'),
+                fetch('/api/branches/')
+            ]);
+            const roles = await roleRes.json();
+            const branches = await branchRes.json();
+
+            const rSelect = document.getElementById('roleFilter');
+            roles.forEach(r => rSelect.add(new Option(r.name, r.name)));
+
+            const bSelect = document.getElementById('branchFilter');
+            branches.forEach(b => bSelect.add(new Option(b.name, b.name)));
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadUsers() {
+        const tbody = document.getElementById('userTableBody');
+        try {
+            const res = await fetch('/api/users/');
+            if (!res.ok) throw new Error(`Status: ${res.status}`);
+            const data = await res.json();
+            allUsers = data;
+            renderTable(allUsers);
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i> Error loading users: ${e.message}
+            </td></tr>`;
+        }
+    }
+
+    function renderTable(users) {
+        const tbody = document.getElementById('userTableBody');
+        tbody.innerHTML = '';
+
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No users match criteria</td></tr>';
+            return;
+        }
+
+        users.forEach(u => {
+            const tr = document.createElement('tr');
+            // Role display: check if role_name exists (from serializer) or fallback to role field
+            // The filter uses the displayed text
+            const displayRole = u.role_name || u.role || 'No Role';
+            const displayBranch = u.branch_name || 'All';
+
+            tr.innerHTML = `
+                <td class="ps-4 fw-bold">${u.username}</td>
+                <td>${u.email || '-'}</td>
+                <td><span class="badge bg-info text-dark">${displayRole}</span></td>
+                <td>${displayBranch}</td>
+                <td><span class="badge bg-success">Active</span></td>
+                <td>
+                     <a href="/users/edit/${u.id}/" class="btn btn-sm btn-outline-primary me-1">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function filterUsers() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const role = document.getElementById('roleFilter').value.toLowerCase();
+        const branch = document.getElementById('branchFilter').value.toLowerCase();
+
+        const filtered = allUsers.filter(u => {
+            const uName = (u.username || '').toLowerCase();
+            const uEmail = (u.email || '').toLowerCase();
+            const uRole = (u.role_name || u.role || '').toLowerCase();
+            const uBranch = (u.branch_name || '').toLowerCase();
+
+            const matchesTerm = uName.includes(term) || uEmail.includes(term);
+            const matchesRole = role ? uRole.includes(role) : true;
+            const matchesBranch = branch ? uBranch.includes(branch) : true;
+
+            return matchesTerm && matchesRole && matchesBranch;
+        });
+
+        renderTable(filtered);
+    }
+
+    function resetFilters() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('roleFilter').value = '';
+        document.getElementById('branchFilter').value = '';
+        renderTable(allUsers);
+    }
+
+    async function deleteUser(id) {
+        const result = await Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                const res = await fetch(`/api/users/${id}/`, {
+                    method: 'DELETE',
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                });
+
+                if (res.ok) {
+                    Swal.fire('Deleted!', 'User has been deleted.', 'success');
+                    loadUsers();
+                } else {
+                    Swal.fire('Error', 'Failed to delete user.', 'error');
+                }
+            } catch (e) { console.error(e); }
+        }
+    }
+</script>
+{% endblock %}

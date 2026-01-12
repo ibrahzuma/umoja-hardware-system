@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Recent Sales</h2>
+    <span class="text-muted">Last 20 transactions</span>
+</div>
+
+<!-- Sales Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Time</th>
+                        <th>Invoice</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="recentTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const response = await fetch('/api/sales/');
+            let data = await response.json();
+
+            // Client side limiting for "Recent" since default API returns all (paginated maybe)
+            // Ideally backend should support ?limit=20
+            data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            data = data.slice(0, 20);
+
+            const tbody = document.getElementById('recentTableBody');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No recent sales</td></tr>';
+                return;
+            }
+
+            data.forEach(s => {
+                let statusBadge = '';
+                if (s.payment_status === 'Paid') statusBadge = '<span class="badge bg-success">Paid</span>';
+                else if (s.payment_status === 'Partial') statusBadge = '<span class="badge bg-warning text-dark">Partial</span>';
+                else statusBadge = '<span class="badge bg-danger">Credit</span>';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleString()}</td>
+                    <td class="fw-bold">${s.invoice_number}</td>
+                    <td>${s.customer_name}</td>
+                    <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
+                    <td>${statusBadge}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) { console.error(e); }
+    });
+</script>
+{% endblock %}

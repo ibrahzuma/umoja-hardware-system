@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card shadow-sm border-0 border-top border-primary border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-primary mb-0"><i class="bi bi-shop me-2"></i>Add New Branch</h4>
+            </div>
+            <div class="card-body">
+                <form id="branchForm">
+                    <div class="mb-3">
+                        <label class="form-label">Branch Name</label>
+                        <input type="text" class="form-control" id="name" required
+                            placeholder="e.g. Main Street Branch">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <textarea class="form-control" id="address" rows="3"
+                            placeholder="Enter full address"></textarea>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg fw-bold">Create Branch</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.getElementById('branchForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const data = {
+            name: document.getElementById('name').value,
+            address: document.getElementById('address').value
+        };
+
+        try {
+            const res = await fetch('/api/branches/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Branch Created',
+                    showConfirmButton: false,
+                    timer: 1500
+                }).then(() => {
+                    window.location.href = "{% url 'inventory:branches_list' %}";
+                });
+            } else {
+                Swal.fire('Error', 'Failed to create branch', 'error');
+            }
+        } catch (e) { console.error(e); }
+    });
+</script>
+{% endblock %}

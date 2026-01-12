@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2 class="text-primary fw-bold mb-4">Inventory Aging Report</h2>
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> This report visualizes how long items have been in stock.
+    (Requires advanced tracking of stock lot dates - showing current stock for now).
+</div>
+<div class="card shadow-sm">
+    <div class="card-body">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="bg-light">
+                <tr>
+                    <th>Product</th>
+                    <th>Current Quantity</th>
+                    <th>Last Restock Date</th>
+                    <th>Aging (Days)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="4" class="text-center text-muted py-5">No aging data available (Feature coming soon)
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

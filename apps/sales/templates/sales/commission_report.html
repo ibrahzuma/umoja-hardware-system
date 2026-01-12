@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container-fluid">
+    <div
+        class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Employee Commissions Report</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <form class="d-flex gap-2" method="get">
+                <input type="date" name="start_date" class="form-control" value="{{ start_date|date:'Y-m-d' }}">
+                <input type="date" name="end_date" class="form-control" value="{{ end_date|date:'Y-m-d' }}">
+                <button type="submit" class="btn btn-outline-primary">Filter</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover" id="commissionTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Staff Member</th>
+                            <th class="text-end">Total Sales Generated</th>
+                            <th class="text-end">Total Commission Earned</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if sales_data %}
+                        {% for row in sales_data %}
+                        <tr>
+                            <td>
+                                <strong>{{ row.sale__user__first_name }} {{ row.sale__user__last_name }}</strong>
+                                <span class="text-muted small">({{ row.sale__user__username }})</span>
+                            </td>
+                            <td class="text-end">KES {{ row.total_sales|floatformat:2 }}</td>
+                            <td class="text-end fw-bold text-success">KES {{ row.total_commission|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-4">
+                                No sales data found for this period.
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td>Totals</td>
+                            <td class="text-end">
+                                {# You can calculate totals in view or JS, passing simpler for now #}
+                                -
+                            </td>
+                            <td class="text-end">
+                                -
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

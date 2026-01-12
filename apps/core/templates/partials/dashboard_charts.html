@@ -1,0 +1,17 @@
+<!-- Main Chart -->
+{% if user.is_superuser or user.is_admin_role or user.is_sales_manager %}
+<div class="col-md-8">
+    <div class="chart-container h-100">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="fw-bold mb-0">Sales Performance</h5>
+            <select class="form-select form-select-sm w-auto border-0 bg-light">
+                <option>Last 30 Days</option>
+                <option>This Year</option>
+            </select>
+        </div>
+        <div style="height: 300px;">
+            <canvas id="salesChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endif %}

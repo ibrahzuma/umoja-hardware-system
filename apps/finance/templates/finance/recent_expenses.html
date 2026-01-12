@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-danger fw-bold">Recent Expenses</h2>
+    <a href="{% url 'finance:expense_create' %}" class="btn btn-danger">
+        <i class="bi bi-plus-lg"></i> Record New
+    </a>
+</div>
+
+<div class="card shadow-sm border-0 border-start border-danger border-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                        <th>Branch</th>
+                        <th class="text-end pe-4">Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="expenseTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const res = await fetch('/api/expenses/');
+            let data = await res.json();
+
+            // Sort & Limit
+            data.sort((a, b) => new Date(b.date_incurred) - new Date(a.date_incurred));
+            data = data.slice(0, 20);
+
+            const tbody = document.getElementById('expenseTableBody');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No expenses found</td></tr>';
+                return;
+            }
+
+            data.forEach(e => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4 text-muted">${new Date(e.date_incurred).toLocaleDateString()}</td>
+                    <td class="fw-bold">${e.description}</td>
+                    <td><span class="badge bg-light text-dark border">${e.category_name || '-'}</span></td>
+                    <td>${e.branch_name || '-'}</td>
+                    <td class="text-end pe-4 fw-bold text-danger">TZS ${parseFloat(e.amount).toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) { console.error(e); }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+<!-- Real-time Updates -->
+<div
+    class="{% if user.is_superuser or user.is_admin_role or user.is_sales_manager %}col-md-4{% else %}col-12{% endif %}">
+    <div class="card metric-card h-100">
+        <div class="card-header bg-transparent border-0 pt-4 px-4">
+            <h5 class="fw-bold mb-0"><i class="bi bi-broadcast text-danger me-2"></i>Live Activity</h5>
+        </div>
+        <div class="card-body px-4">
+            <div id="stock-updates-list" class="overflow-auto" style="max-height: 320px;">
+                <div class="text-center py-4 text-muted" id="activity-placeholder">
+                    <i class="bi bi-broadcast text-success animate__animated animate__pulse animate__infinite fs-4"></i>
+                    <p class="small mb-0 mt-2 fw-bold">System Live</p>
+                    <p class="small text-muted mb-0">Waiting for events...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

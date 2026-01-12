@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <div class="card shadow-sm border-0 border-top border-primary border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-primary mb-0"><i class="bi bi-upload me-2"></i>Import Customers</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info py-2">
+                    <i class="bi bi-info-circle me-1"></i> Upload a CSV file with columns: <strong>Name, Phone, Email,
+                        Address</strong>
+                    <div class="mt-2">
+                        <a href="{% url 'sales:download_customer_template' %}"
+                            class="btn btn-sm btn-outline-info bg-white text-info fw-bold">
+                            <i class="bi bi-download"></i> Download Template
+                        </a>
+                    </div>
+                </div>
+                <div class="mb-3 text-center p-4 border rounded bg-light">
+                    <input type="file" id="fileInput" class="form-control mb-3" accept=".csv">
+                    <button class="btn btn-primary" onclick="uploadEnc()">
+                        <i class="bi bi-cloud-upload"></i> Upload & Process
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    async function uploadEnc() {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            Swal.fire('Error', 'Please select a file', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        Swal.fire({
+            title: 'Uploading...',
+            text: 'Processing customer list',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        try {
+            const resp = await fetch('/api/customers/import/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: formData
+            });
+
+            const data = await resp.json();
+
+            if (resp.ok) {
+                Swal.fire('Success', data.message || 'Customers imported successfully', 'success')
+                    .then(() => {
+                        window.location.href = "{% url 'sales:customers_list' %}";
+                    });
+            } else {
+                let errorMsg = data.error || 'Failed to import customers';
+                Swal.fire('Error', errorMsg, 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Connection error', 'error');
+        }
+    }
+</script>
+{% endblock %}

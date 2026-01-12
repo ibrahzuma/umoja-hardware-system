@@ -1,0 +1,56 @@
+{% if user.is_superuser or user.is_sales_manager %}
+<!-- Sales Operations Center -->
+<div class="card border-0 shadow-sm mb-4 overflow-hidden">
+    <div class="card-body p-4 position-relative" style="background: linear-gradient(135deg, #1e1b4b, #312e81);">
+        <!-- Decorative Elements -->
+        <div class="position-absolute top-0 end-0 p-3 opacity-10">
+            <i class="bi bi-graph-up-arrow text-white" style="font-size: 8rem;"></i>
+        </div>
+
+        <div class="row align-items-center position-relative z-1 text-white">
+            <div class="col-md-5 mb-3 mb-md-0">
+                <h3 class="fw-bold mb-1">Sales Command</h3>
+                <p class="text-white-50 mb-4">Performance & Approvals</p>
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'sales:sale_list' %}" class="btn btn-outline-light rounded-pill px-4">
+                        View All Sales
+                    </a>
+                </div>
+            </div>
+
+            <div class="col-md-7">
+                <div class="row g-3">
+                    <!-- Pending Approvals -->
+                    <div class="col-6">
+                        <div class="p-3 rounded-4"
+                            style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="badge bg-warning text-dark">Approvals</span>
+                                <i class="bi bi-hourglass-split text-warning"></i>
+                            </div>
+                            <h2 class="fw-bold mb-0">{{ pending_approvals|default:0 }}</h2>
+                            <small class="text-white-50">Pending Orders</small>
+                        </div>
+                    </div>
+
+                    <!-- Today's Revenue -->
+                    <div class="col-6">
+                        <div class="p-3 rounded-4"
+                            style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="badge bg-success">Today</span>
+                                <i class="bi bi-currency-dollar text-success"></i>
+                            </div>
+                            <div class="d-flex align-items-baseline">
+                                <h3 class="fw-bold mb-0 me-1">{{ todays_revenue|default:0|floatformat:0 }}</h3>
+                            </div>
+                            <small class="text-white-50">{{ todays_sales_count|default:0 }} Sales Today</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

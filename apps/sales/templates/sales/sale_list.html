@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Sales History</h2>
+    <a href="{% url 'sales:pos' %}" class="btn btn-success">
+        <i class="bi bi-cart-plus"></i> New Sale (POS)
+    </a>
+</div>
+
+<!-- Sales Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="salesTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th>Branch</th>
+                        <th>Total Amount</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="salesTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading sales data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Receipt Modal (Simple View) -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Receipt Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="receiptBody">
+                <!-- Content via JS -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button class="btn btn-primary" onclick="printReceipt()"><i class="bi bi-printer"></i> Print</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let sales = [];
+    const receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
+
+    document.addEventListener('DOMContentLoaded', fetchSales);
+
+    async function fetchSales() {
+        try {
+            const response = await fetch('/api/sales/');
+            sales = await response.json();
+            renderTable(sales);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('salesTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No sales found</td></tr>';
+            return;
+        }
+
+        // Sort by date desc
+        data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        data.forEach(s => {
+            let statusBadge = '<span class="badge bg-secondary">Unknown</span>';
+            const status = s.payment_status || 'Paid';
+
+            if (status === 'Paid') statusBadge = '<span class="badge bg-success">Paid</span>';
+            else if (status === 'Partial') statusBadge = '<span class="badge bg-warning text-dark">Partial</span>';
+            else statusBadge = '<span class="badge bg-danger">Credit</span>';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleString()}</td>
+                <td class="fw-bold text-primary">${s.invoice_number}</td>
+                <td>${s.customer_name}</td>
+                <td><span class="badge bg-light text-dark border">Branch ${s.branch}</span></td>
+                <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
+                <td>${statusBadge}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt(${s.id})">
+                        <i class="bi bi-eye"></i> View
+                    </button>
+                    <!-- Only show delete for dispatched orders if logic permits, or generally allow deleting history if authorized -->
+                    <!-- Assuming 'dispatched' status orders are final but deletable by admin -->
+                    <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteSale(${s.id})">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function viewReceipt(id) {
+        const sale = sales.find(s => s.id === id);
+        if (!sale) return;
+
+        const body = document.getElementById('receiptBody');
+        // Simple Receipt Layout
+        body.innerHTML = `
+            <div class="text-center mb-3">
+                <h4 class="fw-bold">UMOJA HARDWARE</h4>
+                <p class="text-muted mb-0">Branch ID: ${sale.branch}</p>
+                <p class="text-muted small">${new Date(sale.created_at).toLocaleString()}</p>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between mb-2">
+                <span>Invoice:</span>
+                <span class="fw-bold">${sale.invoice_number}</span>
+            </div>
+            <div class="d-flex justify-content-between mb-3">
+                <span>Customer:</span>
+                <span>${sale.customer_name}</span>
+            </div>
+            
+            <table class="table table-sm table-borderless">
+                <thead>
+                    <tr class="border-bottom">
+                        <th>Item</th>
+                        <th class="text-center">Qty</th>
+                        <th class="text-end">Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sale.items_response ? sale.items_response.map(item => `
+                        <tr>
+                            <td>${item.product_name}</td>
+                            <td class="text-center">${item.quantity}</td>
+                            <td class="text-end">TZS ${item.subtotal}</td>
+                        </tr>
+                    `).join('') : '<tr><td colspan="3" class="text-center">Items info not populated</td></tr>'}
+                </tbody>
+                <tfoot class="border-top">
+                    <tr>
+                        <th colspan="2">Total</th>
+                        <th class="text-end">TZS ${parseFloat(sale.total_amount).toFixed(2)}</th>
+                    </tr>
+                    <tr>
+                        <th colspan="2">Paid</th>
+                        <th class="text-end">TZS ${parseFloat(sale.amount_paid || 0).toFixed(2)}</th>
+                    </tr>
+                    <tr>
+                        <th colspan="2">Balance</th>
+                        <th class="text-end text-danger">TZS ${parseFloat(sale.balance || 0).toFixed(2)}</th>
+                    </tr>
+                </tfoot>
+            </table>
+        `;
+        receiptModal.show();
+    }
+
+    function printReceipt() {
+        window.print();
+    }
+
+    async function deleteSale(id) {
+        const result = await Swal.fire({
+            title: 'Delete Order?',
+            text: "This will permanently delete the order. If it was dispatched, stock will be restored.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                // Get CSRF token if needed, but fetch usually needs headers manually set for CSRF
+                // Assuming we have a way to include headers or using a helper if available, 
+                // but here using raw fetch, we might need X-CSRFToken
+                const csrftoken = getCookie('csrftoken');
+                const response = await fetch(`/api/sales/${id}/`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': csrftoken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    Swal.fire('Deleted!', 'Order has been deleted.', 'success');
+                    fetchSales(); // Refresh table
+                } else {
+                    Swal.fire('Error', 'Failed to delete order.', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                Swal.fire('Error', 'Failed to delete order.', 'error');
+            }
+        }
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+</script>
+{% endblock %}

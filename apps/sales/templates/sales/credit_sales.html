@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-danger fw-bold">Credit Sales (Outstanding)</h2>
+</div>
+
+<!-- Sales Table -->
+<div class="card shadow-sm border-0 border-start border-danger border-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="creditTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Customer</th>
+                        <th>Invoice #</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="creditTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading credit sales...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold">Record Payment</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm">
+                    <input type="hidden" id="saleId">
+                    <div class="mb-3">
+                        <label class="form-label">Customer</label>
+                        <input type="text" class="form-control" id="payCustomer" readonly>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Balance Due</label>
+                            <input type="text" class="form-control text-danger fw-bold" id="payBalance" readonly>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Payment Method</label>
+                            <select class="form-select" id="payMethod">
+                                <option value="cash">Cash</option>
+                                <option value="credit">Credit</option>
+                                <option value="bank">Bank Transfer</option>
+                                <option value="mobile">Mobile Money</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount</label>
+                        <input type="number" step="0.01" class="form-control" id="payAmount" required>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success fw-bold">Confirm Payment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let creditSales = [];
+    const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+
+    document.addEventListener('DOMContentLoaded', fetchCreditSales);
+
+    async function fetchCreditSales() {
+        try {
+            // Using backend filtering
+            const response = await fetch('/api/sales/?status=credit');
+            creditSales = await response.json();
+            renderTable(creditSales);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('creditTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No outstanding credit sales</td></tr>';
+            return;
+        }
+
+        data.forEach(s => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleDateString()}</td>
+                <td class="fw-bold">${s.customer_name}</td>
+                <td><small class="text-muted">${s.invoice_number}</small></td>
+                <td>TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
+                <td class="text-success">TZS ${parseFloat(s.amount_paid).toFixed(2)}</td>
+                <td class="fw-bold text-danger">TZS ${parseFloat(s.balance).toFixed(2)}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-success btn-sm" onclick="openPaymentModal(${s.id})">
+                        <i class="bi bi-wallet2"></i> Pay
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openPaymentModal(id) {
+        const sale = creditSales.find(s => s.id === id);
+        if (!sale) return;
+
+        document.getElementById('saleId').value = sale.id;
+        document.getElementById('payCustomer').value = sale.customer_name;
+        document.getElementById('payBalance').value = parseFloat(sale.balance).toFixed(2);
+        document.getElementById('payAmount').value = parseFloat(sale.balance).toFixed(2); // Default to full balance
+        document.getElementById('payAmount').max = sale.balance; // Prevent overpayment? Optional.
+
+        paymentModal.show();
+    }
+
+    document.getElementById('paymentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const data = {
+            sale: document.getElementById('saleId').value,
+            amount: document.getElementById('payAmount').value,
+            payment_method: document.getElementById('payMethod').value,
+            transaction_type: 'income'
+        };
+
+        try {
+            const res = await fetch('/api/transactions/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                paymentModal.hide();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Payment Recorded',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                fetchCreditSales(); // Refresh list
+            } else {
+                const err = await res.json();
+                Swal.fire('Error', JSON.stringify(err), 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Failed to process payment', 'error');
+        }
+    });
+</script>
+{% endblock %}

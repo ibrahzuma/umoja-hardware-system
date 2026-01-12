@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card shadow-sm border-0 border-top border-danger border-4">
+            <div class="card-header bg-white py-3">
+                <h4 class="fw-bold text-danger mb-0"><i class="bi bi-journal-minus me-2"></i>Record New Expense</h4>
+            </div>
+            <div class="card-body">
+                <form id="expenseForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Category</label>
+                            <select class="form-select" id="categorySelect" required>
+                                <option value="">Select Category...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Branch</label>
+                            <select class="form-select" id="branchSelect" required>
+                                <option value="">Select Branch...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <input type="text" class="form-control" id="description"
+                            placeholder="e.g. Electricity Bill for Jan" required>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Amount</label>
+                            <div class="input-group">
+                                <span class="input-group-text">$</span>
+                                <input type="number" step="0.01" class="form-control" id="amount" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Date Incurred</label>
+                            <input type="date" class="form-control" id="dateIncurred" required>
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-danger btn-lg fw-bold">
+                            <i class="bi bi-check-circle me-1"></i> Record Expense
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Set Today
+        document.getElementById('dateIncurred').valueAsDate = new Date();
+
+        try {
+            const [catRes, branchRes] = await Promise.all([
+                fetch('/api/expense-categories/'),
+                fetch('/api/branches/')
+            ]);
+
+            const categories = await catRes.json();
+            const branches = await branchRes.json();
+
+            const cSelect = document.getElementById('categorySelect');
+            categories.forEach(c => cSelect.add(new Option(c.name, c.id)));
+
+            const bSelect = document.getElementById('branchSelect');
+            branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
+        } catch (e) { console.error(e); }
+
+        document.getElementById('expenseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                category: document.getElementById('categorySelect').value,
+                branch: document.getElementById('branchSelect').value,
+                description: document.getElementById('description').value,
+                amount: document.getElementById('amount').value,
+                date_incurred: document.getElementById('dateIncurred').value
+            };
+
+            try {
+                const res = await fetch('/api/expenses/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Expense Recorded',
+                        showConfirmButton: false,
+                        timer: 1500
+                    }).then(() => {
+                        window.location.href = "{% url 'finance:expenses_list' %}";
+                    });
+                } else {
+                    Swal.fire('Error', 'Failed to save expense', 'error');
+                }
+            } catch (e) { console.error(e); }
+        });
+    });
+</script>
+{% endblock %}
