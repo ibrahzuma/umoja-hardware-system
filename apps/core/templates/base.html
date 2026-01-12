@@ -140,6 +140,40 @@
                     }
                 });
             });
+
+            // Auto-logout after inactivity (20 minutes)
+            let inactivityTime = function () {
+                let time;
+                const logoutForm = document.getElementById('logout-form-nav');
+
+                // 20 minutes in milliseconds
+                const timeoutLimit = 20 * 60 * 1000;
+
+                window.onload = resetTimer;
+                document.onmousemove = resetTimer;
+                document.onkeypress = resetTimer;
+                document.onmousedown = resetTimer;
+                document.onclick = resetTimer;
+                document.onscroll = resetTimer;
+                document.onkeypress = resetTimer;
+
+                function logout() {
+                    if (logoutForm && (USER_ID !== "None" && USER_ID !== "")) {
+                        console.log("Inactivity timeout reached. Logging out...");
+                        logoutForm.submit();
+                    }
+                }
+
+                function resetTimer() {
+                    clearTimeout(time);
+                    time = setTimeout(logout, timeoutLimit);
+                }
+            };
+
+            // Only start tracker if user is logged in
+            if (USER_ID !== "None" && USER_ID !== "") {
+                inactivityTime();
+            }
         });
     </script>
     <script src="{% static 'js/socket_service.js' %}"></script>
