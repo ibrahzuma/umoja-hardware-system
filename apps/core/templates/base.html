@@ -35,18 +35,19 @@
 
     <div class="wrapper">
         <!-- Sidebar -->
-        <div class="sidebar-header d-flex align-items-center justify-content-between">
-            <div class="d-flex align-items-center">
-                <img src="{% static 'img/logo.png' %}" alt="Logo"
-                    style="width: 40px; height: 40px; margin-right: 10px; border-radius: 50%; object-fit: cover;">
-                <h3 class="mb-0">UMOJA</h3>
+        <nav id="sidebar">
+            <div class="sidebar-header d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <img src="{% static 'img/logo.png' %}" alt="Logo"
+                        style="width: 40px; height: 40px; margin-right: 10px; border-radius: 50%; object-fit: cover;">
+                    <h3 class="mb-0">UMOJA</h3>
+                </div>
+                <button type="button" class="btn btn-link text-white d-lg-none p-0" id="sidebarCloseBtn">
+                    <i class="bi bi-x-lg fs-4"></i>
+                </button>
             </div>
-            <button type="button" class="btn btn-link text-white d-lg-none p-0" id="sidebarCloseBtn">
-                <i class="bi bi-x-lg fs-4"></i>
-            </button>
-        </div>
-        <!-- Sidebar Content -->
-        {% include 'partials/sidebar_content.html' %}
+            <!-- Sidebar Content -->
+            {% include 'partials/sidebar_content.html' %}
         </nav>
 
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
