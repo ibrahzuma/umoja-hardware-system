@@ -2,7 +2,7 @@
 <div class="row g-4 mb-4">
     <!-- Revenue Card (Admin Only) -->
     {% if user.is_superuser or user.is_admin_role or user.is_sales_manager %}
-    <div class="col-md-3">
+    <div class="col-sm-6 col-md-4 col-lg-3">
         <div class="card metric-card h-100">
             <div class="card-body">
                 <div class="metric-icon bg-primary bg-opacity-10 text-primary">
@@ -18,7 +18,7 @@
     </div>
     {% endif %}
     <!-- Sales Card -->
-    <div class="col-md-3">
+    <div class="col-sm-6 col-md-4 col-lg-3">
         <div class="card metric-card h-100">
             <div class="card-body">
                 <div class="metric-icon bg-success bg-opacity-10 text-success">
@@ -34,7 +34,7 @@
     </div>
     <!-- Inventory Card (Admin Only) -->
     {% if user.is_superuser or user.is_admin_role %}
-    <div class="col-md-3">
+    <div class="col-sm-6 col-md-4 col-lg-3">
         <div class="card metric-card h-100">
             <div class="card-body">
                 <div class="metric-icon bg-info bg-opacity-10 text-info">
@@ -50,7 +50,7 @@
     </div>
     {% endif %}
     <!-- Alert Card -->
-    <div class="col-md-3">
+    <div class="col-sm-6 col-md-4 col-lg-3">
         <div class="card metric-card h-100 border-start border-danger border-4">
             <div class="card-body">
                 <div class="metric-icon bg-danger bg-opacity-10 text-danger">

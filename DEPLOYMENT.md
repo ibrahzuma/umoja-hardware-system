@@ -90,6 +90,7 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
 
 4.  **Database & Static Files**:
     ```bash
+    mkdir -p media  # Create media folder if it doesn't exist
     python manage.py migrate
     python manage.py collectstatic --noinput
     ```
@@ -147,7 +148,12 @@ Since you are using Django Channels, you need an ASGI server (Daphne).
         
         # Serve Static Files
         location /static/ {
-            root /var/www/app/staticfiles;
+            alias /var/www/app/staticfiles/;
+        }
+
+        # Serve Media Files (Uploads)
+        location /media/ {
+            alias /var/www/app/media/;
         }
 
         # Proxy to Daphne

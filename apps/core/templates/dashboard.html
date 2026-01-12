@@ -159,7 +159,7 @@
 
     <!-- Quick Services -->
     <div class="row g-4 mt-2">
-        <div class="col-md-4">
+        <div class="col-sm-6 col-lg-4">
             <a href="{% url 'sales:pos' %}" class="quick-action-card">
                 <div class="metric-icon bg-white bg-opacity-20 mb-0">
                     <i class="bi bi-pc-display"></i>
@@ -170,7 +170,7 @@
                 </div>
             </a>
         </div>
-        <div class="col-md-4">
+        <div class="col-sm-6 col-lg-4">
             <a href="{% url 'inventory:inventory_list' %}" class="quick-action-card"
                 style="background: linear-gradient(135deg, #4cc9f0, #4895ef);">
                 <div class="metric-icon bg-white bg-opacity-20 mb-0">
@@ -182,18 +182,20 @@
                 </div>
             </a>
         </div>
-        <div class="col-md-4">
+        <div class="col-sm-6 col-lg-4">
             <a href="{% url 'finance:expenses_list' %}" class="quick-action-card"
                 style="background: linear-gradient(135deg, #7209b7, #560bad);">
                 <div class="metric-icon bg-white bg-opacity-20 mb-0">
                     <i class="bi bi-wallet2"></i>
                 </div>
                 <div>
+                    <h6 class="mb-0 fw-bold">View Expenses</h6>
+                    <small class="opacity-75">Track outgoing cash</small>
                 </div>
             </a>
         </div>
         {% if user.is_superuser or user.is_manager %}
-        <div class="col-md-4">
+        <div class="col-sm-6 col-lg-4">
             <a href="{% url 'sales:dispatch_dashboard' %}" class="quick-action-card"
                 style="background: linear-gradient(135deg, #ff9f1c, #f3722c);">
                 <div class="metric-icon bg-white bg-opacity-20 mb-0">
