@@ -4,25 +4,25 @@
 {% block content %}
 <div class="row h-100 g-3">
     <!-- Product Grid Section -->
-    <div class="col-md-8 d-flex flex-column h-100">
+    <div class="col-12 col-lg-8 d-flex flex-column h-100">
         <!-- Search & Filters -->
         <div class="card shadow-sm mb-3">
             <div class="card-body">
                 <div class="row g-2">
-                    <div class="col-md-6">
+                    <div class="col-12 col-md-6">
                         <div class="input-group">
                             <span class="input-group-text bg-white border-end-0"><i
                                     class="bi bi-search text-muted"></i></span>
                             <input type="text" id="productSearch" class="form-control border-start-0 ps-0"
-                                placeholder="Scan barcode or search product..." autocomplete="off">
+                                placeholder="Search..." autocomplete="off">
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-6 col-md-4">
                         <select id="categoryFilter" class="form-select">
                             <option value="">All Categories</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-6 col-md-2">
                         <select id="branchSelect" class="form-select">
                             <!-- Populated via JS -->
                         </select>
@@ -32,8 +32,8 @@
         </div>
 
         <!-- Scrollable Product Grid -->
-        <div class="card shadow-sm flex-grow-1 overflow-hidden" style="min-height: 0;">
-            <div class="card-body overflow-auto p-3" id="productGrid">
+        <div class="card shadow-sm flex-grow-1 overflow-hidden" style="min-height: 400px;">
+            <div class="card-body overflow-auto p-2" id="productGrid">
                 <div class="text-center py-5 text-muted">
                     <div class="spinner-border text-primary" role="status"></div>
                     <p class="mt-2">Loading products...</p>
@@ -43,7 +43,7 @@
     </div>
 
     <!-- Cart Sidebar -->
-    <div class="col-md-4 d-flex flex-column h-100">
+    <div class="col-12 col-lg-4 d-flex flex-column h-100" id="cartSidebar">
         <div class="card shadow-sm h-100 border-0 border-start border-primary border-4">
             <div class="card-header bg-white py-3">
                 <h5 class="fw-bold mb-0 text-primary"><i class="bi bi-cart3 me-2"></i>Current Sale</h5>
@@ -278,7 +278,7 @@
             const hasStock = stockQty > 0;
 
             const col = document.createElement('div');
-            col.className = 'col-6 col-md-4 col-lg-3';
+            col.className = 'col-6 col-sm-4 col-md-4 col-xl-3';
             col.innerHTML = `
                 <div class="card h-100 product-card shadow-sm border-0 ${hasStock ? '' : 'opacity-50'}" 
                      role="button" onclick="addToCart(${p.id})">

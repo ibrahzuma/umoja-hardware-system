@@ -38,7 +38,6 @@ body {
     background-color: var(--bg-body);
     color: var(--text-main);
     overflow-x: hidden;
-    zoom: 85%;
 }
 
 h1,
@@ -205,10 +204,12 @@ ul.collapse.list-unstyled li a {
         left: 0;
         top: 0;
         margin-left: calc(var(--sidebar-width) * -1);
+        box-shadow: none;
     }
 
     #sidebar.active {
         margin-left: 0;
+        box-shadow: var(--shadow-lg);
     }
 
     #content {
