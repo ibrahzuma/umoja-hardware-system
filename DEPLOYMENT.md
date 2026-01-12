@@ -199,5 +199,35 @@ Secure your site with a free Let's Encrypt certificate.
     *   Agree to the terms (Type `Y`).
     *   If asked to redirect HTTP traffic to HTTPS, choose **2** (Redirect) to ensure all traffic is secure.
 
+### Deployment Automation
+
+To simplify future updates, I've created a `deploy.sh` script.
+
+1. **Make the script executable** (run once):
+   ```bash
+   chmod +x deploy.sh
+   ```
+
+2. **Run the update script** (whenever you push new code to GitHub):
+   ```bash
+   ./deploy.sh
+   ```
+
+The script will automatically:
+- Pull latest changes from GitHub.
+- Install any new dependencies.
+- Run database migrations.
+- Collect static files.
+- Fix folder permissions.
+- Restart Daphne and Nginx.
+
+---
+
+## Final Verification
+Once your server is up and running, your app should be accessible at:
+- **https://umoja.ehub.co.tz**
+- Static files should load correctly.
+- Admin dashboard should be accessible.
+
 ## Done!
 Visit **https://umoja.ehub.co.tz**. Your app should be live and secure.
