@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet
-from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet
+from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
 from apps.core.api_views import ActivityViewSet
 
@@ -24,6 +24,7 @@ router.register(r'sale-items', SaleItemViewSet)
 router.register(r'transactions', TransactionViewSet)
 router.register(r'expenses', ExpenseViewSet)
 router.register(r'expense-categories', ExpenseCategoryViewSet)
+router.register(r'income', IncomeViewSet)
 router.register(r'users', UserViewSet)
 router.register(r'roles', GroupViewSet)
 router.register(r'permissions', PermissionViewSet)

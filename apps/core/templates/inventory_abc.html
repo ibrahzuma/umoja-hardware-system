@@ -17,9 +17,17 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {% for item in abc_data %}
+                    <tr>
+                        <td>{{ item.product_name }}</td>
+                        <td>TZS {{ item.revenue|floatformat:2 }}</td>
+                        <td><span class="badge bg-{{ item.label }}">{{ item.class }}</span></td>
+                    </tr>
+                    {% empty %}
                     <tr>
                         <td colspan="3" class="text-center text-muted py-5">Insufficient sales data for analysis</td>
                     </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>

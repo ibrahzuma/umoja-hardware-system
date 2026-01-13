@@ -5,7 +5,8 @@ from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .forms import ExpenseForm
-from .serializers import ExpenseSerializer, ExpenseCategorySerializer
+from .models import Expense, ExpenseCategory, Income
+from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/expense_list.html'
@@ -36,4 +37,12 @@ class ExpenseCategoryViewSet(viewsets.ModelViewSet):
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all().order_by('-date_incurred')
     serializer_class = ExpenseSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
+
+class IncomeListView(LoginRequiredMixin, TemplateView):
+    template_name = 'finance/income_list.html'
+
+class IncomeViewSet(viewsets.ModelViewSet):
+    queryset = Income.objects.all().order_by('-date_received')
+    serializer_class = IncomeSerializer
     permission_classes = [permissions.DjangoModelPermissions]

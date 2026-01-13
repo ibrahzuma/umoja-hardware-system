@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold">Other Income</h2>
+        <p class="text-muted mb-0">Track non-sale revenues (Rent, Interest, etc.)</p>
+    </div>
+    <button class="btn btn-primary shadow-sm" onclick="openIncomeModal()">
+        <i class="bi bi-plus-lg"></i> Record Income
+    </button>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Source</th>
+                        <th>Amount</th>
+                        <th>Branch</th>
+                        <th>Description</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="incomeTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-5">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="incomeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold" id="modalTitle">Record Other Income</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="incomeForm">
+                <div class="modal-body p-4">
+                    <input type="hidden" id="incomeId">
+                    <div class="mb-3">
+                        <label class="form-label">Source / Title</label>
+                        <input type="text" class="form-control" id="incomeSource" placeholder="e.g. Shop Rent" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Amount (TZS)</label>
+                            <input type="number" step="0.01" class="form-control" id="incomeAmount" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date</label>
+                            <input type="date" class="form-control" id="incomeDate" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="incomeBranch" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="incomeDesc" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 p-4 pt-0">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4">Save Income</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="/static/js/api_service.js"></script>
+<script>
+    const api = new ApiService();
+    const modal = new bootstrap.Modal(document.getElementById('incomeModal'));
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadIncomes();
+        loadBranches();
+        document.getElementById('incomeForm').addEventListener('submit', handleSave);
+        document.getElementById('incomeDate').valueAsDate = new Date();
+    });
+
+    async function loadIncomes() {
+        try {
+            const data = await api.get('/api/income/');
+            const incomes = Array.isArray(data) ? data : data.results;
+            const tbody = document.getElementById('incomeTableBody');
+            tbody.innerHTML = '';
+
+            incomes.forEach(inc => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${new Date(inc.date_received).toLocaleDateString()}</td>
+                    <td class="fw-bold">${inc.source}</td>
+                    <td class="text-success fw-bold">TZS ${parseFloat(inc.amount).toLocaleString()}</td>
+                    <td>Branch ID: ${inc.branch}</td>
+                    <td class="text-muted small">${inc.description || '-'}</td>
+                    <td class="text-end pe-4">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick='editIncome(${JSON.stringify(inc)})'>
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteIncome(${inc.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadBranches() {
+        try {
+            const data = await api.get('/api/branches/');
+            const branches = Array.isArray(data) ? data : data.results;
+            const select = document.getElementById('incomeBranch');
+            select.innerHTML = branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+        } catch (e) { console.error(e); }
+    }
+
+    function openIncomeModal() {
+        document.getElementById('incomeForm').reset();
+        document.getElementById('incomeDate').valueAsDate = new Date();
+        document.getElementById('incomeId').value = '';
+        document.getElementById('modalTitle').innerText = 'Record Other Income';
+        modal.show();
+    }
+
+    function editIncome(inc) {
+        document.getElementById('incomeId').value = inc.id;
+        document.getElementById('incomeSource').value = inc.source;
+        document.getElementById('incomeAmount').value = inc.amount;
+        document.getElementById('incomeDate').value = inc.date_received;
+        document.getElementById('incomeBranch').value = inc.branch;
+        document.getElementById('incomeDesc').value = inc.description;
+        document.getElementById('modalTitle').innerText = 'Edit Other Income';
+        modal.show();
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const id = document.getElementById('incomeId').value;
+        const payload = {
+            source: document.getElementById('incomeSource').value,
+            amount: document.getElementById('incomeAmount').value,
+            date_received: document.getElementById('incomeDate').value,
+            branch: document.getElementById('incomeBranch').value,
+            description: document.getElementById('incomeDesc').value,
+        };
+
+        try {
+            if (id) {
+                await api.put(`/api/income/${id}/`, payload);
+            } else {
+                await api.post('/api/income/', payload);
+            }
+            modal.hide();
+            Swal.fire('Saved!', 'Income recorded successfully.', 'success');
+            loadIncomes();
+        } catch (e) {
+            Swal.fire('Error', 'Failed to save income record.', 'error');
+        }
+    }
+
+    async function deleteIncome(id) {
+        if (await Swal.fire({ title: 'Delete?', text: 'Cannot be undone', icon: 'warning', showCancelButton: true }).then(r => r.isConfirmed)) {
+            try {
+                await api.delete(`/api/income/${id}/`);
+                loadIncomes();
+                Swal.fire('Deleted', '', 'success');
+            } catch (e) { Swal.fire('Error', 'Failed to delete record', 'error'); }
+        }
+    }
+</script>
+{% endblock %}

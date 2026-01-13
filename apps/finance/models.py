@@ -22,3 +22,15 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.category} - {self.amount}"
+
+class Income(models.Model):
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.CASCADE, related_name='other_incomes')
+    source = models.CharField(max_length=100, help_text="e.g. Rent, Interest, Scrap Sale")
+    description = models.TextField(blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    date_received = models.DateField()
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.source} - {self.amount}"

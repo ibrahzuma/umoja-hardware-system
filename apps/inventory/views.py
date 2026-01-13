@@ -309,7 +309,34 @@ class InventoryHealthView(LoginRequiredMixin, TemplateView):
 class InventoryAgingView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory_aging.html'
     def get_context_data(self, **kwargs):
+        from apps.inventory.models import Stock, Purchase
+        from django.utils import timezone
         context = super().get_context_data(**kwargs)
+        
+        stocks = Stock.objects.select_related('product', 'branch').all()
+        now = timezone.now()
+        
+        aging_data = []
+        for stock in stocks:
+            # Find the latest purchase for this product in this branch
+            last_purchase = Purchase.objects.filter(
+                product=stock.product, 
+                branch=stock.branch
+            ).order_by('-date_purchased').first()
+            
+            last_date = last_purchase.date_purchased if last_purchase else stock.product.created_at
+            days = (now - last_date).days
+            
+            aging_data.append({
+                'product_name': stock.product.name,
+                'branch_name': stock.branch.name,
+                'quantity': stock.quantity,
+                'last_date': last_date,
+                'days': days,
+                'status': 'danger' if days > 90 else 'warning' if days > 60 else 'info' if days > 30 else 'success'
+            })
+            
+        context['aging_data'] = sorted(aging_data, key=lambda x: x['days'], reverse=True)
         context['title'] = 'Inventory Aging'
         context['resource'] = 'stocks'
         return context
@@ -317,7 +344,44 @@ class InventoryAgingView(LoginRequiredMixin, TemplateView):
 class ABCAnalysisView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory_abc.html'
     def get_context_data(self, **kwargs):
+        from apps.sales.models import SaleItem
+        from django.db.models import Sum, F
         context = super().get_context_data(**kwargs)
+        
+        # Calculate total revenue per product
+        product_revenue = SaleItem.objects.values(
+            'product__id', 'product__name'
+        ).annotate(
+            total_revenue=Sum(F('quantity') * F('price_at_sale'))
+        ).order_by('-total_revenue')
+        
+        total_sum = sum(item['total_revenue'] for item in product_revenue) or 1
+        
+        cumulative_revenue = 0
+        abc_data = []
+        
+        for item in product_revenue:
+            cumulative_revenue += item['total_revenue']
+            percentage = (cumulative_revenue / total_sum) * 100
+            
+            if percentage <= 70:
+                abc_class = 'A'
+                label = 'danger' # High importance
+            elif percentage <= 90:
+                abc_class = 'B'
+                label = 'warning'
+            else:
+                abc_class = 'C'
+                label = 'success'
+                
+            abc_data.append({
+                'product_name': item['product__name'],
+                'revenue': item['total_revenue'],
+                'class': abc_class,
+                'label': label
+            })
+            
+        context['abc_data'] = abc_data
         context['title'] = 'ABC Analysis'
         context['resource'] = 'stocks'
         return context

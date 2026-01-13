@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Expense, ExpenseCategory
+from .models import Expense, ExpenseCategory, Income
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,4 +11,9 @@ class ExpenseSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Expense
+        fields = '__all__'
+
+class IncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Income
         fields = '__all__'
