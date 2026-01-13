@@ -30,6 +30,7 @@ class Vehicle(models.Model):
     driver_name = models.CharField(max_length=100)
     vehicle_type = models.CharField(max_length=20, choices=TYPES, default='lorry')
     status = models.CharField(max_length=20, choices=STATUSES, default='active', db_index=True)
+    capacity = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Carrying capacity in kg")
     current_mileage = models.DecimalField(max_digits=10, decimal_places=1, default=0.0)
     last_condition = models.CharField(max_length=200, blank=True, help_text="Condition recorded at last return")
     created_at = models.DateTimeField(auto_now_add=True)

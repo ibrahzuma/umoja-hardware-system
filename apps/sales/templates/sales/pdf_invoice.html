@@ -267,6 +267,10 @@
                 <td class="summary-label">Sales Tax (0%)</td>
                 <td class="summary-value">0.00</td>
             </tr>
+            <tr>
+                <td class="summary-label">Total Weight</td>
+                <td class="summary-value">{{ sale.total_weight|floatformat:2 }} kg</td>
+            </tr>
             <tr class="total-row">
                 <td class="summary-label total-label">Total (TZS)</td>
                 <td class="summary-value total-value">TZS {{ sale.total_amount|floatformat:2 }}</td>

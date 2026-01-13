@@ -18,7 +18,7 @@ class ProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Product
-        fields = '__all__'
+        fields = ['id', 'name', 'sku', 'product_type', 'category', 'category_name', 'price', 'cost', 'weight', 'description', 'created_at', 'opening_stock', 'low_stock_threshold']
 
     def create(self, validated_data):
         opening_stock = validated_data.pop('opening_stock', 0)

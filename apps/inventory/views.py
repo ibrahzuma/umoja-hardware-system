@@ -111,6 +111,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                 'product_type': str(get_val('Type', 'product')).lower().strip(),
                                 'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                 'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
+                                'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
                                 'description': str(get_val('Description', '')).strip(),
                             }
                         )
@@ -123,6 +124,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                 'product_type': str(get_val('Type', 'product')).lower().strip(),
                                 'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                 'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
+                                'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
                                 'description': str(get_val('Description', '')).strip(),
                             }
                         )
@@ -337,9 +339,9 @@ def download_product_template(request):
 
     writer = csv.writer(response)
     # Headers
-    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Cost', 'Price', 'Description', 'Opening Stock', 'Low Stock Alert'])
+    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Cost', 'Price', 'Weight (kg)', 'Description', 'Opening Stock', 'Low Stock Alert'])
     # Sample Row
-    writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', '15000', '25000', 'Heavy duty steel hammer', '50', '5'])
+    writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', '15000', '25000', '1.5', 'Heavy duty steel hammer', '50', '5'])
 
     return response
 from .models import StockAdjustment

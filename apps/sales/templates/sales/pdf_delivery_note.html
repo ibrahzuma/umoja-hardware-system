@@ -129,6 +129,10 @@
                     <div class="value"><strong>{{ sale.store_keeper.get_full_name|default:sale.store_keeper.username
                             }}</strong></div>
                 </td>
+                <td>
+                    <div class="label">Total Load Weight:</div>
+                    <div class="value"><strong>{{ sale.total_weight|floatformat:2 }} kg</strong></div>
+                </td>
             </tr>
         </table>
     </div>

@@ -44,6 +44,7 @@
                         <th>Type</th>
                         <th class="text-end">Cost</th>
                         <th class="text-end">Price</th>
+                        <th class="text-end">Weight (kg)</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
@@ -105,6 +106,10 @@
                         <div class="col-md-6">
                             <label for="lowStock" class="form-label">Low Stock Alert</label>
                             <input type="number" class="form-control" id="lowStock" value="10">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="productWeight" class="form-label">Weight (kg)</label>
+                            <input type="number" step="0.01" class="form-control" id="productWeight" value="0.00">
                         </div>
                         <div class="col-12">
                             <label for="productDesc" class="form-label">Description</label>
@@ -216,6 +221,7 @@
             price: document.getElementById('productPrice').value,
             opening_stock: document.getElementById('openingStock').value,
             low_stock_threshold: document.getElementById('lowStock').value,
+            weight: document.getElementById('productWeight').value,
             description: document.getElementById('productDesc').value,
         };
 
@@ -285,6 +291,7 @@
                 <td><small class="text-uppercase">${p.product_type}</small></td>
                 <td class="text-end">TZS ${parseFloat(p.cost).toFixed(2)}</td>
                 <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toFixed(2)}</td>
+                <td class="text-end">${p.weight} kg</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct(${p.id})">
                         <i class="bi bi-pencil"></i>
@@ -308,6 +315,7 @@
             document.getElementById('productType').value = p.product_type;
             document.getElementById('productCost').value = p.cost;
             document.getElementById('productPrice').value = p.price;
+            document.getElementById('productWeight').value = p.weight;
             document.getElementById('productDesc').value = p.description;
             document.getElementById('modalTitle').innerText = IS_SERVICE_MODE ? 'Edit Service' : 'Edit Product';
             modal.show();

@@ -101,9 +101,31 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Lorry / Vehicle Details</label>
-                        <input type="text" class="form-control" id="lorryInfo" placeholder="e.g. Scania T123 ABC"
-                            required>
+                        <label class="form-label fw-bold">Select Vehicle</label>
+                        <select class="form-select" id="vehicleSelect" required onchange="checkVehicleCapacity()">
+                            <option value="">Select Vehicle...</option>
+                        </select>
+                        <input type="hidden" id="lorryInfo">
+                    </div>
+                    <div class="card bg-light border-0 mb-3" id="weightComparisonCard">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-muted small">Order Weight:</span>
+                                <span class="fw-bold" id="orderWeightDisplay">0 kg</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-muted small">Vehicle Capacity:</span>
+                                <span class="fw-bold" id="vehicleCapacityDisplay">-</span>
+                            </div>
+                            <hr class="my-2">
+                            <div id="capacityWarning" class="text-danger small d-none">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                Warning: <span id="excessWeight">0</span> kg will be left behind!
+                            </div>
+                            <div id="capacityOk" class="text-success small d-none">
+                                <i class="bi bi-check-circle-fill me-1"></i> Loads within capacity.
+                            </div>
+                        </div>
                     </div>
                     <div class="alert alert-info small mb-0">
                         <i class="bi bi-info-circle me-2"></i> Confirming dispatch will deduct stock from the main
@@ -156,6 +178,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         loadOrders();
         loadUsers(); // For store keeper assignment
+        loadVehicles(); // For dispatch selection
 
         // Handle Approve Form Submit
         document.getElementById('approveForm').addEventListener('submit', async (e) => {
@@ -216,10 +239,55 @@
         }
     }
 
+    let vehicles = [];
+    async function loadVehicles() {
+        try {
+            const data = await api.get('/api/vehicles/');
+            vehicles = Array.isArray(data) ? data : data.results;
+            const select = document.getElementById('vehicleSelect');
+            select.innerHTML = '<option value="">Select Vehicle...</option>';
+            vehicles.filter(v => v.status === 'active').forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.text = `${v.registration_number} (${v.vehicle_type} - ${v.capacity}kg)`;
+                select.appendChild(opt);
+            });
+        } catch (e) { console.error("Failed to load vehicles", e); }
+    }
+
+    let currentOrderWeight = 0;
+    function checkVehicleCapacity() {
+        const vehicleId = document.getElementById('vehicleSelect').value;
+        const vehicle = vehicles.find(v => v.id == vehicleId);
+
+        const capacityDisplay = document.getElementById('vehicleCapacityDisplay');
+        const warning = document.getElementById('capacityWarning');
+        const ok = document.getElementById('capacityOk');
+
+        if (!vehicle) {
+            capacityDisplay.innerText = '-';
+            warning.classList.add('d-none');
+            ok.classList.add('d-none');
+            return;
+        }
+
+        capacityDisplay.innerText = `${vehicle.capacity} kg`;
+
+        if (currentOrderWeight > vehicle.capacity) {
+            warning.classList.remove('d-none');
+            ok.classList.add('d-none');
+            document.getElementById('excessWeight').innerText = (currentOrderWeight - vehicle.capacity).toFixed(2);
+        } else {
+            warning.classList.add('d-none');
+            ok.classList.remove('d-none');
+        }
+    }
+
     async function loadOrders() {
         try {
             const data = await api.get('/api/sales/');
             const orders = Array.isArray(data) ? data : data.results;
+            window.allOrders = orders; // Store for access in modal
 
             // Update counts
             document.getElementById('countPending').innerText = orders.filter(o => o.status === 'pending').length;
@@ -339,14 +407,24 @@
 
     function openDispatchModal(id) {
         document.getElementById('dispatchSaleId').value = id;
+        const o = allOrders.find(order => order.id == id);
+        if (o) {
+            currentOrderWeight = o.total_weight || 0;
+            document.getElementById('orderWeightDisplay').innerText = `${currentOrderWeight} kg`;
+            checkVehicleCapacity(); // Reset view
+        }
         dispatchModal.show();
     }
 
     async function confirmDispatch() {
         const id = document.getElementById('dispatchSaleId').value;
+        const vehicleId = document.getElementById('vehicleSelect').value;
+        const vehicle = vehicles.find(v => v.id == vehicleId);
+
         const data = {
             store_keeper: document.getElementById('storeKeeperSelect').value,
-            lorry_info: document.getElementById('lorryInfo').value
+            vehicle: vehicleId,
+            lorry_info: vehicle ? `${vehicle.registration_number} (${vehicle.driver_name})` : ''
         };
 
         try {

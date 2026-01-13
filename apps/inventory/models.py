@@ -36,6 +36,7 @@ class Product(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
+    weight = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Weight in kg")
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
