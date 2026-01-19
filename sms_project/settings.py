@@ -215,7 +215,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 # CORS
-CORS_ALLOW_ALL_ORIGINS = False  # Secure by default
+CORS_ALLOW_ALL_ORIGINS = True  # Allowed for mobile app communication
 
 # Authentication Redirects
 LOGIN_URL = '/login/'
