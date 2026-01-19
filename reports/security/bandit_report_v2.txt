@@ -1,0 +1,315 @@
+Run started:2026-01-19 09:12:39.742358+00:00
+
+Test results:
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/blacklists/blacklist_calls.html#b311-random
+   Location: .\apps\inventory\models.py:49:37
+48	            while True:
+49	                random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+50	                new_sku = f"{prefix}-{random_str}"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'admin123'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b105_hardcoded_password_string.html
+   Location: .\scripts\fix_admin_login.py:11:15
+10	    username = 'admin'
+11	    password = 'admin123'
+12	    
+
+--------------------------------------------------
+>> Issue: [B113:request_without_timeout] Call to requests without timeout
+   Severity: Medium   Confidence: Low
+   CWE: CWE-400 (https://cwe.mitre.org/data/definitions/400.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b113_request_without_timeout.html
+   Location: .\scripts\reproduce_debug.py:11:13
+10	    # 1. Fetch products to get a valid ID
+11	    r_prod = requests.get("http://127.0.0.1:8000/api/products/")
+12	    if r_prod.status_code == 200:
+
+--------------------------------------------------
+>> Issue: [B113:request_without_timeout] Call to requests without timeout
+   Severity: Medium   Confidence: Low
+   CWE: CWE-400 (https://cwe.mitre.org/data/definitions/400.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b113_request_without_timeout.html
+   Location: .\scripts\reproduce_debug.py:27:15
+26	    # 2. Fetch branches
+27	    r_branch = requests.get("http://127.0.0.1:8000/api/branches/")
+28	    if r_branch.status_code == 200:
+
+--------------------------------------------------
+>> Issue: [B113:request_without_timeout] Call to requests without timeout
+   Severity: Medium   Confidence: Low
+   CWE: CWE-400 (https://cwe.mitre.org/data/definitions/400.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b113_request_without_timeout.html
+   Location: .\scripts\reproduce_debug.py:66:15
+65	    print("Sending payload:", json.dumps(payload, indent=2))
+66	    response = requests.post(url, json=payload)
+67	    
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'allahu(SW)1'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b105_hardcoded_password_string.html
+   Location: .\server_deploy.py:8:11
+7	USERNAME = "ibrahimu"
+8	PASSWORD = "allahu(SW)1"
+9	DB_PASS = "allahu(SW)1"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'allahu(SW)1'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b105_hardcoded_password_string.html
+   Location: .\server_deploy.py:9:10
+8	PASSWORD = "allahu(SW)1"
+9	DB_PASS = "allahu(SW)1"
+10	SUPERUSER_PASS = "Umoja@2026"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'Umoja@2026'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b105_hardcoded_password_string.html
+   Location: .\server_deploy.py:10:17
+9	DB_PASS = "allahu(SW)1"
+10	SUPERUSER_PASS = "Umoja@2026"
+11	
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\server_deploy.py:17:28
+16	    # print(f"Executing: {command}")
+17	    stdin, stdout, stderr = ssh.exec_command(command)
+18	    
+
+--------------------------------------------------
+>> Issue: [B507:ssh_no_host_key_verification] Paramiko call with policy set to automatically trust the unknown host key.
+   Severity: High   Confidence: Medium
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b507_ssh_no_host_key_verification.html
+   Location: .\server_deploy.py:28:4
+27	    ssh = paramiko.SSHClient()
+28	    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+29	    
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b608_hardcoded_sql_expressions.html
+   Location: .\server_deploy.py:42:27
+41	        print("Creating migration script on server...")
+42	        shell_script = f"""#!/bin/bash
+43	set -e
+44	
+45	# Function to wait for apt lock
+46	wait_for_apt_lock() {{
+47	    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+48	        echo "Waiting for apt lock..."
+49	        sleep 5
+50	    done
+51	}}
+52	
+53	echo "Starting migration process..."
+54	
+55	# 1. Install PostgreSQL
+56	wait_for_apt_lock
+57	apt-get update
+58	apt-get install postgresql postgresql-contrib libpq-dev -y
+59	
+60	# 2. Setup Database
+61	echo "Setting up Database..."
+62	sudo -u postgres psql -c "CREATE DATABASE umoja_db;" || echo "Database might already exist"
+63	sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '{DB_PASS}';"
+64	sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE umoja_db TO postgres;"
+65	
+66	# 3. Pull latest code
+67	echo "Pulling latest code..."
+68	cd {dir_path}
+69	git fetch --all
+70	git reset --hard origin/main
+71	
+72	# 4. Update .env
+73	echo "Updating .env..."
+74	cat <<EOF > .env
+75	DEBUG=False
+76	SECRET_KEY=97mo#$70gwckll(^rf%=o%ad4y*a(93en2ya5p%7(4-^6%el8j
+77	ALLOWED_HOSTS=umoja.ehub.co.tz,172.236.209.216
+78	CSRF_TRUSTED_ORIGINS=https://umoja.ehub.co.tz
+79	
+80	DB_NAME=umoja_db
+81	DB_USER=postgres
+82	DB_PASSWORD='{DB_PASS}'
+83	DB_HOST=localhost
+84	DB_PORT=5432
+85	
+86	SECURE_SSL_REDIRECT=True
+87	SESSION_COOKIE_SECURE=True
+88	CSRF_COOKIE_SECURE=True
+89	EOF
+90	
+91	# 5. Migration & Superuser
+92	echo "Running Django migrations..."
+93	source venv/bin/activate
+94	pip install psycopg2-binary
+95	python manage.py migrate --noinput
+96	
+97	echo "Creating superuser..."
+98	python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username='umoja').delete(); User.objects.create_superuser('umoja', 'admin@example.com', '{SUPERUSER_PASS}')"
+99	
+100	# 6. Restart services
+101	echo "Restarting services..."
+102	systemctl restart django_app
+103	systemctl restart nginx
+104	
+105	echo "Migration completed successfully!"
+106	"""
+107	        # Save shell script to server
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\server_deploy.py:108:8
+107	        # Save shell script to server
+108	        ssh.exec_command(f"echo \"{shell_script}\" > /tmp/migrate_to_pg.sh")
+109	        ssh.exec_command("chmod +x /tmp/migrate_to_pg.sh")
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\server_deploy.py:109:8
+108	        ssh.exec_command(f"echo \"{shell_script}\" > /tmp/migrate_to_pg.sh")
+109	        ssh.exec_command("chmod +x /tmp/migrate_to_pg.sh")
+110	
+
+--------------------------------------------------
+>> Issue: [B108:hardcoded_tmp_directory] Probable insecure usage of temp file/directory.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-377 (https://cwe.mitre.org/data/definitions/377.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b108_hardcoded_tmp_directory.html
+   Location: .\server_deploy.py:113:51
+112	        print("Executing migration script with sudo...")
+113	        status, out, err = run_remote_command(ssh, "/tmp/migrate_to_pg.sh", sudo=True)
+114	        
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'password'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b106_hardcoded_password_funcarg.html
+   Location: .\tests\test_sales_flow.py:11:19
+10	            print("Creating User...")
+11	            user = User.objects.create_user(username='testmanager', password='password', role='manager')
+12	            print("Creating Branch...")
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'allahu(SW)1'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b105_hardcoded_password_string.html
+   Location: .\verify_server.py:6:11
+5	USERNAME = "ibrahimu"
+6	PASSWORD = "allahu(SW)1"
+7	
+
+--------------------------------------------------
+>> Issue: [B507:ssh_no_host_key_verification] Paramiko call with policy set to automatically trust the unknown host key.
+   Severity: High   Confidence: Medium
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b507_ssh_no_host_key_verification.html
+   Location: .\verify_server.py:10:4
+9	    ssh = paramiko.SSHClient()
+10	    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+11	    
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:18:23
+17	        print("1. Checking PostgreSQL service...")
+18	        _, stdout, _ = ssh.exec_command("systemctl is-active postgresql")
+19	        print(f"   Status: {stdout.read().decode().strip()}")
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:25:32
+24	        # We'll use the sudo echo pattern again but carefully
+25	        stdin, stdout, stderr = ssh.exec_command(f"echo '{PASSWORD}' | sudo -S -u postgres psql -l")
+26	        out = stdout.read().decode()
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:36:23
+35	        print("3. Checking django_app service...")
+36	        _, stdout, _ = ssh.exec_command("systemctl is-active django_app")
+37	        print(f"   Status: {stdout.read().decode().strip()}")
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:41:32
+40	        print("4. Checking .env file for DB settings...")
+41	        dir_exists, stdout, _ = ssh.exec_command("[ -d /var/www/app ] && echo 'app' || echo 'umoja'")
+42	        dir_name = stdout.read().decode().strip()
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:44:32
+43	        path = f"/var/www/{dir_name if dir_name == 'app' else 'umoja-hardware-system'}/.env"
+44	        stdin, stdout, stderr = ssh.exec_command(f"echo '{PASSWORD}' | sudo -S grep 'DB_NAME' {path}")
+45	        print(f"   .env check: {stdout.read().decode().strip()}")
+
+--------------------------------------------------
+>> Issue: [B601:paramiko_calls] Possible shell injection via Paramiko call, check inputs are properly sanitized.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.3/plugins/b601_paramiko_calls.html
+   Location: .\verify_server.py:50:28
+49	        cmd = f"cd /var/www/{dir_name if dir_name == 'app' else 'umoja-hardware-system'} && source venv/bin/activate && python manage.py migrate --check"
+50	        _, stdout, stderr = ssh.exec_command(cmd)
+51	        err = stderr.read().decode()
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 3965
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 7
+		Medium: 14
+		High: 2
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 4
+		Medium: 18
+		High: 1
+Files skipped (0):

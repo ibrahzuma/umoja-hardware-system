@@ -54,6 +54,7 @@
 
         <!-- Page Content -->
         <div id="content">
+            <div id="page-progress-bar" class="page-progress-bar"></div>
             <nav class="navbar navbar-expand-lg navbar-light bg-light">
                 <div class="container-fluid">
                     <div class="d-flex align-items-center">
@@ -186,6 +187,28 @@
             if (USER_ID !== "None" && USER_ID !== "") {
                 inactivityTime();
             }
+
+            // Subtle Loading Effect logic
+            const progressBar = document.getElementById('page-progress-bar');
+
+            // Show bar on click
+            document.addEventListener('click', function (e) {
+                const target = e.target.closest('a');
+                if (target &&
+                    target.href &&
+                    !target.href.startsWith('javascript') &&
+                    !target.href.includes('#') &&
+                    target.target !== '_blank' &&
+                    target.origin === window.location.origin) {
+
+                    progressBar.classList.add('loading');
+                }
+            });
+
+            // Hide bar on page hide/unload (so it's gone if user hits back button)
+            window.addEventListener('pagehide', function () {
+                progressBar.style.display = 'none';
+            });
         });
     </script>
     <script src="{% static 'js/socket_service.js' %}"></script>
