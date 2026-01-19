@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Truck Maintenance & Fuel</h2>
+    <span class="text-muted">Manage Repairs, Service, and Fuel Logs</span>
+</div>
+
+<div class="row">
+    <!-- Form -->
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">Log Maintenance/Fuel</div>
+            <div class="card-body">
+                <form id="maintenanceForm" onsubmit="handleSave(event)">
+                    <div class="mb-3">
+                        <label class="form-label">Truck</label>
+                        <select class="form-select" id="truckSelect" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Type</label>
+                        <select class="form-select" id="typeSelect" required>
+                            <option value="fuel">Fuel</option>
+                            <option value="spare">Spare Parts</option>
+                            <option value="repair">Repair</option>
+                            <option value="service">Service</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" id="date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Cost</label>
+                        <input type="number" class="form-control" id="cost" required step="0.01">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Performed By / Station</label>
+                        <input type="text" class="form-control" id="performedBy"
+                            placeholder="e.g. Total Station, Mechanic John">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="description" rows="3"
+                            placeholder="e.g. 50 Liters Diesel"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Log</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light fw-bold">Recent Logs</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">Date</th>
+                                <th>Truck</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                                <th>Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center py-4">Loading logs...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('date').valueAsDate = new Date();
+        fetchInitialData();
+        fetchLogs();
+    });
+
+    async function fetchInitialData() {
+        try {
+            const response = await fetch('/api/trucks/');
+            const trucks = await response.json();
+            const select = document.getElementById('truckSelect');
+            select.innerHTML = '<option value="">Select Truck...</option>';
+            trucks.forEach(t => {
+                select.innerHTML += `<option value="${t.id}">${t.registration_number}</option>`;
+            });
+        } catch (error) { console.error(error); }
+    }
+
+    async function fetchLogs() {
+        try {
+            const response = await fetch('/api/truck-maintenance/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) { console.error(error); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('logsTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No logs found</td></tr>';
+            return;
+        }
+
+        data.forEach(log => {
+            let badge = 'info';
+            if (log.maintenance_type === 'fuel') badge = 'warning';
+            if (log.maintenance_type === 'repair') badge = 'danger';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${new Date(log.date).toLocaleDateString()}</td>
+                <td class="fw-bold">${log.truck_reg || '-'}</td>
+                <td><span class="badge bg-${badge}">${log.maintenance_type.toUpperCase()}</span></td>
+                <td><small>${log.description}</small><br><span class="text-muted" style="font-size:0.8rem">By: ${log.performed_by || '-'}</span></td>
+                <td class="fw-bold">${parseFloat(log.cost).toLocaleString()}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const data = {
+            truck: document.getElementById('truckSelect').value,
+            maintenance_type: document.getElementById('typeSelect').value,
+            date: document.getElementById('date').value,
+            cost: document.getElementById('cost').value,
+            performed_by: document.getElementById('performedBy').value,
+            description: document.getElementById('description').value
+        };
+
+        try {
+            const response = await fetch('/api/truck-maintenance/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                Swal.fire('Success', 'Log entry saved', 'success');
+                fetchLogs();
+                document.getElementById('maintenanceForm').reset();
+                document.getElementById('date').valueAsDate = new Date();
+            } else {
+                Swal.fire('Error', 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}

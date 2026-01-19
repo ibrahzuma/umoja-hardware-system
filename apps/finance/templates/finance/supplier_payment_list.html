@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Supplier Payments</h2>
+    <button class="btn btn-primary" onclick="openModal()">
+        <i class="bi bi-cash-stack"></i> Record Payment
+    </button>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Supplier</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>Amount</th>
+                        <th>Recorded By</th>
+                    </tr>
+                </thead>
+                <tbody id="paymentTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Loading payments...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Record Supplier Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Supplier</label>
+                        <select class="form-select" id="supplier" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount</label>
+                        <input type="number" step="0.01" class="form-control" id="amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Date</label>
+                        <input type="date" class="form-control" id="paymentDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" id="method" required>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="cash">Cash</option>
+                            <option value="check">Check</option>
+                            <option value="mobile_money">Mobile Money</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" class="form-control" id="reference" placeholder="Check No, Transaction ID">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Payment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let modal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+        loadData();
+        document.getElementById('paymentForm').addEventListener('submit', handleSubmit);
+
+        // Set today's date
+        document.getElementById('paymentDate').valueAsDate = new Date();
+    });
+
+    async function loadData() {
+        try {
+            const [payRes, supRes] = await Promise.all([
+                fetch('/api/supplier-payments/'),
+                fetch('/api/suppliers/')
+            ]);
+
+            const payments = await payRes.json();
+            const suppliers = await supRes.json();
+
+            renderPayments(payments);
+            populateSupplierSelect(suppliers);
+        } catch (e) { console.error(e); }
+    }
+
+    function renderPayments(data) {
+        const tbody = document.getElementById('paymentTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No payments found</td></tr>';
+            return;
+        }
+
+        data.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${new Date(p.payment_date).toLocaleDateString()}</td>
+                <td class="fw-medium">${p.supplier_name}</td>
+                <td>${p.method.replace('_', ' ').toUpperCase()}</td>
+                <td>${p.reference || '-'}</td>
+                <td class="fw-bold">TZS ${parseFloat(p.amount).toLocaleString()}</td>
+                <td><small class="text-muted">${p.created_by_name || '-'}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function populateSupplierSelect(suppliers) {
+        const select = document.getElementById('supplier');
+        select.innerHTML = '<option value="">Select Supplier...</option>';
+        suppliers.forEach(s => {
+            select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        });
+    }
+
+    function openModal() { modal.show(); }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        const data = {
+            supplier: document.getElementById('supplier').value,
+            amount: document.getElementById('amount').value,
+            payment_date: document.getElementById('paymentDate').value,
+            method: document.getElementById('method').value,
+            reference: document.getElementById('reference').value,
+            notes: document.getElementById('notes').value
+        };
+
+        try {
+            const res = await fetch('/api/supplier-payments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                modal.hide();
+                Swal.fire('Success', 'Payment recorded', 'success');
+                loadData();
+                document.getElementById('paymentForm').reset();
+                document.getElementById('paymentDate').valueAsDate = new Date();
+            } else {
+                Swal.fire('Error', 'Failed to record payment', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+</script>
+{% endblock %}

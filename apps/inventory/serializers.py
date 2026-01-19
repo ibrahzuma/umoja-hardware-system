@@ -1,5 +1,5 @@
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckAllocation
 from rest_framework import serializers
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer
 
 class BranchSerializer(serializers.ModelSerializer):
     class Meta:
@@ -54,10 +54,6 @@ class SupplierSerializer(serializers.ModelSerializer):
         model = Supplier
         fields = '__all__'
 
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer
-
-# ... existing code ...
-
 class PurchaseSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
@@ -74,7 +70,6 @@ class StockTransferSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockTransfer
         fields = '__all__'
-from .models import StockAdjustment
 
 class StockAdjustmentSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
@@ -85,3 +80,67 @@ class StockAdjustmentSerializer(serializers.ModelSerializer):
         model = StockAdjustment
         fields = '__all__'
         read_only_fields = ('user', 'created_at')
+
+class PurchaseOrderItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    
+    class Meta:
+        model = PurchaseOrderItem
+        fields = '__all__'
+        read_only_fields = ('total_cost',)
+
+class PurchaseOrderSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    items = PurchaseOrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = PurchaseOrder
+        fields = '__all__'
+        read_only_fields = ('created_by', 'created_at', 'updated_at', 'total_amount')
+
+class TruckSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Truck
+        fields = '__all__'
+
+class TruckAllocationSerializer(serializers.ModelSerializer):
+    truck_reg = serializers.CharField(source='truck.registration_number', read_only=True)
+    po_ref = serializers.CharField(source='purchase_order.__str__', read_only=True)
+
+    class Meta:
+        model = TruckAllocation
+        fields = '__all__'
+
+class GRNItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    
+    class Meta:
+        model = GRNItem
+        fields = '__all__'
+
+class GoodsReceivedNoteSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    items = GRNItemSerializer(many=True, read_only=True)
+    po_ref = serializers.CharField(source='purchase_order.__str__', read_only=True)
+
+    class Meta:
+        model = GoodsReceivedNote
+        fields = '__all__'
+        read_only_fields = ('created_by', 'received_date')
+
+class DriverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Driver
+        fields = '__all__'
+
+class TruckMaintenanceSerializer(serializers.ModelSerializer):
+    truck_reg = serializers.CharField(source='truck.registration_number', read_only=True)
+    performed_by_name = serializers.CharField(source='recorded_by.username', read_only=True)
+
+    class Meta:
+        model = TruckMaintenance
+        fields = '__all__'
+        read_only_fields = ('recorded_by',)

@@ -43,13 +43,26 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
     Run these commands on the server:
     ```bash
     sudo apt update && sudo apt upgrade -y
-    sudo apt install python3-pip python3-venv python3-dev libpq-dev nginx git pkg-config libcairo2-dev libpango-1.0-0 libpangoft2-1.0-0 redis-server -y
+    sudo apt install python3-pip python3-venv python3-dev libpq-dev nginx git pkg-config libcairo2-dev libpango-1.0-0 libpangoft2-1.0-0 redis-server postgresql postgresql-contrib -y
     ```
 
-4.  **Enable Redis**:
+4.  **Enable Redis and PostgreSQL**:
     ```bash
     sudo systemctl enable redis-server
     sudo systemctl start redis-server
+    sudo systemctl enable postgresql
+    sudo systemctl start postgresql
+    ```
+
+5.  **Setup PostgreSQL Database**:
+    Run these commands to create the database and user:
+    ```bash
+    sudo -u postgres psql -c "CREATE DATABASE umoja_db;"
+    sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'allahu(SW)1';"
+    sudo -u postgres psql -c "ALTER ROLE postgres SET client_encoding TO 'utf8';"
+    sudo -u postgres psql -c "ALTER ROLE postgres SET default_transaction_isolation TO 'read committed';"
+    sudo -u postgres psql -c "ALTER ROLE postgres SET timezone TO 'UTC';"
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE umoja_db TO postgres;"
     ```
 
 ---
@@ -85,6 +98,13 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
     SECRET_KEY=97mo#$70gwckll(^rf%=o%ad4y*a(93en2ya5p%7(4-^6%el8j
     ALLOWED_HOSTS=umoja.ehub.co.tz,<YOUR_LINODE_IP>
     CSRF_TRUSTED_ORIGINS=https://umoja.ehub.co.tz
+
+    # Database Settings
+    DB_NAME=umoja_db
+    DB_USER=postgres
+    DB_PASSWORD=allahu(SW)1
+    DB_HOST=localhost
+    DB_PORT=5432
     
     # After setting up SSL (Part 6), set these to True:
     SECURE_SSL_REDIRECT=True

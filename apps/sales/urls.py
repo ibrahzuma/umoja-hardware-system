@@ -23,5 +23,8 @@ urlpatterns = [
     path('dispatch/', views.DispatchDashboardView.as_view(), name='dispatch_dashboard'),
     path('vehicles/', views.VehicleManagementView.as_view(), name='vehicle_list'),
     path('reports/commissions/', views.CommissionReportView.as_view(), name='commission_report'),
+    
+    path('quotations/', views.QuotationListView.as_view(), name='quotation_list'),
+    path('quotations/create/', views.QuotationCreateView.as_view(), name='quotation_create'),
 ]
 

@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Drivers</h2>
+    <button class="btn btn-success" onclick="openDriverModal()">
+        <i class="bi bi-person-plus"></i> Add Driver
+    </button>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-3">Name</th>
+                        <th>License</th>
+                        <th>Phone</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="driverTableBody">
+                    <tr>
+                        <td colspan="5" class="text-center py-4">Loading drivers...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="driverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="driverForm" onsubmit="handleSaveDriver(event)">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Driver</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">License Number</label>
+                        <input type="text" class="form-control" name="license_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phone</label>
+                        <input type="text" class="form-control" name="phone">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Driver</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchDrivers();
+    });
+
+    async function fetchDrivers() {
+        try {
+            const response = await fetch('/api/drivers/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) { console.error(error); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('driverTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No drivers found</td></tr>';
+            return;
+        }
+
+        data.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 fw-bold">${d.name}</td>
+                <td>${d.license_number || '-'}</td>
+                <td>${d.phone || '-'}</td>
+                <td><span class="badge bg-${d.status === 'active' ? 'success' : 'secondary'}">${d.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-secondary">Edit</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openDriverModal() {
+        new bootstrap.Modal(document.getElementById('driverModal')).show();
+    }
+
+    async function handleSaveDriver(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = {
+            name: form.name.value,
+            license_number: form.license_number.value,
+            phone: form.phone.value
+        };
+
+        try {
+            const response = await fetch('/api/drivers/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                Swal.fire('Success', 'Driver added', 'success');
+                fetchDrivers();
+                bootstrap.Modal.getInstance(document.getElementById('driverModal')).hide();
+                form.reset();
+            } else {
+                Swal.fire('Error', 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}

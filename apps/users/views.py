@@ -20,6 +20,25 @@ class UserCreateView(LoginRequiredMixin, TemplateView):
 class UserEditView(LoginRequiredMixin, TemplateView):
     template_name = 'users/user_edit.html'
 
+class UserProfileView(LoginRequiredMixin, TemplateView):
+    template_name = 'users/profile.html'
+
+    def post(self, request, *args, **kwargs):
+        # Basic profile update (Name, Email)
+        user = request.user
+        email = request.POST.get('email')
+        first_name = request.POST.get('first_name')
+        last_name = request.POST.get('last_name')
+        
+        if email: user.email = email
+        if first_name: user.first_name = first_name
+        if last_name: user.last_name = last_name
+        user.save()
+        
+        from django.contrib import messages
+        messages.success(request, 'Profile updated successfully.')
+        return self.get(request, *args, **kwargs)
+
 class RecentUserListView(LoginRequiredMixin, TemplateView):
     template_name = 'users/recent_users.html'
 
@@ -57,7 +76,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.DjangoModelPermissions]
 
     def get_queryset(self):
-        return Group.objects.exclude(name__iexact='admin')
+        return Group.objects.all().order_by('name')
 
     def perform_destroy(self, instance):
         from rest_framework.exceptions import ValidationError

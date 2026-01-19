@@ -1,9 +1,10 @@
 from django.shortcuts import render
 from rest_framework import viewsets, permissions
+from apps.users.permissions import IsSales
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Sale, SaleItem, Transaction, Customer, Vehicle
-from .serializers import SaleSerializer, SaleItemSerializer, TransactionSerializer, CustomerSerializer, VehicleSerializer
+from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
+from .serializers import SaleSerializer, SaleItemSerializer, TransactionSerializer, CustomerSerializer, VehicleSerializer, QuotationSerializer, QuotationItemSerializer
 
 import io
 import csv
@@ -211,7 +212,7 @@ class SaleItemViewSet(viewsets.ModelViewSet):
 class VehicleViewSet(viewsets.ModelViewSet):
     queryset = Vehicle.objects.all().order_by('registration_number')
     serializer_class = VehicleSerializer
-    permission_classes = [permissions.IsAuthenticated] # Or robust permissions
+    permission_classes = [permissions.IsAuthenticated, IsSales] # Sales Reps need to see vehicles for dispatch? Logic says yes.
 
     @action(detail=True, methods=['post'])
     def return_vehicle(self, request, pk=None):
@@ -277,6 +278,25 @@ class CustomerViewSet(viewsets.ModelViewSet):
             "message": f"Successfully imported {imported_count} customers",
             "errors": errors
         }, status=status.HTTP_201_CREATED if not errors else status.HTTP_207_MULTI_STATUS)
+
+class QuotationViewSet(viewsets.ModelViewSet):
+    queryset = Quotation.objects.all().order_by('-created_at')
+    serializer_class = QuotationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsSales]
+
+    def perform_create(self, serializer):
+        # Assign current user and ensure Branch is set (defaulting to first or user's branch logic)
+        branch = self.request.user.branch
+        if not branch:
+             from apps.inventory.models import Branch
+             branch = Branch.objects.first()
+        serializer.save(created_by=self.request.user, branch=branch)
+
+class QuotationListView(LoginRequiredMixin, TemplateView):
+    template_name = 'sales/quotation_list.html'
+
+class QuotationCreateView(LoginRequiredMixin, TemplateView):
+    template_name = 'sales/quotation_create.html'
 
 
 

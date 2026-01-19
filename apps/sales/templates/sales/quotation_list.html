@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Quotations</h2>
+    <a href="{% url 'sales:quotation_create' %}" class="btn btn-success">
+        <i class="bi bi-plus-lg"></i> New Quotation
+    </a>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-3">Date</th>
+                        <th>Quote #</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="quotationTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchQuotations();
+    });
+
+    async function fetchQuotations() {
+        try {
+            const response = await fetch('/api/quotations/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) { console.error(error); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('quotationTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No quotations found</td></tr>';
+            return;
+        }
+
+        data.forEach(q => {
+            let badge = 'secondary';
+            if (q.status === 'sent') badge = 'primary';
+            if (q.status === 'converted') badge = 'success';
+            if (q.status === 'expired') badge = 'danger';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${new Date(q.created_at).toLocaleDateString()}</td>
+                <td class="fw-bold">#${q.id}</td>
+                <td>${q.customer_name_display || q.customer_name || 'Walk-in'}</td>
+                <td class="fw-bold">${parseFloat(q.total_amount).toLocaleString()}</td>
+                <td><span class="badge bg-${badge}">${q.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewQuote(${q.id})">View</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function viewQuote(id) {
+        // Implement view or print logic
+        alert('View/Print logic to be implemented for Quote #' + id);
+    }
+</script>
+{% endblock %}

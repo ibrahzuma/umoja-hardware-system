@@ -14,3 +14,21 @@ class SystemActivity(models.Model):
 
     def __str__(self):
         return f"{self.activity_type}: {self.description[:30]}"
+
+class SystemSettings(models.Model):
+    company_name = models.CharField(max_length=100, default="Umoja Hardware")
+    currency = models.CharField(max_length=10, default="TZS")
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18.00, help_text="Percentage (e.g. 18.00)")
+    phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    address = models.TextField(blank=True)
+    logo = models.ImageField(upload_to='company_logo/', blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        if not self.pk and SystemSettings.objects.exists():
+            return # Prevent creating multiple settings
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "System Configuration"
+

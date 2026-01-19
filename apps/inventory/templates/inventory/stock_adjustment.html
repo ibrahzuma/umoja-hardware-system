@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Stock Adjustment</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">New Adjustment</div>
+            <div class="card-body">
+                <form id="adjustmentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="branch" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <select class="form-select" id="product" required></select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Type</label>
+                            <select class="form-select" id="adjustmentType" required>
+                                <option value="addition">Addition (+)</option>
+                                <option value="deduction">Deduction (-)</option>
+                                <option value="correction">Correction (=)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" id="quantity" required step="1">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason</label>
+                        <textarea class="form-control" id="reason" required placeholder="e.g. Damage, Missing, Audit"
+                            rows="3"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Adjustment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light fw-bold">Recent Adjustments</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">Date</th>
+                                <th>Product</th>
+                                <th>Branch</th>
+                                <th>Type</th>
+                                <th>Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adjustmentTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center py-4">Loading adjustments...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchInitialData();
+        fetchAdjustments();
+        document.getElementById('adjustmentForm').addEventListener('submit', handleAdjustment);
+    });
+
+    async function fetchInitialData() {
+        try {
+            const [branchRes, prodRes] = await Promise.all([
+                fetch('/api/branches/'),
+                fetch('/api/products/')
+            ]);
+
+            const branches = await branchRes.json();
+            const products = await prodRes.json();
+
+            populateSelect('branch', branches);
+
+            const prodSelect = document.getElementById('product');
+            prodSelect.innerHTML = '<option value="">Select Product...</option>';
+            products.forEach(item => {
+                prodSelect.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+            });
+
+        } catch (error) { console.error(error); }
+    }
+
+    function populateSelect(id, items) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Select...</option>';
+        items.forEach(item => {
+            select.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+        });
+    }
+
+    async function fetchAdjustments() {
+        try {
+            const response = await fetch('/api/stock-adjustments/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) { console.error(error); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('adjustmentTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No adjustments found</td></tr>';
+            return;
+        }
+
+        data.forEach(adj => {
+            let badge = 'primary';
+            if (adj.adjustment_type === 'addition') badge = 'success';
+            if (adj.adjustment_type === 'deduction') badge = 'danger';
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${new Date(adj.created_at).toLocaleDateString()}</td>
+                <td class="fw-medium">${adj.product_name}</td>
+                <td>${adj.branch_name}</td>
+                <td><span class="badge bg-${badge}">${adj.adjustment_type}</span></td>
+                <td class="fw-bold">${adj.quantity}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function handleAdjustment(e) {
+        e.preventDefault();
+        const data = {
+            branch: document.getElementById('branch').value,
+            product: document.getElementById('product').value,
+            adjustment_type: document.getElementById('adjustmentType').value,
+            quantity: document.getElementById('quantity').value,
+            reason: document.getElementById('reason').value
+        };
+
+        try {
+            const response = await fetch('/api/stock-adjustments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                Swal.fire('Success', 'Stock adjustment recorded', 'success');
+                fetchAdjustments();
+                document.getElementById('adjustmentForm').reset();
+            } else {
+                Swal.fire('Error', 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}

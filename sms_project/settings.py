@@ -63,6 +63,8 @@ INSTALLED_APPS = [
     'apps.sales',
     'apps.finance',
     'django_filters',
+    'drf_spectacular',
+    'simple_history',
 ]
 
 MIDDLEWARE = [
@@ -75,6 +77,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'simple_history.middleware.HistoryRequestMiddleware',
 ]
 
 ROOT_URLCONF = 'sms_project.urls'
@@ -102,8 +105,12 @@ WSGI_APPLICATION = 'sms_project.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'umoja_db'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -167,11 +174,14 @@ AUTH_USER_MODEL = 'users.User'
 ASGI_APPLICATION = 'sms_project.asgi.application'
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': [os.environ.get('REDIS_URL', 'redis://localhost:6379/0')],
-        },
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
     },
+    # 'default': {
+    #     'BACKEND': 'channels_redis.core.RedisChannelLayer',
+    #     'CONFIG': {
+    #         'hosts': [os.environ.get('REDIS_URL', 'redis://localhost:6379/0')],
+    #     },
+    # },
 }
 
 # REST Framework
@@ -186,6 +196,14 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Umoja Hardware API',
+    'DESCRIPTION': 'API documentation for Umoja Hardware System',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 # CORS

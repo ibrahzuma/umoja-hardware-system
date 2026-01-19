@@ -113,7 +113,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="fw-bold text-dark mb-0">Command Center</h2>
-            <p class="text-muted small mb-0">Welcome back, {{ user.get_full_name|default:user.username }}</p>
+            <p class="text-muted small mb-0">Welcome back, {{ user.get_full_name }}</p>
         </div>
         <div class="d-flex gap-2">
             <button class="btn btn-white shadow-sm border-0 bg-white px-3 py-2 rounded-pill" onclick="loadStats()">
@@ -261,34 +261,34 @@
         salesChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
-                datasets: [{
-                    label: 'Revenue',
-                    data: [350, 410, 390, 480, 520, 610, 580],
-                    borderColor: '#4361ee',
-                    backgroundColor: gradient,
-                    fill: true,
-                    tension: 0.4,
-                    borderWidth: 3,
-                    pointRadius: 0,
-                    pointHoverRadius: 6
+                labels: {{ sales_chart_labels|default:"[]"|safe }},
+    datasets: [{
+        label: 'Revenue',
+        data: {{ sales_chart_data|default:"[]"|safe }},
+        borderColor: '#4361ee',
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.4,
+        borderWidth: 3,
+        pointRadius: 4,
+        pointHoverRadius: 6
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
+    options: {
+        responsive: true,
+            maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { display: false },
-                        ticks: {
-                            callback: value => 'TZS ' + value.toLocaleString()
-                        }
-                    },
-                    x: { grid: { display: false } }
+        scales: {
+            y: {
+                beginAtZero: true,
+                    grid: { display: false },
+                ticks: {
+                    callback: value => 'TZS ' + value.toLocaleString()
                 }
-            }
+            },
+            x: { grid: { display: false } }
+        }
+    }
         });
     }
 
@@ -329,9 +329,6 @@
 
             document.getElementById('stock-value').innerText = 'TZS ' + totalStockVal.toLocaleString();
             document.getElementById('low-stock-count').innerText = lowStockCount;
-
-            // Update Chart Data (Mocking last 7 points for demo)
-            updateDashboardChart(sales);
 
         } catch (error) {
             console.error("Failed to load dashboard data", error);

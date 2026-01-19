@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Tax & Government Payments</h2>
+    <button class="btn btn-success" onclick="openTaxModal()">
+        <i class="bi bi-plus-lg"></i> Record Payment
+    </button>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted">Total VAT Paid</h6>
+            <h4 class="fw-bold text-primary" id="vatTotal">0.00</h4>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted">Total PAYE Paid</h6>
+            <h4 class="fw-bold text-success" id="payeTotal">0.00</h4>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-3">Date</th>
+                        <th>Type</th>
+                        <th>Period</th>
+                        <th>Amount</th>
+                        <th>Reference</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody id="taxTableBody">
+                    <tr>
+                        <td colspan="6" class="text-center py-4">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="taxModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="taxForm" onsubmit="handleSave(event)">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Record Tax Payment</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tax Type</label>
+                        <select class="form-select" name="tax_type" required>
+                            <option value="vat">VAT</option>
+                            <option value="paye">PAYE</option>
+                            <option value="sdl">SDL</option>
+                            <option value="service_levy">Service Levy</option>
+                            <option value="corporate_tax">Corporate Tax</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Period</label>
+                        <input type="text" class="form-control" name="period" placeholder="e.g. January 2026" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount</label>
+                        <input type="number" class="form-control" name="amount" step="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date Paid</label>
+                        <input type="date" class="form-control" name="payment_date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference / Receipt No</label>
+                        <input type="text" class="form-control" name="reference">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Payment</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchTaxes();
+    });
+
+    async function fetchTaxes() {
+        try {
+            const response = await fetch('/api/taxes/');
+            const data = await response.json();
+            renderTable(data);
+            calculateTotals(data);
+        } catch (error) { console.error(error); }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('taxTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No records found</td></tr>';
+            return;
+        }
+
+        data.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${new Date(d.payment_date).toLocaleDateString()}</td>
+                <td><span class="badge bg-secondary">${d.tax_type_display}</span></td>
+                <td>${d.period}</td>
+                <td class="fw-bold">${parseFloat(d.amount).toLocaleString()}</td>
+                <td>${d.reference || '-'}</td>
+                <td><small>${d.description || ''}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function calculateTotals(data) {
+        let vat = 0, paye = 0;
+        data.forEach(d => {
+            if (d.tax_type === 'vat') vat += parseFloat(d.amount);
+            if (d.tax_type === 'paye') paye += parseFloat(d.amount);
+        });
+        document.getElementById('vatTotal').innerText = vat.toLocaleString();
+        document.getElementById('payeTotal').innerText = paye.toLocaleString();
+    }
+
+    function openTaxModal() {
+        new bootstrap.Modal(document.getElementById('taxModal')).show();
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch('/api/taxes/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                Swal.fire('Success', 'Payment Recorded', 'success');
+                fetchTaxes();
+                bootstrap.Modal.getInstance(document.getElementById('taxModal')).hide();
+                form.reset();
+            } else {
+                Swal.fire('Error', 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}

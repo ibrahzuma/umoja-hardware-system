@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Goods Received Notes (GRN)</h2>
+    <a href="{% url 'inventory:grn_create' %}" class="btn btn-primary">
+        <i class="bi bi-file-earmark-plus"></i> Create GRN
+    </a>
+</div>
+
+<!-- GRN Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="grnTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">GRN #</th>
+                        <th>Date</th>
+                        <th>Receipt No</th>
+                        <th>Branch</th>
+                        <th>Created By</th>
+                        <th>PO Ref</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="grnTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading GRNs...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchGRNs();
+    });
+
+    async function fetchGRNs() {
+        try {
+            const response = await fetch('/api/grns/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('grnTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No GRNs found</td></tr>';
+            return;
+        }
+
+        data.forEach(grn => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 fw-bold">#${grn.id}</td>
+                <td class="text-muted">${new Date(grn.received_date).toLocaleDateString()}</td>
+                <td class="fw-medium">${grn.receipt_number}</td>
+                <td><span class="badge bg-light text-dark border">${grn.branch_name || '-'}</span></td>
+                <td><small>${grn.created_by_name || '-'}</small></td>
+                <td>${grn.po_ref || '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${grn.id})"><i class="bi bi-eye"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function viewDetails(id) {
+        // Implement details view (modal or page)
+        alert('View GRN #' + id);
+    }
+</script>
+{% endblock %}

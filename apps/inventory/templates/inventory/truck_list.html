@@ -1,0 +1,283 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Truck Allocations</h2>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" onclick="openTruckModal()">
+            <i class="bi bi-truck"></i> Add Truck
+        </button>
+        <button class="btn btn-primary" onclick="openAllocModal()">
+            <i class="bi bi-signpost-2"></i> Allocate Truck
+        </button>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Trucks List -->
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">Fleet Status</div>
+            <ul class="list-group list-group-flush" id="truckList">
+                <li class="list-group-item text-center py-3">Loading trucks...</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Allocations Table -->
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light fw-bold">Active Allocations</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">Truck</th>
+                                <th>Destination</th>
+                                <th>Related PO</th>
+                                <th>Start Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="allocTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center py-4">Loading allocations...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Truck Modal -->
+<div class="modal fade" id="truckModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Truck</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="truckForm">
+                    <div class="mb-3">
+                        <label class="form-label">Registration Number</label>
+                        <input type="text" class="form-control" id="regNum" required placeholder="e.g. T 123 ABC">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Driver Name</label>
+                        <input type="text" class="form-control" id="driverName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Capacity</label>
+                        <input type="text" class="form-control" id="capacity" placeholder="e.g. 10 Tons">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Truck</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Allocation Modal -->
+<div class="modal fade" id="allocModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Allocate Truck</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="allocForm">
+                    <div class="mb-3">
+                        <label class="form-label">Truck</label>
+                        <select class="form-select" id="allocTruck" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Destination</label>
+                        <input type="text" class="form-control" id="destination" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Related PO (Optional)</label>
+                        <select class="form-select" id="allocPO"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="datetime-local" class="form-control" id="startDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Create Allocation</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let truckModal, allocModal;
+    let trucks = [];
+    let pos = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        truckModal = new bootstrap.Modal(document.getElementById('truckModal'));
+        allocModal = new bootstrap.Modal(document.getElementById('allocModal'));
+
+        loadData();
+
+        document.getElementById('truckForm').addEventListener('submit', handleTruckSubmit);
+        document.getElementById('allocForm').addEventListener('submit', handleAllocSubmit);
+    });
+
+    async function loadData() {
+        try {
+            const [truckRes, allocRes, poRes] = await Promise.all([
+                fetch('/api/trucks/'),
+                fetch('/api/truck-allocations/'),
+                fetch('/api/purchase-orders/')
+            ]);
+
+            trucks = await truckRes.json();
+            const allocations = await allocRes.json();
+            pos = await poRes.json();
+
+            renderTrucks(trucks);
+            renderAllocations(allocations);
+            populateSelects();
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function renderTrucks(data) {
+        const ul = document.getElementById('truckList');
+        ul.innerHTML = '';
+        if (data.length === 0) {
+            ul.innerHTML = '<li class="list-group-item text-center text-muted">No trucks added.</li>';
+            return;
+        }
+
+        data.forEach(t => {
+            let badge = 'success';
+            if (t.status === 'in_transit') badge = 'warning';
+            if (t.status === 'maintenance') badge = 'danger';
+
+            ul.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">${t.registration_number}</div>
+                        <small class="text-muted">${t.driver_name}</small>
+                    </div>
+                    <span class="badge bg-${badge} rounded-pill">${t.status.replace('_', ' ')}</span>
+                </li>
+            `;
+        });
+    }
+
+    function renderAllocations(data) {
+        const tbody = document.getElementById('allocTableBody');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No allocations found</td></tr>';
+            return;
+        }
+
+        data.forEach(a => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 fw-medium">${a.truck_reg || '-'}</td>
+                <td>${a.destination}</td>
+                <td>${a.po_ref || '-'}</td>
+                <td>${new Date(a.start_date).toLocaleString()}</td>
+                 <td>
+                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function populateSelects() {
+        const tSelect = document.getElementById('allocTruck');
+        tSelect.innerHTML = '<option value="">Select Truck...</option>';
+        trucks.forEach(t => {
+            if (t.status === 'available') {
+                tSelect.innerHTML += `<option value="${t.id}">${t.registration_number}</option>`;
+            }
+        });
+
+        const pSelect = document.getElementById('allocPO');
+        pSelect.innerHTML = '<option value="">Select PO (Optional)...</option>';
+        pos.forEach(p => {
+            // Only show details about active or recent POs ideally
+            pSelect.innerHTML += `<option value="${p.id}">PO #${p.id} - ${p.supplier_name}</option>`;
+        });
+    }
+
+    function openTruckModal() { truckModal.show(); }
+    function openAllocModal() {
+        populateSelects(); // refresh available trucks
+        allocModal.show();
+    }
+
+    async function handleTruckSubmit(e) {
+        e.preventDefault();
+        const data = {
+            registration_number: document.getElementById('regNum').value,
+            driver_name: document.getElementById('driverName').value,
+            capacity: document.getElementById('capacity').value,
+            status: 'available'
+        };
+
+        await postData('/api/trucks/', data, truckModal, 'Truck added');
+    }
+
+    async function handleAllocSubmit(e) {
+        e.preventDefault();
+        const data = {
+            truck: document.getElementById('allocTruck').value,
+            destination: document.getElementById('destination').value,
+            purchase_order: document.getElementById('allocPO').value || null,
+            start_date: document.getElementById('startDate').value,
+            notes: document.getElementById('notes').value
+        };
+
+        await postData('/api/truck-allocations/', data, allocModal, 'Allocation created');
+
+        // Also update truck status to in_transit
+        // Ideally backend does this via signal, but for now just refresh
+    }
+
+    async function postData(url, data, modalInstance, successMsg) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (res.ok) {
+                modalInstance.hide();
+                Swal.fire('Success', successMsg, 'success');
+                loadData();
+                document.getElementById('truckForm').reset();
+                document.getElementById('allocForm').reset();
+            } else {
+                Swal.fire('Error', 'Operation failed', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+</script>
+{% endblock %}

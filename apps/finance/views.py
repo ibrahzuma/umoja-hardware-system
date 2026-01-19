@@ -1,12 +1,13 @@
 from rest_framework import viewsets, permissions
+from apps.users.permissions import IsAccountant
 from .models import Expense, ExpenseCategory
 from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .forms import ExpenseForm
-from .models import Expense, ExpenseCategory, Income
-from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer
+from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment
+from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer, TaxPaymentSerializer
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/expense_list.html'
@@ -46,3 +47,28 @@ class IncomeViewSet(viewsets.ModelViewSet):
     queryset = Income.objects.all().order_by('-date_received')
     serializer_class = IncomeSerializer
     permission_classes = [permissions.DjangoModelPermissions]
+
+class SupplierPaymentViewSet(viewsets.ModelViewSet):
+    queryset = SupplierPayment.objects.all().order_by('-payment_date')
+    serializer_class = SupplierPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccountant]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+class SupplierPaymentListView(LoginRequiredMixin, TemplateView):
+    template_name = 'finance/supplier_payment_list.html'
+
+class TaxPaymentViewSet(viewsets.ModelViewSet):
+    queryset = TaxPayment.objects.all().order_by('-payment_date')
+    serializer_class = TaxPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccountant]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+class TaxPaymentListView(LoginRequiredMixin, TemplateView):
+    template_name = 'finance/tax_payment_list.html'
+
+class DebtorListView(LoginRequiredMixin, TemplateView):
+    template_name = 'finance/debtor_list.html'

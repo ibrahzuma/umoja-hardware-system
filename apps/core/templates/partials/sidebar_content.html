@@ -191,6 +191,111 @@
     </li>
     {% endif %}
 
+    <!-- Afisa Ugavi / Procurement Dropdown -->
+    {% if user.is_superuser or user.is_procurement_officer %}
+    <li>
+        <a href="#procurementSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-truck-front"></i> Afisa Ugavi (Procurement)
+        </a>
+        <ul class="collapse list-unstyled" id="procurementSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'inventory:purchase_order_list' %}"><i class="bi bi-file-earmark-text"></i> Purchase
+                    Orders</a></li>
+            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck Allocation</a></li>
+            <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-shop"></i> Suppliers</a></li>
+            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-coin"></i> Supplier
+                    Payments</a></li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Checking</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Stock Controller Dropdown -->
+    {% if user.is_superuser or user.is_stock_controller %}
+    <li>
+        <a href="#stockSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-box-seam"></i> Stock Controller
+        </a>
+        <ul class="collapse list-unstyled" id="stockSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-clipboard-check"></i> Goods Received (GRN)</a>
+            </li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Balances</a></li>
+            <li><a href="{% url 'inventory:stock_adjustment' %}"><i class="bi bi-sliders"></i> Adjustments</a></li>
+            <li><a href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-graph-up"></i> ABC Analysis</a></li>
+            <li><a href="{% url 'inventory:inventory_aging' %}"><i class="bi bi-hourglass-split"></i> Aging Report</a>
+            </li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Sales Representative Dropdown -->
+    {% if user.is_superuser or user.is_sales_rep %}
+    <li>
+        <a href="#salesRepSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-cart4"></i> Sales (Shop)
+        </a>
+        <ul class="collapse list-unstyled" id="salesRepSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'sales:sale_list' %}"><i class="bi bi-receipt"></i> Orders</a></li>
+            <li><a href="{% url 'sales:quotation_list' %}"><i class="bi bi-file-earmark-text"></i> Quotations</a></li>
+            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-people"></i> Customers</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Store Manager Dropdown -->
+    {% if user.is_superuser or user.is_store_manager %}
+    <li>
+        <a href="#storeManagerSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-shop-window"></i> Store Manager
+        </a>
+        <ul class="collapse list-unstyled" id="storeManagerSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Daily Operations</a></li>
+            <li><a href="{% url 'inventory:driver_list' %}"><i class="bi bi-person-badge"></i> Drivers</a></li>
+            <li><a href="{% url 'inventory:truck_maintenance' %}"><i class="bi bi-wrench"></i> Truck Maintenance</a>
+            </li>
+            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck List</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Accountant Dropdown -->
+    {% if user.is_superuser or user.is_accountant %}
+    <li>
+        <a href="#accountantSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-calculator"></i> Accountant
+        </a>
+        <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes & Govt</a></li>
+            <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
+            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier
+                    Payments</a></li>
+            <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
+            <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-graph-up-arrow"></i> Income & Banking</a>
+            </li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-eye"></i> View Stock Balances</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Store Keeper Dropdown -->
+    {% if user.is_superuser or user.is_store_keeper %}
+    <li>
+        <a href="#storeKeeperSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-box-seam"></i> Store Keeper
+        </a>
+        <ul class="collapse list-unstyled" id="storeKeeperSubmenu" data-bs-parent="#sidebarAccordion"
+            style="padding-left: 20px; background: #3e444a;">
+            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-check2-square"></i> Verify GRN</a></li>
+            <li><a href="{% url 'inventory:inventory_list' %}"><i class="bi bi-boxes"></i> Physical Stock</a></li>
+            <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Loading/Offloading</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
     <li><a href="{% url 'settings_list' %}"><i class="bi bi-gear"></i> Settings</a></li>
     <li>
         <form id="logout-form-sidebar" action="{% url 'logout' %}" method="post" style="display: none;">

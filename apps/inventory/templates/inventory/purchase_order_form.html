@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{% url 'inventory:purchase_order_list' %}" class="btn btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h2 class="text-primary fw-bold mb-0">Create Purchase Order</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">PO Details</div>
+            <div class="card-body">
+                <form id="poForm">
+                    <div class="mb-3">
+                        <label class="form-label">Supplier</label>
+                        <select class="form-select" id="poSupplier" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="poBranch" required></select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Create Draft PO</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm" id="itemsCard" style="opacity: 0.5; pointer-events: none;">
+            <div class="card-header bg-light fw-bold">Order Items</div>
+            <div class="card-body">
+                <form id="itemForm" class="row g-3 align-items-end mb-4">
+                    <div class="col-md-5">
+                        <label class="form-label">Product</label>
+                        <select class="form-select" id="poProduct" required onchange="updateUnitCost()"></select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Qty</label>
+                        <input type="number" class="form-control" id="poQty" required min="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Unit Cost</label>
+                        <input type="number" class="form-control" id="poCost" required step="0.01">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg"></i> Add</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Unit Cost</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="poItemsBody">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">Add items to the order...</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold bg-light">
+                                <td colspan="3" class="text-end">Grand Total:</td>
+                                <td id="poTotal">TZS 0.00</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div class="mt-3 text-end">
+                    <button class="btn btn-success" onclick="finishOrder()"><i class="bi bi-check-lg"></i> Finish
+                        Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let currentPOId = null;
+    let products = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchInitialData();
+        document.getElementById('poForm').addEventListener('submit', createPO);
+        document.getElementById('itemForm').addEventListener('submit', addItem);
+
+        // Auto-select user's branch if possible (pseudo-code, needs user context in template or API)
+    });
+
+    async function fetchInitialData() {
+        try {
+            const [supRes, branchRes, prodRes] = await Promise.all([
+                fetch('/api/suppliers/'),
+                fetch('/api/branches/'),
+                fetch('/api/products/')
+            ]);
+
+            const suppliers = await supRes.json();
+            const branches = await branchRes.json();
+            products = await prodRes.json();
+
+            populateSelect('poSupplier', suppliers);
+            populateSelect('poBranch', branches);
+
+            const prodSelect = document.getElementById('poProduct');
+            prodSelect.innerHTML = '<option value="">Select Product...</option>';
+            products.forEach(item => {
+                prodSelect.innerHTML += `<option value="${item.id}" data-cost="${item.cost}">${item.name}</option>`;
+            });
+
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function populateSelect(id, items) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Select...</option>';
+        items.forEach(item => {
+            select.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+        });
+    }
+
+    function updateUnitCost() {
+        const select = document.getElementById('poProduct');
+        const cost = select.options[select.selectedIndex].dataset.cost;
+        if (cost) {
+            document.getElementById('poCost').value = cost;
+        }
+    }
+
+    async function createPO(e) {
+        e.preventDefault();
+        const data = {
+            supplier: document.getElementById('poSupplier').value,
+            branch: document.getElementById('poBranch').value,
+            status: 'draft'
+        };
+
+        try {
+            const response = await fetch('/api/purchase-orders/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const po = await response.json();
+                currentPOId = po.id;
+
+                // Lock PO form and unlock items
+                document.getElementById('poSupplier').disabled = true;
+                document.getElementById('poBranch').disabled = true;
+                e.target.querySelector('button').disabled = true;
+                e.target.querySelector('button').innerText = `PO #${po.id} Created`;
+
+                document.getElementById('itemsCard').style.opacity = '1';
+                document.getElementById('itemsCard').style.pointerEvents = 'auto';
+
+                Swal.fire('Success', 'Draft PO created. Now add items.', 'success');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Failed to create PO', 'error');
+        }
+    }
+
+    async function addItem(e) {
+        e.preventDefault();
+        if (!currentPOId) return;
+
+        const data = {
+            product: document.getElementById('poProduct').value,
+            quantity: document.getElementById('poQty').value,
+            unit_cost: document.getElementById('poCost').value
+        };
+
+        try {
+            const response = await fetch(`/api/purchase-orders/${currentPOId}/add_item/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const item = await response.json();
+                addRowToTable(item);
+                document.getElementById('itemForm').reset();
+            } else {
+                Swal.fire('Error', 'Failed to add item', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    let poTotal = 0;
+    function addRowToTable(item) {
+        const tbody = document.getElementById('poItemsBody');
+        if (tbody.querySelector('td').colSpan === 4) tbody.innerHTML = '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item.product_name}</td>
+            <td>${item.quantity}</td>
+            <td>${parseFloat(item.unit_cost).toLocaleString()}</td>
+            <td>${parseFloat(item.total_cost).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+
+        poTotal += parseFloat(item.total_cost);
+        document.getElementById('poTotal').innerText = 'TZS ' + poTotal.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    }
+
+    function finishOrder() {
+        Swal.fire({
+            title: 'Finish Order?',
+            text: "This will save the order effectively.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, finish it!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = "{% url 'inventory:purchase_order_list' %}";
+            }
+        });
+    }
+</script>
+{% endblock %}

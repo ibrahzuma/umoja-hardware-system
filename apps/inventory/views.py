@@ -1,8 +1,10 @@
 from rest_framework import viewsets, permissions
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, DriverIssue
 from .serializers import (
     BranchSerializer, CategorySerializer, ProductSerializer, 
-    StockSerializer, PurchaseSerializer, SupplierSerializer, StockTransferSerializer
+    StockSerializer, PurchaseSerializer, SupplierSerializer, StockTransferSerializer,
+    PurchaseOrderSerializer, PurchaseOrderItemSerializer, TruckSerializer, TruckAllocationSerializer, StockAdjustmentSerializer,
+    GoodsReceivedNoteSerializer, GRNItemSerializer, DriverSerializer, TruckMaintenanceSerializer
 )
 import io
 import csv
@@ -15,6 +17,8 @@ from rest_framework.decorators import action
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
+
+from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi
 
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
@@ -226,6 +230,96 @@ class StockTransferViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+class PurchaseOrderViewSet(viewsets.ModelViewSet):
+    queryset = PurchaseOrder.objects.all()
+    serializer_class = PurchaseOrderSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['POST'])
+    def add_item(self, request, pk=None):
+        po = self.get_object()
+        product_id = request.data.get('product')
+        quantity = int(request.data.get('quantity', 0))
+        unit_cost = float(request.data.get('unit_cost', 0))
+        
+        product = Product.objects.get(pk=product_id)
+        
+        item = PurchaseOrderItem.objects.create(
+            purchase_order=po,
+            product=product,
+            quantity=quantity,
+            unit_cost=unit_cost,
+            total_cost=quantity * unit_cost
+        )
+        
+        # Update PO total
+        po.total_amount = sum(i.total_cost for i in po.items.all())
+        po.save()
+        
+        return Response(PurchaseOrderItemSerializer(item).data)
+
+class TruckViewSet(viewsets.ModelViewSet):
+    queryset = Truck.objects.all()
+    serializer_class = TruckSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+
+class TruckAllocationViewSet(viewsets.ModelViewSet):
+    queryset = TruckAllocation.objects.all()
+    serializer_class = TruckAllocationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+
+class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
+    queryset = GoodsReceivedNote.objects.all()
+    serializer_class = GoodsReceivedNoteSerializer
+    # Stock Controller creates GRN (as per original requirements). Store Keeper verifies in UI.
+    permission_classes = [permissions.IsAuthenticated, IsStockController]
+
+    def perform_create(self, serializer):
+        grn = serializer.save(created_by=self.request.user)
+        
+        # If successfully created, and PO is linked, update PO status to 'received'
+        if grn.purchase_order:
+            grn.purchase_order.status = 'received'
+            grn.purchase_order.save()
+
+    @action(detail=True, methods=['post'])
+    def add_item(self, request, pk=None):
+        grn = self.get_object()
+        product_id = request.data.get('product')
+        qty = request.data.get('quantity_received')
+        
+        try:
+            product = Product.objects.get(id=product_id)
+            item = GRNItem.objects.create(
+                grn=grn,
+                product=product,
+                quantity_received=qty,
+                remarks=request.data.get('remarks', '')
+            )
+            
+            # UPDATE STOCK
+            stock, created = Stock.objects.get_or_create(
+                product=product, 
+                branch=grn.branch,
+                defaults={'quantity': 0}
+            )
+            stock.quantity += int(qty)
+            stock.save()
+
+            return Response(GRNItemSerializer(item).data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
+class GRNListView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/grn_list.html'
+
+class GRNCreateView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/grn_form.html'
+
+
 class InventoryListView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/stock_list.html'
 
@@ -408,8 +502,6 @@ def download_product_template(request):
     writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', '15000', '25000', '1.5', 'Heavy duty steel hammer', '50', '5'])
 
     return response
-from .models import StockAdjustment
-from .serializers import StockAdjustmentSerializer
 
 class StockAdjustmentViewSet(viewsets.ModelViewSet):
     queryset = StockAdjustment.objects.all().order_by('-created_at')
@@ -446,3 +538,40 @@ class StockAdjustmentViewSet(viewsets.ModelViewSet):
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
+class PurchaseOrderListView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/purchase_order_list.html'
+
+class PurchaseOrderCreateView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/purchase_order_form.html'
+
+class TruckListView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/truck_list.html'
+
+class StockAdjustmentView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/stock_adjustment.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Stock Adjustment'
+        context['resource'] = 'stocks'
+        return context
+
+class DriverViewSet(viewsets.ModelViewSet):
+    queryset = Driver.objects.all()
+    serializer_class = DriverSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStoreManager]
+
+class TruckMaintenanceViewSet(viewsets.ModelViewSet):
+    queryset = TruckMaintenance.objects.all().order_by('-date')
+    serializer_class = TruckMaintenanceSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStoreManager]
+
+    def perform_create(self, serializer):
+        serializer.save(recorded_by=self.request.user)
+
+class DriverListView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/driver_list.html'
+
+class TruckMaintenanceView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/truck_maintenance.html'

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Sale, SaleItem, Transaction, Customer, Vehicle
+from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
 from apps.inventory.models import Product
 
 class VehicleSerializer(serializers.ModelSerializer):
@@ -111,3 +111,21 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = '__all__'
+
+class QuotationItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    
+    class Meta:
+        model = QuotationItem
+        fields = '__all__'
+        read_only_fields = ('total_price',)
+
+class QuotationSerializer(serializers.ModelSerializer):
+    items = QuotationItemSerializer(many=True, read_only=True)
+    customer_name_display = serializers.CharField(source='customer.name', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = Quotation
+        fields = '__all__'
+        read_only_fields = ('created_at', 'total_amount', 'created_by')

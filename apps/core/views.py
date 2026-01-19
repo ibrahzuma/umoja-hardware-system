@@ -25,7 +25,21 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             context['todays_sales_count'] = Sale.objects.filter(created_at__date=timezone.now().date()).count()
             context['todays_revenue'] = Sale.objects.filter(created_at__date=timezone.now().date()).aggregate(
                 total=Sum('total_amount'))['total'] or 0
-            
+        
+        # Chart Data: Sales per Day (Last 7 Days)
+        from django.db.models.functions import TruncDate
+        last_7_days = timezone.now() - timezone.timedelta(days=7)
+        sales_per_day = Sale.objects.filter(created_at__gte=last_7_days).annotate(
+            date=TruncDate('created_at')
+        ).values('date').annotate(total=Sum('total_amount')).order_by('date')
+        
+        import json
+        dates = [s['date'].strftime('%Y-%m-%d') for s in sales_per_day]
+        revenues = [float(s['total']) for s in sales_per_day]
+        
+        context['sales_chart_labels'] = json.dumps(dates)
+        context['sales_chart_data'] = json.dumps(revenues)
+
         return context
 
 class GenericListView(LoginRequiredMixin, TemplateView):
@@ -35,4 +49,35 @@ class GenericListView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context['title'] = self.kwargs.get('title', 'List')
         context['resource'] = self.kwargs.get('resource', '')
+        context['resource'] = self.kwargs.get('resource', '')
         return context
+
+class SettingsView(LoginRequiredMixin, TemplateView):
+    template_name = "settings.html"
+
+    def get_context_data(self, **kwargs):
+        from .models import SystemSettings
+        context = super().get_context_data(**kwargs)
+        settings, _ = SystemSettings.objects.get_or_create(id=1)
+        context['settings'] = settings
+        return context
+
+    def post(self, request, *args, **kwargs):
+        from .models import SystemSettings
+        from django.contrib import messages
+        
+        settings, _ = SystemSettings.objects.get_or_create(id=1)
+        
+        settings.company_name = request.POST.get('company_name', settings.company_name)
+        settings.currency = request.POST.get('currency', settings.currency)
+        settings.tax_rate = request.POST.get('tax_rate', settings.tax_rate)
+        settings.phone = request.POST.get('phone', settings.phone)
+        settings.email = request.POST.get('email', settings.email)
+        settings.address = request.POST.get('address', settings.address)
+        
+        if 'logo' in request.FILES:
+            settings.logo = request.FILES['logo']
+            
+        settings.save()
+        messages.success(request, 'System settings updated successfully.')
+        return self.get(request, *args, **kwargs)

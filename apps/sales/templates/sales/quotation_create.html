@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">New Quotation</h2>
+    <a href="{% url 'sales:quotation_list' %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <!-- Left: Form -->
+    <div class="col-md-5">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">Customer Details</div>
+            <div class="card-body">
+                <form id="quotationForm">
+                    <div class="mb-3">
+                        <label class="form-label">Customer (Optional)</label>
+                        <select class="form-select" id="customer">
+                            <option value="">Walk-in / New</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer Name</label>
+                        <input type="text" class="form-control" id="customerName"
+                            placeholder="Enter name if not selected">
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-light fw-bold">Add Item</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Product</label>
+                    <select class="form-select" id="productSelect"></select>
+                </div>
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" class="form-control" id="quantity" value="1" min="1">
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Price</label>
+                        <input type="number" class="form-control" id="price" step="0.01">
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-primary" onclick="addItem()">Add to Quote</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Items -->
+    <div class="col-md-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-light fw-bold d-flex justify-content-between">
+                <span>Items</span>
+                <span id="totalBadge" class="badge bg-success fs-6">Total: 0.00</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Product</th>
+                                <th>Qty</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer bg-white text-end">
+                <button class="btn btn-success btn-lg" onclick="saveQuotation()">
+                    <i class="bi bi-check-circle"></i> Save Quotation
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let cart = [];
+    let products = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchInitialData();
+    });
+
+    async function fetchInitialData() {
+        try {
+            const [custRes, prodRes] = await Promise.all([
+                fetch('/api/customers/'),
+                fetch('/api/products/')
+            ]);
+
+            const customers = await custRes.json();
+            products = await prodRes.json();
+
+            // Populate Customers
+            const custSelect = document.getElementById('customer');
+            customers.forEach(c => {
+                custSelect.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+
+            // Populate Products
+            const prodSelect = document.getElementById('productSelect');
+            prodSelect.innerHTML = '<option value="">Select Product...</option>';
+            products.forEach(p => {
+                prodSelect.innerHTML += `<option value="${p.id}" data-price="${p.price}">${p.name} (Stock: ${p.stock_quantity || '-'})</option>`;
+            });
+
+            prodSelect.addEventListener('change', function () {
+                const opt = this.options[this.selectedIndex];
+                if (opt.value) {
+                    document.getElementById('price').value = opt.getAttribute('data-price');
+                }
+            });
+
+        } catch (error) { console.error(error); }
+    }
+
+    function addItem() {
+        const prodSelect = document.getElementById('productSelect');
+        const productId = prodSelect.value;
+        const productName = prodSelect.options[prodSelect.selectedIndex].text;
+        const quantity = parseFloat(document.getElementById('quantity').value);
+        const price = parseFloat(document.getElementById('price').value);
+
+        if (!productId || quantity <= 0 || price < 0) {
+            Swal.fire('Error', 'Please select a product and valid details', 'warning');
+            return;
+        }
+
+        const total = quantity * price;
+        cart.push({ product: productId, product_name: productName, quantity, unit_price: price, total_price: total });
+        renderCart();
+
+        // Reset inputs
+        document.getElementById('quantity').value = 1;
+    }
+
+    function renderCart() {
+        const tbody = document.getElementById('cartTableBody');
+        tbody.innerHTML = '';
+        let grandTotal = 0;
+
+        cart.forEach((item, index) => {
+            grandTotal += item.total_price;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.product_name}</td>
+                <td>${item.quantity}</td>
+                <td>${item.unit_price.toFixed(2)}</td>
+                <td class="fw-bold">${item.total_price.toFixed(2)}</td>
+                <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${index})"><i class="bi bi-trash"></i></button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('totalBadge').innerText = 'Total: ' + grandTotal.toLocaleString();
+    }
+
+    function removeItem(index) {
+        cart.splice(index, 1);
+        renderCart();
+    }
+
+    async function saveQuotation() {
+        if (cart.length === 0) {
+            Swal.fire('Empty', 'Please add items first', 'warning');
+            return;
+        }
+
+        const data = {
+            customer: document.getElementById('customer').value || null,
+            customer_name: document.getElementById('customerName').value || document.getElementById('customer').options[document.getElementById('customer').selectedIndex].text,
+            items: cart
+        };
+
+        try {
+            const response = await fetch('/api/quotations/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                Swal.fire('Success', 'Quotation Saved!', 'success').then(() => {
+                    window.location.href = "{% url 'sales:quotation_list' %}";
+                });
+            } else {
+                Swal.fire('Error', 'Failed to save quotation', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}

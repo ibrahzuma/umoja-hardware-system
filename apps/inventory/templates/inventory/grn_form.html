@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{% url 'inventory:grn_list' %}" class="btn btn-outline-secondary me-3">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h2 class="text-primary fw-bold mb-0">Create Goods Received Note (GRN)</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-light fw-bold">GRN Details</div>
+            <div class="card-body">
+                <form id="grnForm">
+                    <div class="mb-3">
+                        <label class="form-label">Receipt Number</label>
+                        <input type="text" class="form-control" id="receiptNumber" required placeholder="e.g. DEL-001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="branch" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Purchase Order (Optional)</label>
+                        <select class="form-select" id="poSelect">
+                            <option value="">None</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Create Draft GRN</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm" id="itemsCard" style="opacity: 0.5; pointer-events: none;">
+            <div class="card-header bg-light fw-bold">Received Items</div>
+            <div class="card-body">
+                <form id="itemForm" class="row g-3 align-items-end mb-4">
+                    <div class="col-md-5">
+                        <label class="form-label">Product</label>
+                        <select class="form-select" id="product" required></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Qty Received</label>
+                        <input type="number" class="form-control" id="qty" required min="1">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Remarks</label>
+                        <input type="text" class="form-control" id="remarks">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg"></i> Add</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Qty Received</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody id="grnItemsBody">
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Add received items...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-3 text-end">
+                    <button class="btn btn-success" onclick="finishGRN()"><i class="bi bi-check-lg"></i> Finish
+                        GRN</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let currentGRNId = null;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchInitialData();
+        document.getElementById('grnForm').addEventListener('submit', createGRN);
+        document.getElementById('itemForm').addEventListener('submit', addItem);
+
+        // Auto-select user's branch if possible
+    });
+
+    async function fetchInitialData() {
+        try {
+            const [branchRes, prodRes, poRes] = await Promise.all([
+                fetch('/api/branches/'),
+                fetch('/api/products/'),
+                fetch('/api/purchase-orders/?status=sent'), // Filter for Sent POs
+            ]);
+
+            const branches = await branchRes.json();
+            const products = await prodRes.json();
+            const pos = await poRes.json();
+
+            populateSelect('branch', branches);
+
+            const prodSelect = document.getElementById('product');
+            prodSelect.innerHTML = '<option value="">Select Product...</option>';
+            products.forEach(item => {
+                prodSelect.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+            });
+
+            const poSelect = document.getElementById('poSelect');
+            pos.forEach(p => {
+                poSelect.innerHTML += `<option value="${p.id}">PO #${p.id} - ${p.supplier_name}</option>`;
+            });
+
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function populateSelect(id, items) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Select...</option>';
+        items.forEach(item => {
+            select.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+        });
+    }
+
+    async function createGRN(e) {
+        e.preventDefault();
+        const data = {
+            receipt_number: document.getElementById('receiptNumber').value,
+            branch: document.getElementById('branch').value,
+            purchase_order: document.getElementById('poSelect').value || null,
+            notes: document.getElementById('notes').value
+        };
+
+        try {
+            const response = await fetch('/api/grns/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const grn = await response.json();
+                currentGRNId = grn.id;
+
+                // Lock GRN form and unlock items
+                document.getElementById('receiptNumber').disabled = true;
+                document.getElementById('branch').disabled = true;
+                document.getElementById('poSelect').disabled = true;
+                e.target.querySelector('button').disabled = true;
+                e.target.querySelector('button').innerText = `GRN #${grn.id} Created`;
+
+                document.getElementById('itemsCard').style.opacity = '1';
+                document.getElementById('itemsCard').style.pointerEvents = 'auto';
+
+                Swal.fire('Success', 'Draft GRN created. Now add items.', 'success');
+            } else {
+                Swal.fire('Error', 'Failed (Duplicate Receipt No?)', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Failed to create GRN', 'error');
+        }
+    }
+
+    async function addItem(e) {
+        e.preventDefault();
+        if (!currentGRNId) return;
+
+        const data = {
+            product: document.getElementById('product').value,
+            quantity_received: document.getElementById('qty').value,
+            remarks: document.getElementById('remarks').value
+        };
+
+        try {
+            const response = await fetch(`/api/grns/${currentGRNId}/add_item/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                const item = await response.json();
+                addRowToTable(item);
+                document.getElementById('itemForm').reset();
+                Swal.fire({
+                    toast: true,
+                    position: 'top-end',
+                    icon: 'success',
+                    title: 'Item Added & Stock Updated',
+                    showConfirmButton: false,
+                    timer: 1500
+                });
+            } else {
+                Swal.fire('Error', 'Failed to add item', 'error');
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function addRowToTable(item) {
+        const tbody = document.getElementById('grnItemsBody');
+        if (tbody.querySelector('td').colSpan === 3) tbody.innerHTML = '';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item.product_name}</td>
+            <td class="fw-bold text-success">+${item.quantity_received}</td>
+            <td>${item.remarks || '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    function finishGRN() {
+        Swal.fire({
+            title: 'Finish GRN?',
+            text: "Stock has already been updated. This will return to the list.",
+            icon: 'success',
+            confirmButtonText: 'OK'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = "{% url 'inventory:grn_list' %}";
+            }
+        });
+    }
+</script>
+{% endblock %}

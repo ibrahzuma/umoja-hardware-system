@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Purchase Orders</h2>
+    <a href="{% url 'inventory:purchase_order_create' %}" class="btn btn-primary">
+        <i class="bi bi-file-earmark-plus"></i> Create Purchase Order
+    </a>
+</div>
+
+<!-- Purchase Orders Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="poTable">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">PO #</th>
+                        <th>Date</th>
+                        <th>Supplier</th>
+                        <th>Branch</th>
+                        <th>Status</th>
+                        <th>Total Amount</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="poTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading purchase orders...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchData();
+    });
+
+    async function fetchData() {
+        try {
+            const response = await fetch('/api/purchase-orders/');
+            const data = await response.json();
+            renderTable(data);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById('poTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No purchase orders found</td></tr>';
+            return;
+        }
+
+        data.forEach(po => {
+            const tr = document.createElement('tr');
+
+            let statusBadge = 'secondary';
+            if (po.status === 'received') statusBadge = 'success';
+            else if (po.status === 'sent') statusBadge = 'info';
+            else if (po.status === 'cancelled') statusBadge = 'danger';
+
+            tr.innerHTML = `
+                <td class="ps-4 fw-bold">#${po.id}</td>
+                <td class="text-muted">${new Date(po.order_date).toLocaleDateString()}</td>
+                <td class="fw-medium">${po.supplier_name || '-'}</td>
+                <td><span class="badge bg-light text-dark border">${po.branch_name || '-'}</span></td>
+                <td><span class="badge bg-${statusBadge}">${po.status.toUpperCase()}</span></td>
+                <td class="fw-bold">TZS ${parseFloat(po.total_amount).toLocaleString()}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${po.id})"><i class="bi bi-eye"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function viewDetails(id) {
+        // Implement view details logic (e.g., modal or redirection)
+        alert('View details for PO #' + id);
+    }
+</script>
+{% endblock %}
