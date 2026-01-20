@@ -28,6 +28,9 @@ class SaleViewSet(viewsets.ModelViewSet):
             ).filter(total_paid__lt=F('total_amount'))
         return queryset
 
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
     def perform_destroy(self, instance):
         # Restore stock if dispatched
         if instance.status == 'dispatched':
