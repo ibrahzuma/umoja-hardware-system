@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}HR Dashboard · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>HR Dashboard</h2>
+        <p class="subtitle">Headcount, leave, payroll status at a glance.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-secondary" href="{% url 'hr:employee_list' %}">
+            <i class="bi bi-people"></i> Employees
+        </a>
+        <a class="btn btn-primary" href="{% url 'hr:employee_create' %}">
+            <i class="bi bi-person-plus"></i> Add employee
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-icon tint-brand mb-3"><i class="bi bi-people"></i></div>
+            <div class="stat-label">Active employees</div>
+            <p class="stat-value" id="kpi-active">—</p>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-icon tint-warning mb-3"><i class="bi bi-calendar-event"></i></div>
+            <div class="stat-label">Pending leave requests</div>
+            <p class="stat-value" id="kpi-leave">—</p>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-icon tint-info mb-3"><i class="bi bi-diagram-3"></i></div>
+            <div class="stat-label">Departments</div>
+            <p class="stat-value" id="kpi-depts">—</p>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="stat-card">
+            <div class="stat-icon tint-success mb-3"><i class="bi bi-cash-stack"></i></div>
+            <div class="stat-label">Latest payroll status</div>
+            <p class="stat-value" id="kpi-payroll" style="font-size: 1.1rem;">—</p>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Recent leave requests</div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Status</th></tr></thead>
+                    <tbody id="recent-leave"><tr><td colspan="5" class="text-center text-muted py-3">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Headcount by department</div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr><th>Department</th><th class="text-end">Employees</th></tr></thead>
+                    <tbody id="head-by-dept"><tr><td colspan="2" class="text-center text-muted py-3">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function jget(url) { const r = await fetch(url); return r.json(); }
+async function results(url) { const d = await jget(url); return Array.isArray(d) ? d : (d.results || []); }
+function setText(id, v) { const el = document.getElementById(id); if (el) el.innerText = v; }
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const [emps, leaves, depts, periods] = await Promise.all([
+            results('/api/employees/'),
+            results('/api/leave-requests/'),
+            results('/api/departments/'),
+            results('/api/payroll-periods/'),
+        ]);
+
+        setText('kpi-active', emps.filter(e => e.status === 'active').length);
+        setText('kpi-leave',  leaves.filter(l => l.status === 'pending').length);
+        setText('kpi-depts',  depts.length);
+        if (periods.length) {
+            const p = periods[0];
+            setText('kpi-payroll', `${p.year}-${String(p.month).padStart(2,'0')} (${p.status})`);
+        } else {
+            setText('kpi-payroll', 'No payroll yet');
+        }
+
+        const lt = document.getElementById('recent-leave');
+        lt.innerHTML = '';
+        const recent = leaves.slice(0, 6);
+        if (!recent.length) {
+            lt.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No leave requests yet.</td></tr>';
+        }
+        recent.forEach(l => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${l.employee_name}</td><td>${l.leave_type_name}</td>` +
+                           `<td>${l.start_date}</td><td>${l.end_date}</td>` +
+                           `<td><span class="badge bg-${badge(l.status)}">${l.status}</span></td>`;
+            lt.appendChild(tr);
+        });
+
+        // headcount by dept
+        const hd = document.getElementById('head-by-dept');
+        hd.innerHTML = '';
+        if (!depts.length) {
+            hd.innerHTML = '<tr><td colspan="2" class="text-center text-muted py-3">Create a department first.</td></tr>';
+        }
+        depts.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${d.name}</td><td class="text-end fw-semibold">${d.employee_count}</td>`;
+            hd.appendChild(tr);
+        });
+    } catch (e) { console.error(e); }
+});
+
+function badge(s) {
+    return ({pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'secondary'})[s] || 'secondary';
+}
+</script>
+{% endblock %}

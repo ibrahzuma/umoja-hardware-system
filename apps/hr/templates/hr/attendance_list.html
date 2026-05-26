@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+
+{% block title %}Attendance · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Attendance</h2>
+        <p class="subtitle">Daily clock-in / clock-out records.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAttModal">
+        <i class="bi bi-plus-lg"></i> Record attendance
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr><th class="ps-4">Date</th><th>Employee</th><th>Status</th>
+                    <th>Clock in</th><th>Clock out</th><th class="text-end pe-4">Hours</th></tr>
+            </thead>
+            <tbody id="attBody"><tr><td colspan="6" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="newAttModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="attForm">
+            <div class="modal-header"><h5 class="modal-title">Record attendance</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Employee *</label>
+                        <select class="form-select" name="employee" id="empSel" required><option value="">—</option></select></div>
+                    <div class="col-md-6"><label class="form-label">Date *</label>
+                        <input type="date" class="form-control" name="date" required></div>
+                    <div class="col-md-6"><label class="form-label">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="present">Present</option><option value="absent">Absent</option>
+                            <option value="late">Late</option><option value="leave">On Leave</option>
+                            <option value="half_day">Half day</option><option value="holiday">Holiday</option>
+                        </select></div>
+                    <div class="col-md-6"><label class="form-label">Hours worked</label>
+                        <input type="number" step="0.25" class="form-control" name="hours_worked" value="0"></div>
+                    <div class="col-md-6"><label class="form-label">Clock in</label>
+                        <input type="time" class="form-control" name="clock_in"></div>
+                    <div class="col-md-6"><label class="form-label">Clock out</label>
+                        <input type="time" class="form-control" name="clock_out"></div>
+                    <div class="col-12"><label class="form-label">Notes</label>
+                        <textarea class="form-control" name="notes" rows="2"></textarea></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function badgeFor(s) {
+    return ({present:'success', absent:'danger', late:'warning', leave:'info', half_day:'warning', holiday:'secondary'})[s] || 'secondary';
+}
+async function listAtt() {
+    const d = await (await fetch('/api/attendance/')).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const tbody = document.getElementById('attBody');
+    if (!arr.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No records yet.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    arr.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="ps-4">${a.date}</td><td>${a.employee_name}</td>
+                        <td><span class="badge bg-${badgeFor(a.status)}">${a.status.replace('_',' ')}</span></td>
+                        <td>${a.clock_in || '—'}</td><td>${a.clock_out || '—'}</td>
+                        <td class="text-end pe-4">${a.hours_worked}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+async function fillSel(id, url, label='full_name') {
+    const d = await (await fetch(url)).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const sel = document.getElementById(id);
+    arr.forEach(x => { const o = document.createElement('option'); o.value = x.id; o.text = x[label]; sel.appendChild(o); });
+}
+document.addEventListener('DOMContentLoaded', async () => {
+    listAtt();
+    await fillSel('empSel', '/api/employees/');
+    document.getElementById('attForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        const r = await fetch('/api/attendance/', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN}, body: JSON.stringify(data),
+        });
+        if (r.ok) { bootstrap.Modal.getInstance(document.getElementById('newAttModal')).hide(); e.target.reset(); listAtt(); }
+        else alert('Save failed');
+    });
+});
+</script>
+{% endblock %}

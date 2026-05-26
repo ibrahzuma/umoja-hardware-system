@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}Payroll · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Payroll periods</h2>
+        <p class="subtitle">Generate monthly payslips with PAYE / NSSF / SDL / WCF.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPeriodModal">
+        <i class="bi bi-plus-lg"></i> New period
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr>
+                <th class="ps-4">Period</th><th>Status</th><th>Payslips</th>
+                <th>Processed by</th><th>Processed at</th><th class="text-end pe-4">Actions</th>
+            </tr></thead>
+            <tbody id="periodBody"><tr><td colspan="6" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="newPeriodModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="periodForm">
+            <div class="modal-header"><h5 class="modal-title">New payroll period</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Year *</label>
+                        <input type="number" class="form-control" name="year" required></div>
+                    <div class="col-md-6"><label class="form-label">Month *</label>
+                        <select class="form-select" name="month" required>
+                            <option value="1">January</option><option value="2">February</option>
+                            <option value="3">March</option><option value="4">April</option>
+                            <option value="5">May</option><option value="6">June</option>
+                            <option value="7">July</option><option value="8">August</option>
+                            <option value="9">September</option><option value="10">October</option>
+                            <option value="11">November</option><option value="12">December</option>
+                        </select></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function badge(s) { return ({draft:'secondary', processed:'info', paid:'success', cancelled:'danger'})[s] || 'secondary'; }
+
+async function listPeriods() {
+    const d = await (await fetch('/api/payroll-periods/')).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const tbody = document.getElementById('periodBody');
+    if (!arr.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No periods yet.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    arr.forEach(p => {
+        const tr = document.createElement('tr');
+        const actions = `
+            <a class="btn btn-sm btn-outline-primary me-1" href="{% url 'hr:payroll_detail' 0 %}".replace('/0/', '/'+p.id+'/')>View</a>
+            ${p.status === 'draft' || p.status === 'processed'
+                ? `<button class="btn btn-sm btn-primary me-1" onclick="generate(${p.id})"><i class="bi bi-gear"></i> Generate</button>` : ''}
+            ${p.status === 'processed'
+                ? `<button class="btn btn-sm btn-success" onclick="markPaid(${p.id})"><i class="bi bi-check2-circle"></i> Mark paid</button>` : ''}`;
+        tr.innerHTML = `
+            <td class="ps-4">${p.year}-${String(p.month).padStart(2,'0')}</td>
+            <td><span class="badge bg-${badge(p.status)}">${p.status}</span></td>
+            <td>${p.payslip_count}</td>
+            <td>${p.processed_by || '—'}</td>
+            <td>${p.processed_at ? new Date(p.processed_at).toLocaleString() : '—'}</td>
+            <td class="text-end pe-4">${actions}</td>`;
+        // Fix the URL placeholder generation since template substitution above can't be string-replaced cleanly
+        tr.querySelector('a').href = `/hr/payroll/${p.id}/`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function generate(id) {
+    if (!confirm('Generate / recalculate payslips for every active employee in this period?')) return;
+    const r = await fetch(`/api/payroll-periods/${id}/generate_payslips/`, {
+        method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json'}, body: '{}',
+    });
+    const d = await r.json();
+    if (r.ok) { alert(`Created ${d.created}, updated ${d.updated}. Status: ${d.status}`); listPeriods(); }
+    else alert('Generate failed: ' + (d.error || r.status));
+}
+
+async function markPaid(id) {
+    if (!confirm('Mark this period as Paid? This is the final state.')) return;
+    const r = await fetch(`/api/payroll-periods/${id}/mark_paid/`, {
+        method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json'}, body: '{}',
+    });
+    if (r.ok) listPeriods(); else alert('Failed');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    listPeriods();
+    document.getElementById('periodForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        const r = await fetch('/api/payroll-periods/', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN}, body: JSON.stringify(data),
+        });
+        if (r.ok) { bootstrap.Modal.getInstance(document.getElementById('newPeriodModal')).hide(); e.target.reset(); listPeriods(); }
+        else { const err = await r.json().catch(() => ({})); alert('Create failed: ' + JSON.stringify(err)); }
+    });
+});
+</script>
+{% endblock %}

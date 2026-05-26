@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'apps.inventory',
     'apps.sales',
     'apps.finance',
+    'apps.hr',
     'django_filters',
     'drf_spectacular',
     'simple_history',

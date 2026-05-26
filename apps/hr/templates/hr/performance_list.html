@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+
+{% block title %}Performance reviews · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Performance reviews</h2>
+        <p class="subtitle">Quarterly and annual employee reviews.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newReviewModal">
+        <i class="bi bi-plus-lg"></i> New review
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr>
+                <th class="ps-4">Employee</th><th>Period</th><th>Rating</th>
+                <th>Reviewer</th><th>Acknowledged</th>
+            </tr></thead>
+            <tbody id="revBody"><tr><td colspan="5" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="newReviewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" id="revForm">
+            <div class="modal-header"><h5 class="modal-title">New performance review</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Employee *</label>
+                        <select class="form-select" name="employee" id="empSel" required><option value="">—</option></select></div>
+                    <div class="col-md-6"><label class="form-label">Rating *</label>
+                        <select class="form-select" name="rating" required>
+                            <option value="1">1 — Needs improvement</option>
+                            <option value="2">2 — Below expectations</option>
+                            <option value="3" selected>3 — Meets expectations</option>
+                            <option value="4">4 — Exceeds expectations</option>
+                            <option value="5">5 — Outstanding</option>
+                        </select></div>
+                    <div class="col-md-6"><label class="form-label">Period start *</label>
+                        <input type="date" class="form-control" name="period_start" required></div>
+                    <div class="col-md-6"><label class="form-label">Period end *</label>
+                        <input type="date" class="form-control" name="period_end" required></div>
+                    <div class="col-12"><label class="form-label">Strengths</label>
+                        <textarea class="form-control" name="strengths" rows="2"></textarea></div>
+                    <div class="col-12"><label class="form-label">Areas for improvement</label>
+                        <textarea class="form-control" name="areas_for_improvement" rows="2"></textarea></div>
+                    <div class="col-12"><label class="form-label">Goals for next period</label>
+                        <textarea class="form-control" name="goals" rows="2"></textarea></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function listRev() {
+    const d = await (await fetch('/api/performance-reviews/')).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const tbody = document.getElementById('revBody');
+    if (!arr.length) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No reviews yet.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    arr.forEach(r => {
+        const tr = document.createElement('tr');
+        const color = r.rating >= 4 ? 'success' : r.rating >= 3 ? 'info' : 'warning';
+        tr.innerHTML = `<td class="ps-4">${r.employee_name}</td>
+            <td>${r.period_start} → ${r.period_end}</td>
+            <td><span class="badge bg-${color}">${r.rating_label}</span></td>
+            <td>${r.reviewer_name || '—'}</td>
+            <td>${r.acknowledged ? '<i class="bi bi-check-circle text-success"></i>' : '<span class="text-muted">No</span>'}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+async function fillSel(id, url) {
+    const d = await (await fetch(url)).json(); const arr = Array.isArray(d) ? d : (d.results || []);
+    const sel = document.getElementById(id);
+    arr.forEach(x => { const o = document.createElement('option'); o.value = x.id; o.text = x.full_name; sel.appendChild(o); });
+}
+document.addEventListener('DOMContentLoaded', async () => {
+    listRev();
+    await fillSel('empSel', '/api/employees/');
+    document.getElementById('revForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const r = await fetch('/api/performance-reviews/', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries())),
+        });
+        if (r.ok) { bootstrap.Modal.getInstance(document.getElementById('newReviewModal')).hide(); e.target.reset(); listRev(); }
+        else alert('Save failed');
+    });
+});
+</script>
+{% endblock %}

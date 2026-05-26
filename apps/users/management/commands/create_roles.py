@@ -10,6 +10,8 @@ class Command(BaseCommand):
         ROLE_MAP = {
             'admin': 'Admin',
             'manager': 'Manager',
+            'hr_officer': 'HR Officer',
+            'hr_manager': 'HR Manager',
             'staff': 'Staff',
             'afisa_ugavi': 'Afisa Ugavi',
             'stock_controller': 'Stock Controller',
@@ -61,6 +63,27 @@ class Command(BaseCommand):
             'Store Keeper': [
                 'inventory.view_stock',
                 'sales.view_sale',
+            ],
+            'HR Officer': [
+                'hr.view_employee', 'hr.add_employee', 'hr.change_employee',
+                'hr.view_department', 'hr.view_jobposition',
+                'hr.view_leaverequest', 'hr.add_leaverequest', 'hr.change_leaverequest',
+                'hr.view_attendancerecord', 'hr.add_attendancerecord', 'hr.change_attendancerecord',
+                'hr.view_employeedocument', 'hr.add_employeedocument',
+                'hr.view_performancereview',
+            ],
+            'HR Manager': [
+                'hr.view_employee', 'hr.add_employee', 'hr.change_employee', 'hr.delete_employee',
+                'hr.view_department', 'hr.add_department', 'hr.change_department',
+                'hr.view_jobposition', 'hr.add_jobposition', 'hr.change_jobposition',
+                'hr.view_leavetype', 'hr.add_leavetype', 'hr.change_leavetype',
+                'hr.view_leaverequest', 'hr.change_leaverequest',
+                'hr.view_attendancerecord', 'hr.add_attendancerecord', 'hr.change_attendancerecord',
+                'hr.view_payrollperiod', 'hr.add_payrollperiod', 'hr.change_payrollperiod',
+                'hr.view_payslip', 'hr.change_payslip',
+                'hr.view_employeedocument', 'hr.add_employeedocument', 'hr.change_employeedocument',
+                'hr.view_performancereview', 'hr.add_performancereview', 'hr.change_performancereview',
+                'hr.view_disciplinaryaction', 'hr.add_disciplinaryaction', 'hr.change_disciplinaryaction',
             ],
             'Staff': [],
         }

@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block title %}Leave requests · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Leave requests</h2>
+        <p class="subtitle">Approve or decline employee leave applications.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newLeaveModal">
+        <i class="bi bi-plus-lg"></i> New leave
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-4">Employee</th><th>Type</th><th>From</th><th>To</th>
+                    <th class="text-center">Days</th><th>Reason</th><th>Status</th><th class="pe-4 text-end">Action</th>
+                </tr>
+            </thead>
+            <tbody id="leaveBody"><tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="newLeaveModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" id="leaveForm">
+            <div class="modal-header"><h5 class="modal-title">New leave request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Employee *</label>
+                        <select class="form-select" name="employee" id="empSel" required><option value="">—</option></select></div>
+                    <div class="col-md-6"><label class="form-label">Leave type *</label>
+                        <select class="form-select" name="leave_type" id="typeSel" required><option value="">—</option></select></div>
+                    <div class="col-md-6"><label class="form-label">Start date *</label>
+                        <input type="date" class="form-control" name="start_date" required></div>
+                    <div class="col-md-6"><label class="form-label">End date *</label>
+                        <input type="date" class="form-control" name="end_date" required></div>
+                    <div class="col-12"><label class="form-label">Reason</label>
+                        <textarea class="form-control" name="reason" rows="3"></textarea></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Submit request</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function badgeFor(s) { return ({pending:'warning', approved:'success', rejected:'danger', cancelled:'secondary'})[s] || 'secondary'; }
+
+async function listLeaves() {
+    const r = await fetch('/api/leave-requests/'); const d = await r.json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const tbody = document.getElementById('leaveBody');
+    if (!arr.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No leave requests yet.</td></tr>'; return; }
+    tbody.innerHTML = '';
+    arr.forEach(l => {
+        const tr = document.createElement('tr');
+        const actions = l.status === 'pending'
+            ? `<button class="btn btn-sm btn-success me-1" onclick="decide(${l.id}, 'approve')"><i class="bi bi-check"></i></button>
+               <button class="btn btn-sm btn-danger" onclick="decide(${l.id}, 'reject')"><i class="bi bi-x"></i></button>`
+            : `<span class="text-muted small">${l.approved_by_name || ''} ${l.approved_at ? new Date(l.approved_at).toLocaleDateString() : ''}</span>`;
+        tr.innerHTML = `
+            <td class="ps-4">${l.employee_name}</td>
+            <td>${l.leave_type_name}</td>
+            <td>${l.start_date}</td><td>${l.end_date}</td>
+            <td class="text-center">${l.days}</td>
+            <td class="text-muted small">${l.reason || '—'}</td>
+            <td><span class="badge bg-${badgeFor(l.status)}">${l.status}</span></td>
+            <td class="pe-4 text-end">${actions}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function decide(id, action) {
+    const r = await fetch(`/api/leave-requests/${id}/${action}/`, {
+        method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json'}, body: '{}',
+    });
+    if (r.ok) listLeaves(); else alert(action + ' failed');
+}
+
+async function fillSel(id, url, label='name') {
+    const d = await (await fetch(url)).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const sel = document.getElementById(id);
+    arr.forEach(x => { const o = document.createElement('option'); o.value = x.id; o.text = x[label] || x.full_name; sel.appendChild(o); });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    listLeaves();
+    await fillSel('empSel', '/api/employees/', 'full_name');
+    await fillSel('typeSel', '/api/leave-types/');
+    document.getElementById('leaveForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        const r = await fetch('/api/leave-requests/', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify(data),
+        });
+        if (r.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('newLeaveModal')).hide();
+            e.target.reset(); listLeaves();
+        } else { alert('Submit failed'); }
+    });
+});
+</script>
+{% endblock %}

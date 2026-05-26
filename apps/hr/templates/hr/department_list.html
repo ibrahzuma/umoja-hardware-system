@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+
+{% block title %}Departments · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Departments</h2>
+        <p class="subtitle">Org structure and job positions.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDeptModal">
+        <i class="bi bi-plus-lg"></i> Add department
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">Departments</div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Head</th><th class="text-end pe-3">Employees</th></tr></thead>
+                    <tbody id="deptBody"><tr><td colspan="3" class="text-center text-muted py-3">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Job positions</span>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addPosModal">
+                    <i class="bi bi-plus"></i> Add position
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Title</th><th>Department</th><th class="text-end pe-3">Salary band</th></tr></thead>
+                    <tbody id="posBody"><tr><td colspan="3" class="text-center text-muted py-3">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add department modal -->
+<div class="modal fade" id="addDeptModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="deptForm">
+            <div class="modal-header"><h5 class="modal-title">New department</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label">Name *</label>
+                <input class="form-control mb-3" name="name" required>
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="description" rows="3"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add position modal -->
+<div class="modal fade" id="addPosModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="posForm">
+            <div class="modal-header"><h5 class="modal-title">New job position</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label">Title *</label>
+                <input class="form-control mb-3" name="title" required>
+                <label class="form-label">Department</label>
+                <select class="form-select mb-3" name="department" id="posDept"><option value="">—</option></select>
+                <div class="row g-2">
+                    <div class="col"><label class="form-label">Min salary</label>
+                        <input class="form-control" name="min_salary" type="number" step="0.01" value="0"></div>
+                    <div class="col"><label class="form-label">Max salary</label>
+                        <input class="form-control" name="max_salary" type="number" step="0.01" value="0"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function refresh() {
+    const [depts, poss] = await Promise.all([
+        fetch('/api/departments/').then(r => r.json()).then(d => Array.isArray(d)? d : d.results || []),
+        fetch('/api/job-positions/').then(r => r.json()).then(d => Array.isArray(d)? d : d.results || []),
+    ]);
+    const dBody = document.getElementById('deptBody');
+    dBody.innerHTML = depts.length ? '' : '<tr><td colspan="3" class="text-center text-muted py-3">No departments yet.</td></tr>';
+    depts.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${d.name}</td><td>${d.head_name || '—'}</td><td class="text-end pe-3">${d.employee_count}</td>`;
+        dBody.appendChild(tr);
+    });
+    const pBody = document.getElementById('posBody');
+    pBody.innerHTML = poss.length ? '' : '<tr><td colspan="3" class="text-center text-muted py-3">No positions yet.</td></tr>';
+    poss.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${p.title}</td><td>${p.department_name || '—'}</td>` +
+                       `<td class="text-end pe-3">TZS ${Number(p.min_salary).toLocaleString()} – ${Number(p.max_salary).toLocaleString()}</td>`;
+        pBody.appendChild(tr);
+    });
+    const sel = document.getElementById('posDept');
+    sel.innerHTML = '<option value="">—</option>';
+    depts.forEach(d => {
+        const o = document.createElement('option'); o.value = d.id; o.text = d.name; sel.appendChild(o);
+    });
+}
+
+async function submitForm(formId, url, modalId) {
+    document.getElementById(formId).addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        if (data.department === '') delete data.department;
+        const r = await fetch(url, { method: 'POST',
+            headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN},
+            body: JSON.stringify(data)});
+        if (r.ok) {
+            bootstrap.Modal.getInstance(document.getElementById(modalId)).hide();
+            e.target.reset(); refresh();
+        } else alert('Save failed');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    refresh();
+    submitForm('deptForm', '/api/departments/', 'addDeptModal');
+    submitForm('posForm', '/api/job-positions/', 'addPosModal');
+});
+</script>
+{% endblock %}

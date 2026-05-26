@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block title %}Disciplinary actions · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Disciplinary actions</h2>
+        <p class="subtitle">Warnings, suspensions, terminations.</p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newDisciplineModal">
+        <i class="bi bi-plus-lg"></i> Record action
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr>
+                <th class="ps-4">Date</th><th>Employee</th><th>Action</th>
+                <th>Reason</th><th>Issued by</th><th>Suspension end</th>
+            </tr></thead>
+            <tbody id="discBody"><tr><td colspan="6" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="newDisciplineModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" id="discForm">
+            <div class="modal-header"><h5 class="modal-title">New disciplinary action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Employee *</label>
+                        <select class="form-select" name="employee" id="empSel" required><option value="">—</option></select></div>
+                    <div class="col-md-6"><label class="form-label">Action type *</label>
+                        <select class="form-select" name="action_type" required>
+                            <option value="verbal_warning">Verbal warning</option>
+                            <option value="written_warning">Written warning</option>
+                            <option value="final_warning">Final warning</option>
+                            <option value="suspension">Suspension</option>
+                            <option value="termination">Termination</option>
+                        </select></div>
+                    <div class="col-md-6"><label class="form-label">Date *</label>
+                        <input type="date" class="form-control" name="date" required></div>
+                    <div class="col-md-6"><label class="form-label">Suspension end</label>
+                        <input type="date" class="form-control" name="suspension_end"></div>
+                    <div class="col-12"><label class="form-label">Reason *</label>
+                        <textarea class="form-control" name="reason" rows="2" required></textarea></div>
+                    <div class="col-12"><label class="form-label">Details</label>
+                        <textarea class="form-control" name="details" rows="3"></textarea></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" type="submit">Record</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function colorFor(a) {
+    return ({verbal_warning:'warning', written_warning:'warning', final_warning:'danger',
+             suspension:'danger', termination:'dark'})[a] || 'secondary';
+}
+async function listDisc() {
+    const d = await (await fetch('/api/disciplinary-actions/')).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    const tbody = document.getElementById('discBody');
+    if (!arr.length) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No actions on record. (Good!)</td></tr>'; return; }
+    tbody.innerHTML = '';
+    arr.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="ps-4">${a.date}</td><td>${a.employee_name}</td>
+            <td><span class="badge bg-${colorFor(a.action_type)}">${a.action_label}</span></td>
+            <td>${a.reason || '—'}</td><td>${a.issued_by || '—'}</td>
+            <td>${a.suspension_end || '—'}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+async function fillSel(id, url) {
+    const d = await (await fetch(url)).json(); const arr = Array.isArray(d) ? d : (d.results || []);
+    const sel = document.getElementById(id);
+    arr.forEach(x => { const o = document.createElement('option'); o.value = x.id; o.text = x.full_name; sel.appendChild(o); });
+}
+document.addEventListener('DOMContentLoaded', async () => {
+    listDisc();
+    await fillSel('empSel', '/api/employees/');
+    document.getElementById('discForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        if (!data.suspension_end) delete data.suspension_end;
+        const r = await fetch('/api/disciplinary-actions/', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': CSRF_TOKEN}, body: JSON.stringify(data),
+        });
+        if (r.ok) { bootstrap.Modal.getInstance(document.getElementById('newDisciplineModal')).hide(); e.target.reset(); listDisc(); }
+        else alert('Save failed');
+    });
+});
+</script>
+{% endblock %}

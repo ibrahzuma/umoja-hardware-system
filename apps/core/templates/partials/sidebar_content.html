@@ -235,6 +235,27 @@
     </li>
     {% endif %}
 
+    <!-- Human Resources -->
+    {% if user.is_superuser or user.is_hr %}
+    <li class="section-title">Human Resources</li>
+    <li>
+        <a href="#hrSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-people-fill"></i> HR
+        </a>
+        <ul class="collapse list-unstyled" id="hrSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'hr:dashboard' %}"><i class="bi bi-speedometer2"></i> HR Dashboard</a></li>
+            <li><a href="{% url 'hr:employee_list' %}"><i class="bi bi-people"></i> Employees</a></li>
+            <li><a href="{% url 'hr:employee_create' %}"><i class="bi bi-person-plus"></i> Add Employee</a></li>
+            <li><a href="{% url 'hr:department_list' %}"><i class="bi bi-diagram-3"></i> Departments</a></li>
+            <li><a href="{% url 'hr:leave_list' %}"><i class="bi bi-calendar-event"></i> Leave Requests</a></li>
+            <li><a href="{% url 'hr:attendance_list' %}"><i class="bi bi-calendar-check"></i> Attendance</a></li>
+            <li><a href="{% url 'hr:payroll_list' %}"><i class="bi bi-cash-stack"></i> Payroll</a></li>
+            <li><a href="{% url 'hr:performance_list' %}"><i class="bi bi-clipboard-data"></i> Performance</a></li>
+            <li><a href="{% url 'hr:disciplinary_list' %}"><i class="bi bi-exclamation-octagon"></i> Discipline</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
     <!-- Administration -->
     {% if user.is_superuser %}
     <li class="section-title">Administration</li>

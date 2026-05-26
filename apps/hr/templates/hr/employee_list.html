@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+
+{% block title %}Employees · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>Employees</h2>
+        <p class="subtitle">All staff currently on the books.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-primary" href="{% url 'hr:employee_create' %}">
+            <i class="bi bi-person-plus"></i> Add employee
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <input type="search" id="search" class="form-control" placeholder="Search name or employee number…">
+            </div>
+            <div class="col-md-3">
+                <select id="filter-status" class="form-select">
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="on_leave">On leave</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="terminated">Terminated</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="filter-dept" class="form-select"><option value="">All departments</option></select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-4">Emp #</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Position</th>
+                    <th>Branch</th>
+                    <th>Hire date</th>
+                    <th class="text-end pe-4">Gross salary</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="empBody">
+                <tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function jget(url) { const r = await fetch(url); return r.json(); }
+async function results(url) { const d = await jget(url); return Array.isArray(d) ? d : (d.results || []); }
+
+let allEmps = [], allDepts = [];
+
+function fmtTzs(n) { return 'TZS ' + Number(n || 0).toLocaleString(); }
+function badgeFor(s) {
+    return ({active:'success', on_leave:'warning', suspended:'secondary', terminated:'danger'})[s] || 'secondary';
+}
+
+function render() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const st = document.getElementById('filter-status').value;
+    const dp = document.getElementById('filter-dept').value;
+    const tbody = document.getElementById('empBody');
+    tbody.innerHTML = '';
+    const list = allEmps.filter(e => {
+        if (st && e.status !== st) return false;
+        if (dp && String(e.department || '') !== dp) return false;
+        if (q && !(`${e.employee_number} ${e.full_name}`.toLowerCase().includes(q))) return false;
+        return true;
+    });
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No employees match.</td></tr>';
+        return;
+    }
+    list.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="ps-4 fw-semibold">${e.employee_number}</td>
+            <td>${e.full_name}</td>
+            <td>${e.department_name || '—'}</td>
+            <td>${e.position_title || '—'}</td>
+            <td>${e.branch_name || '—'}</td>
+            <td>${e.hire_date || '—'}</td>
+            <td class="text-end pe-4">${fmtTzs(e.gross_salary)}</td>
+            <td><span class="badge bg-${badgeFor(e.status)}">${e.status.replace('_', ' ')}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    [allEmps, allDepts] = await Promise.all([
+        results('/api/employees/'), results('/api/departments/'),
+    ]);
+    const ds = document.getElementById('filter-dept');
+    allDepts.forEach(d => {
+        const o = document.createElement('option');
+        o.value = d.id; o.text = d.name;
+        ds.appendChild(o);
+    });
+    render();
+    ['search', 'filter-status', 'filter-dept'].forEach(id => {
+        document.getElementById(id).addEventListener('input', render);
+    });
+});
+</script>
+{% endblock %}

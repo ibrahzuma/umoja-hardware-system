@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block title %}Payslips · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2 id="periodTitle">Payslips</h2>
+        <p class="subtitle">All payslips for this payroll period.</p>
+    </div>
+    <a class="btn btn-secondary" href="{% url 'hr:payroll_list' %}"><i class="bi bi-arrow-left"></i> Back to periods</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr>
+                <th class="ps-4">Employee</th><th class="text-end">Gross</th>
+                <th class="text-end">NSSF (10%)</th><th class="text-end">PAYE</th>
+                <th class="text-end">NHIF</th><th class="text-end">Other ded.</th>
+                <th class="text-end">Total ded.</th><th class="text-end pe-4">Net pay</th>
+            </tr></thead>
+            <tbody id="slipBody"><tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr></tbody>
+            <tfoot id="slipFoot"></tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const periodId = window.location.pathname.match(/(\d+)/)[1];
+function fmt(n) { return Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}); }
+
+async function load() {
+    const period = await (await fetch(`/api/payroll-periods/${periodId}/`)).json();
+    document.getElementById('periodTitle').innerText = `Payslips · ${period.year}-${String(period.month).padStart(2,'0')} (${period.status})`;
+    const d = await (await fetch(`/api/payslips/?period=${periodId}`)).json();
+    const arr = Array.isArray(d) ? d : (d.results || []);
+    // The filter ?period= isn't honored by default; filter client-side too
+    const list = arr.filter(s => s.period === Number(periodId) || s.period_label === `${period.year}-${String(period.month).padStart(2,'0')}`);
+    const tbody = document.getElementById('slipBody');
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No payslips. Click Generate on the period to create them.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = '';
+    let totals = {g: 0, n: 0, p: 0, h: 0, o: 0, t: 0, np: 0};
+    list.forEach(s => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="ps-4">${s.employee_name}</td>
+            <td class="text-end">TZS ${fmt(s.gross)}</td>
+            <td class="text-end">TZS ${fmt(s.nssf_employee)}</td>
+            <td class="text-end">TZS ${fmt(s.paye)}</td>
+            <td class="text-end">TZS ${fmt(s.nhif)}</td>
+            <td class="text-end">TZS ${fmt(Number(s.other_deductions) + Number(s.heslb) + Number(s.advance_repayment))}</td>
+            <td class="text-end">TZS ${fmt(s.total_deductions)}</td>
+            <td class="text-end pe-4 fw-semibold">TZS ${fmt(s.net_pay)}</td>`;
+        tbody.appendChild(tr);
+        totals.g += Number(s.gross); totals.n += Number(s.nssf_employee); totals.p += Number(s.paye);
+        totals.h += Number(s.nhif); totals.o += Number(s.other_deductions) + Number(s.heslb) + Number(s.advance_repayment);
+        totals.t += Number(s.total_deductions); totals.np += Number(s.net_pay);
+    });
+    document.getElementById('slipFoot').innerHTML = `
+        <tr class="fw-semibold">
+            <td class="ps-4">Totals</td>
+            <td class="text-end">TZS ${fmt(totals.g)}</td>
+            <td class="text-end">TZS ${fmt(totals.n)}</td>
+            <td class="text-end">TZS ${fmt(totals.p)}</td>
+            <td class="text-end">TZS ${fmt(totals.h)}</td>
+            <td class="text-end">TZS ${fmt(totals.o)}</td>
+            <td class="text-end">TZS ${fmt(totals.t)}</td>
+            <td class="text-end pe-4">TZS ${fmt(totals.np)}</td>
+        </tr>`;
+}
+document.addEventListener('DOMContentLoaded', load);
+</script>
+{% endblock %}
