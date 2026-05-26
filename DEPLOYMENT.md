@@ -55,10 +55,12 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
     ```
 
 5.  **Setup PostgreSQL Database**:
-    Run these commands to create the database and user:
+    Run these commands to create the database and user. Pick a strong
+    password and keep it out of version control.
     ```bash
+    DB_PASS="<choose-a-strong-password>"
     sudo -u postgres psql -c "CREATE DATABASE umoja_db;"
-    sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'allahu(SW)1';"
+    sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD '$DB_PASS';"
     sudo -u postgres psql -c "ALTER ROLE postgres SET client_encoding TO 'utf8';"
     sudo -u postgres psql -c "ALTER ROLE postgres SET default_transaction_isolation TO 'read committed';"
     sudo -u postgres psql -c "ALTER ROLE postgres SET timezone TO 'UTC';"
@@ -92,17 +94,19 @@ This guide covers deploying your Django (Channels/ASGI) application to productio
     ```bash
     nano .env
     ```
-    Paste your production settings:
+    Paste your production settings. Generate a fresh `SECRET_KEY` with:
+    `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+    and never commit it.
     ```
     DEBUG=False
-    SECRET_KEY=97mo#$70gwckll(^rf%=o%ad4y*a(93en2ya5p%7(4-^6%el8j
+    SECRET_KEY=<generate-and-paste-here>
     ALLOWED_HOSTS=umoja.ehub.co.tz,<YOUR_LINODE_IP>
     CSRF_TRUSTED_ORIGINS=https://umoja.ehub.co.tz
 
     # Database Settings
     DB_NAME=umoja_db
     DB_USER=postgres
-    DB_PASSWORD=allahu(SW)1
+    DB_PASSWORD=<same-strong-password-from-the-postgres-step>
     DB_HOST=localhost
     DB_PORT=5432
     

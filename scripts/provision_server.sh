@@ -3,15 +3,19 @@
 # Idempotent where reasonable: re-running should not break a working install.
 set -euo pipefail
 
-DOMAIN="umoja.ehub.co.tz"
-SERVER_IP="50.116.24.197"
+DOMAIN="${UMOJA_DOMAIN:-umoja.ehub.co.tz}"
+SERVER_IP="${UMOJA_SERVER_IP:-}"
 APP_DIR="/var/www/app"
-REPO_URL="https://github.com/ibrahzuma/umoja-hardware-system.git"
-DB_NAME="umoja_db"
-DB_USER="postgres"
-DB_PASSWORD='allahu(SW)1'
-SECRET_KEY='97mo#$70gwckll(^rf%=o%ad4y*a(93en2ya5p%7(4-^6%el8j'
-CERT_EMAIL="ionthefirst97@gmail.com"
+REPO_URL="${UMOJA_REPO_URL:-https://github.com/ibrahzuma/umoja-hardware-system.git}"
+DB_NAME="${UMOJA_DB_NAME:-umoja_db}"
+DB_USER="${UMOJA_DB_USER:-postgres}"
+CERT_EMAIL="${UMOJA_CERT_EMAIL:-}"
+
+# Required secrets — must be passed in via env. Refuse to run without them.
+: "${UMOJA_DB_PASSWORD:?Set UMOJA_DB_PASSWORD env before running (postgres user password)}"
+: "${UMOJA_SECRET_KEY:?Set UMOJA_SECRET_KEY env before running (Django SECRET_KEY)}"
+DB_PASSWORD="$UMOJA_DB_PASSWORD"
+SECRET_KEY="$UMOJA_SECRET_KEY"
 
 step() { echo; echo "==> $*"; }
 
