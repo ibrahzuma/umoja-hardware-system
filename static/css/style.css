@@ -331,7 +331,7 @@ small, .small { font-size: 0.82rem; }
 
 .navbar {
     height: var(--topbar-height);
-    padding: 0 22px;
+    padding: 0 clamp(16px, 2.2vw, 36px);
     background: var(--slate-0);
     border: none;
     border-bottom: 1px solid var(--slate-200);
@@ -455,8 +455,17 @@ small, .small { font-size: 0.82rem; }
 }
 .topbar-profile .user-name { font-weight: 600; font-size: 0.85rem; }
 
-/* Page container */
-.page-body { padding: 22px; }
+/* Page container — caps content width on very wide screens so tables and
+   forms stay readable, while still using fluid gutters that scale with the
+   viewport. */
+.page-body {
+    padding: 22px clamp(16px, 2.2vw, 36px);
+    width: 100%;
+}
+.page-body > .container-fluid {
+    max-width: 1440px;
+    margin-inline: auto;
+}
 
 .page-header {
     display: flex;
@@ -466,6 +475,9 @@ small, .small { font-size: 0.82rem; }
     flex-wrap: wrap;
     margin-bottom: 20px;
 }
+.page-header > :first-child { min-width: 0; flex: 1 1 280px; }
+.page-header > :last-child  { flex: 0 0 auto; }
+.page-header h1, .page-header h2 { word-break: break-word; }
 .page-header h1, .page-header h2 { margin: 0; }
 .page-header .eyebrow {
     text-transform: uppercase;
@@ -861,8 +873,15 @@ small, .small { font-size: 0.82rem; }
 
 /* =========================================================================
    Responsive
-   ========================================================================= */
+   =========================================================================
+   Breakpoints follow Bootstrap 5:
+     xs <576   sm 576   md 768   lg 992   xl 1200   xxl 1400
+   The desktop sidebar+content layout is the default. Below `lg` (992px)
+   the sidebar becomes an off-canvas drawer.
+*/
 
+/* Tablet — between sm and lg. Sidebar is still off-canvas (mobile drawer)
+   but we keep the search visible and tighten gutters slightly. */
 @media (max-width: 991.98px) {
     #sidebar {
         position: fixed;
@@ -874,16 +893,38 @@ small, .small { font-size: 0.82rem; }
     }
     #sidebar.active { margin-left: 0; box-shadow: var(--shadow-3); }
     #content { width: 100% !important; }
-    .navbar { padding: 0 16px; }
-    .page-body { padding: 16px; }
-    .topbar-search { display: none !important; }
+    .page-body { padding: 18px clamp(14px, 2.5vw, 22px); }
+    .page-header { gap: 12px; margin-bottom: 16px; }
 }
 
+/* Tablet portrait / narrow tablet — hide the topbar search to give the
+   nav icons + profile chip enough room. */
+@media (max-width: 767.98px) {
+    .topbar-search { display: none !important; }
+    .page-body { padding: 16px 14px; }
+    .page-header h2 { font-size: 1.2rem; }
+    .stat-card .stat-value, .metric-card h3 { font-size: 1.35rem; }
+}
+
+/* Phone */
 @media (max-width: 575.98px) {
+    :root { --topbar-height: 56px; }
     .container-fluid { padding-left: 12px; padding-right: 12px; }
     .sidebar-header h3 { font-size: 0.95rem; }
-    .page-body { padding: 12px; }
+    .page-body { padding: 14px 12px; }
     .topbar-profile .user-name { display: none; }
+    .topbar-profile { padding: 4px; border: none; }
+    .page-header > :last-child { flex: 1 1 100%; }
+    .page-header > :last-child .btn { flex: 1; }
+    .card-body, .stat-card { padding: 14px; }
+    .table > :not(caption) > * > * { padding: 0.6rem 0.7rem; }
+}
+
+/* Very wide screens — limit content to a comfortable reading width but
+   keep the topbar/sidebar bleeding to the viewport edges. */
+@media (min-width: 1600px) {
+    :root { --sidebar-width: 284px; }
+    .page-body { padding: 28px clamp(24px, 2.4vw, 48px); }
 }
 
 /* Print */
