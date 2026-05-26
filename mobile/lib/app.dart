@@ -14,7 +14,7 @@ class UmojaApp extends ConsumerWidget {
     final auth = ref.watch(authControllerProvider);
 
     return MaterialApp(
-      title: 'Umoja Field',
+      title: 'Umoja Pro',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       home: auth.when(

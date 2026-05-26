@@ -1,3 +1,5 @@
+import '_parse.dart';
+
 class Quotation {
   Quotation({
     required this.id,
@@ -17,9 +19,7 @@ class Quotation {
     return Quotation(
       id: json['id'] as int,
       customerName: json['customer_name'] as String? ?? 'Walk-in customer',
-      totalAmount: (json['total_amount'] as num?)?.toDouble() ??
-          double.tryParse(json['total_amount']?.toString() ?? '') ??
-          0,
+      totalAmount: asDouble(json['total_amount']),
       status: json['status'] as String? ?? 'draft',
       createdAt: json['created_at'] == null
           ? null

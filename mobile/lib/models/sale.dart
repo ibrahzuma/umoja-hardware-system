@@ -1,3 +1,5 @@
+import '_parse.dart';
+
 class SaleItemSummary {
   SaleItemSummary({
     required this.productName,
@@ -12,10 +14,8 @@ class SaleItemSummary {
   factory SaleItemSummary.fromJson(Map<String, dynamic> json) {
     return SaleItemSummary(
       productName: json['product_name'] as String? ?? '—',
-      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
-      priceAtSale: (json['price_at_sale'] as num?)?.toDouble() ??
-          double.tryParse(json['price_at_sale']?.toString() ?? '') ??
-          0,
+      quantity: asInt(json['quantity']),
+      priceAtSale: asDouble(json['price_at_sale']),
     );
   }
 }
@@ -52,9 +52,7 @@ class Sale {
       id: json['id'] as int,
       invoiceNumber: json['invoice_number'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
-      totalAmount: (json['total_amount'] as num?)?.toDouble() ??
-          double.tryParse(json['total_amount']?.toString() ?? '') ??
-          0,
+      totalAmount: asDouble(json['total_amount']),
       customerName:
           json['customer_name'] as String? ?? 'Walk-in customer',
       createdAt: json['created_at'] == null

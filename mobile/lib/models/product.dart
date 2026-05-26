@@ -1,3 +1,5 @@
+import '_parse.dart';
+
 class Product {
   Product({
     required this.id,
@@ -24,17 +26,11 @@ class Product {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       sku: json['sku'] as String?,
-      price: _num(json['price']),
-      cost: _num(json['cost']),
-      weight: _num(json['weight']),
+      price: asDouble(json['price']),
+      cost: asDouble(json['cost']),
+      weight: asDouble(json['weight']),
       productType: json['product_type'] as String? ?? 'product',
       categoryId: json['category'] as int?,
     );
   }
-}
-
-double _num(Object? v) {
-  if (v == null) return 0;
-  if (v is num) return v.toDouble();
-  return double.tryParse(v.toString()) ?? 0;
 }
