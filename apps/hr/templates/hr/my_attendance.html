@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}My Attendance · Umoja Hardware{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Human Resources</div>
+        <h2>My attendance</h2>
+        <p class="subtitle">Clock in when you arrive, clock out when you leave. Your hours are calculated automatically.</p>
+    </div>
+    <div class="text-end">
+        <div class="fw-semibold" id="clock" style="font-size: 1.4rem;">—</div>
+        <div class="text-muted small" id="today">—</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="no-employee" class="alert alert-warning d-none">
+    Your user account isn't linked to an employee record yet. Ask HR to create
+    your employee profile and link it to your login.
+</div>
+
+<div id="content-wrap" class="d-none">
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card" style="overflow: hidden;">
+                <div class="card-body p-4">
+                    <div class="text-muted small text-uppercase fw-semibold mb-2">Today</div>
+                    <h3 class="mb-3" id="emp-name">—</h3>
+                    <div id="status-row" class="mb-4">
+                        <span class="badge bg-secondary fs-6 py-2 px-3" id="status-badge">Not clocked in</span>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-6">
+                            <div class="text-muted small">Clock in</div>
+                            <div class="fw-semibold" style="font-size: 1.3rem;" id="ci-time">—</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Clock out</div>
+                            <div class="fw-semibold" style="font-size: 1.3rem;" id="co-time">—</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Hours worked</div>
+                            <div class="fw-semibold" style="font-size: 1.3rem;" id="hours">—</div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex">
+                        <button class="btn btn-success btn-lg flex-fill" id="btn-in">
+                            <i class="bi bi-box-arrow-in-right"></i> Clock in
+                        </button>
+                        <button class="btn btn-danger btn-lg flex-fill" id="btn-out" disabled>
+                            <i class="bi bi-box-arrow-right"></i> Clock out
+                        </button>
+                    </div>
+                    <div id="msg" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">Last 14 days</div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-4">Date</th>
+                                <th>Status</th>
+                                <th>In</th>
+                                <th>Out</th>
+                                <th class="text-end pe-4">Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody id="histBody">
+                            <tr><td colspan="5" class="text-center text-muted py-3">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function badgeFor(s) {
+    return ({present:'success', late:'warning', absent:'danger', leave:'info', half_day:'warning', holiday:'secondary'})[s] || 'secondary';
+}
+function fmtTime(t) { return t ? t.slice(0, 5) : '—'; }
+
+function tickClock() {
+    const now = new Date();
+    document.getElementById('clock').innerText = now.toLocaleTimeString();
+    document.getElementById('today').innerText = now.toLocaleDateString(undefined, {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+}
+setInterval(tickClock, 1000); tickClock();
+
+async function refresh() {
+    const r = await fetch('/api/attendance/my_today/');
+    if (r.status === 404) {
+        document.getElementById('no-employee').classList.remove('d-none');
+        document.getElementById('content-wrap').classList.add('d-none');
+        return;
+    }
+    document.getElementById('no-employee').classList.add('d-none');
+    document.getElementById('content-wrap').classList.remove('d-none');
+    const d = await r.json();
+    document.getElementById('emp-name').innerText = `${d.employee.name}  ·  ${d.employee.number}`;
+
+    const rec = d.record;
+    const btnIn = document.getElementById('btn-in');
+    const btnOut = document.getElementById('btn-out');
+    const badge = document.getElementById('status-badge');
+
+    if (!rec || !rec.clock_in) {
+        badge.className = 'badge bg-secondary fs-6 py-2 px-3';
+        badge.innerText = 'Not clocked in yet';
+        document.getElementById('ci-time').innerText = '—';
+        document.getElementById('co-time').innerText = '—';
+        document.getElementById('hours').innerText = '—';
+        btnIn.disabled = false;
+        btnOut.disabled = true;
+    } else if (!rec.clock_out) {
+        badge.className = `badge bg-${badgeFor(rec.status)} fs-6 py-2 px-3`;
+        badge.innerText = rec.status === 'late' ? 'Clocked in (late)' : 'Clocked in';
+        document.getElementById('ci-time').innerText = fmtTime(rec.clock_in);
+        document.getElementById('co-time').innerText = '—';
+        document.getElementById('hours').innerText = '—';
+        btnIn.disabled = true;
+        btnOut.disabled = false;
+    } else {
+        badge.className = 'badge bg-success fs-6 py-2 px-3';
+        badge.innerText = 'Done for today';
+        document.getElementById('ci-time').innerText = fmtTime(rec.clock_in);
+        document.getElementById('co-time').innerText = fmtTime(rec.clock_out);
+        document.getElementById('hours').innerText = rec.hours_worked + ' h';
+        btnIn.disabled = true;
+        btnOut.disabled = true;
+    }
+
+    // History
+    const hr = await fetch('/api/attendance/my_history/');
+    const hist = await hr.json();
+    const tbody = document.getElementById('histBody');
+    if (!hist.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No attendance recorded yet.</td></tr>';
+    } else {
+        tbody.innerHTML = '';
+        hist.forEach(rec => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="ps-4">${rec.date}</td>
+                <td><span class="badge bg-${badgeFor(rec.status)}">${rec.status.replace('_', ' ')}</span></td>
+                <td>${fmtTime(rec.clock_in)}</td>
+                <td>${fmtTime(rec.clock_out)}</td>
+                <td class="text-end pe-4">${rec.hours_worked || 0} h</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+}
+
+async function action(endpoint, label) {
+    const msg = document.getElementById('msg');
+    msg.innerHTML = '';
+    const r = await fetch(`/api/attendance/${endpoint}/`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+        body: '{}',
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) {
+        msg.innerHTML = `<div class="alert alert-success py-2">${label} recorded.</div>`;
+    } else {
+        msg.innerHTML = `<div class="alert alert-danger py-2">${data.error || label + ' failed'}</div>`;
+    }
+    refresh();
+}
+
+document.getElementById('btn-in').addEventListener('click', () => action('clock_in', 'Clock-in'));
+document.getElementById('btn-out').addEventListener('click', () => action('clock_out', 'Clock-out'));
+
+document.addEventListener('DOMContentLoaded', refresh);
+</script>
+{% endblock %}

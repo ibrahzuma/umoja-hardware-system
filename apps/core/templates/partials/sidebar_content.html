@@ -3,6 +3,7 @@
     <!-- Overview -->
     <li class="section-title">Overview</li>
     <li><a href="{% url 'dashboard' %}"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
+    <li><a href="{% url 'hr:my_attendance' %}"><i class="bi bi-clock-history"></i> My attendance</a></li>
 
     {% if user.is_superuser or perms.inventory.view_branch %}
     <li><a href="{% url 'inventory:branches_list' %}"><i class="bi bi-shop"></i> Branches</a></li>

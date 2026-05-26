@@ -98,6 +98,90 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
     queryset = AttendanceRecord.objects.select_related('employee').all()
     serializer_class = AttendanceRecordSerializer
 
+    def _resolve_self_employee(self, request) -> 'Employee | None':
+        return getattr(request.user, 'employee', None)
+
+    @action(detail=False, methods=['GET'])
+    def my_today(self, request):
+        """Return the calling user's attendance record for today (or null)."""
+        emp = self._resolve_self_employee(request)
+        if not emp:
+            return Response({'error': 'No employee record linked to this user'},
+                            status=status.HTTP_404_NOT_FOUND)
+        today = timezone.localdate()
+        rec = AttendanceRecord.objects.filter(employee=emp, date=today).first()
+        return Response({
+            'employee': {'id': emp.id, 'name': emp.full_name,
+                         'number': emp.employee_number},
+            'record': AttendanceRecordSerializer(rec).data if rec else None,
+            'date': today,
+        })
+
+    @action(detail=False, methods=['GET'])
+    def my_history(self, request):
+        """Calling user's last N days of attendance (default 14)."""
+        emp = self._resolve_self_employee(request)
+        if not emp:
+            return Response({'error': 'No employee record linked to this user'},
+                            status=status.HTTP_404_NOT_FOUND)
+        try:
+            days = max(1, min(int(request.query_params.get('days', 14)), 60))
+        except ValueError:
+            days = 14
+        cutoff = timezone.localdate() - timezone.timedelta(days=days)
+        qs = AttendanceRecord.objects.filter(employee=emp, date__gte=cutoff).order_by('-date')
+        return Response(AttendanceRecordSerializer(qs, many=True).data)
+
+    @action(detail=False, methods=['POST'])
+    def clock_in(self, request):
+        emp = self._resolve_self_employee(request)
+        if not emp:
+            return Response({'error': 'No employee record linked to this user'},
+                            status=status.HTTP_404_NOT_FOUND)
+        now = timezone.localtime()
+        today = now.date()
+        rec, created = AttendanceRecord.objects.get_or_create(
+            employee=emp, date=today, defaults={'status': 'present', 'clock_in': now.time()},
+        )
+        if not created and rec.clock_in:
+            return Response({'error': 'Already clocked in today',
+                             'record': AttendanceRecordSerializer(rec).data},
+                            status=status.HTTP_400_BAD_REQUEST)
+        # Mark late if past 09:00 local (configurable later)
+        late_cutoff = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        rec.clock_in = now.time()
+        rec.status = 'late' if now > late_cutoff else 'present'
+        rec.save()
+        return Response(AttendanceRecordSerializer(rec).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['POST'])
+    def clock_out(self, request):
+        emp = self._resolve_self_employee(request)
+        if not emp:
+            return Response({'error': 'No employee record linked to this user'},
+                            status=status.HTTP_404_NOT_FOUND)
+        now = timezone.localtime()
+        today = now.date()
+        rec = AttendanceRecord.objects.filter(employee=emp, date=today).first()
+        if not rec or not rec.clock_in:
+            return Response({'error': "You haven't clocked in today yet"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if rec.clock_out:
+            return Response({'error': 'Already clocked out today',
+                             'record': AttendanceRecordSerializer(rec).data},
+                            status=status.HTTP_400_BAD_REQUEST)
+        rec.clock_out = now.time()
+        # Compute hours worked from same-date clock_in -> clock_out
+        from datetime import datetime as _dt, timedelta as _td
+        start = _dt.combine(today, rec.clock_in)
+        end = _dt.combine(today, rec.clock_out)
+        if end < start:
+            end += _td(days=1)  # shouldn't happen for same-day but defensive
+        hours = (end - start).total_seconds() / 3600.0
+        rec.hours_worked = round(hours, 2)
+        rec.save()
+        return Response(AttendanceRecordSerializer(rec).data)
+
 
 class PayrollPeriodViewSet(viewsets.ModelViewSet):
     queryset = PayrollPeriod.objects.all()
@@ -207,6 +291,10 @@ class LeaveRequestListView(LoginRequiredMixin, TemplateView):
 
 class AttendanceListView(LoginRequiredMixin, TemplateView):
     template_name = 'hr/attendance_list.html'
+
+
+class MyAttendanceView(LoginRequiredMixin, TemplateView):
+    template_name = 'hr/my_attendance.html'
 
 
 class PayrollListView(LoginRequiredMixin, TemplateView):
