@@ -5,7 +5,8 @@
     {% load static %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - SMS</title>
+    <meta name="theme-color" content="#141a23">
+    <title>Sign in · Umoja Hardware</title>
 
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,115 +16,217 @@
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css">
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 
     <style>
-        /* Specific overrides for the auth page */
         body {
-            background-color: var(--bg-body);
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr;
+            background:
+                radial-gradient(1200px 600px at 100% 0%, rgba(64, 85, 230, 0.08), transparent 60%),
+                radial-gradient(900px 500px at 0% 100%, rgba(64, 85, 230, 0.06), transparent 60%),
+                var(--slate-50);
+        }
+
+        @media (min-width: 992px) {
+            body { grid-template-columns: 1fr 1fr; }
+        }
+
+        .auth-aside {
+            display: none;
+            position: relative;
+            background: linear-gradient(160deg, var(--slate-900) 0%, #11161f 100%);
+            color: #fff;
+            padding: 56px;
+            overflow: hidden;
+        }
+        @media (min-width: 992px) {
+            .auth-aside { display: flex; flex-direction: column; justify-content: space-between; }
+        }
+
+        .auth-aside::before {
+            content: "";
+            position: absolute;
+            inset: -20% -20% auto auto;
+            width: 360px;
+            height: 360px;
+            background: radial-gradient(circle at center, rgba(94, 116, 255, 0.35), transparent 60%);
+            pointer-events: none;
+        }
+        .auth-aside::after {
+            content: "";
+            position: absolute;
+            inset: auto auto -20% -20%;
+            width: 320px;
+            height: 320px;
+            background: radial-gradient(circle at center, rgba(64, 85, 230, 0.25), transparent 60%);
+            pointer-events: none;
+        }
+
+        .auth-aside .brand {
             display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
         }
+        .auth-aside .brand img {
+            width: 40px; height: 40px; border-radius: 12px; object-fit: cover;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 8px 16px rgba(0,0,0,0.35);
+        }
+        .auth-aside .brand h1 {
+            color: #fff; font-size: 1.1rem; font-weight: 700; margin: 0; letter-spacing: 0.05em;
+        }
+        .auth-aside .brand span { color: rgba(255,255,255,0.5); font-size: 0.72rem; letter-spacing: 0.06em; }
 
+        .auth-aside .pitch { position: relative; z-index: 1; max-width: 440px; }
+        .auth-aside .pitch h2 {
+            color: #fff; font-size: 1.85rem; line-height: 1.2; font-weight: 700; margin: 0 0 16px;
+        }
+        .auth-aside .pitch p { color: rgba(255,255,255,0.7); font-size: 0.95rem; margin: 0; }
+
+        .auth-aside .pillars {
+            position: relative; z-index: 1;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 28px;
+        }
+        .auth-aside .pillar {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 14px;
+            color: rgba(255,255,255,0.85);
+        }
+        .auth-aside .pillar i { color: var(--brand-300); font-size: 1.1rem; }
+        .auth-aside .pillar div { font-size: 0.8rem; margin-top: 6px; line-height: 1.4; }
+        .auth-aside .footer-note { position: relative; z-index: 1; color: rgba(255,255,255,0.45); font-size: 0.78rem; }
+
+        .auth-form-wrap {
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            padding: 32px;
+        }
         .auth-card {
-            width: 100%;
-            max-width: 400px;
-            border: none;
-            box-shadow: var(--shadow-lg);
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            background: #fff;
+            width: 100%; max-width: 420px;
+            background: var(--slate-0);
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-3);
+            padding: 36px;
+        }
+        .auth-card .mobile-brand {
+            display: flex; align-items: center; gap: 12px; justify-content: center; margin-bottom: 22px;
+        }
+        @media (min-width: 992px) { .auth-card .mobile-brand { display: none; } }
+        .auth-card .mobile-brand img { width: 40px; height: 40px; border-radius: 10px; }
+        .auth-card .mobile-brand h1 { font-size: 1.1rem; margin: 0; font-weight: 700; }
+
+        .auth-card h2 {
+            font-size: 1.35rem; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em;
+        }
+        .auth-card .lede { color: var(--slate-500); font-size: 0.9rem; margin: 0 0 22px; }
+
+        .field-label {
+            font-size: 0.72rem; font-weight: 600; color: var(--slate-700);
+            text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
         }
 
-        .auth-header {
-            background: var(--bg-sidebar);
-            /* You can use primary color if preferred, but dark looks professional */
-            padding: 30px;
-            text-align: center;
-        }
+        .password-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .password-row .forgot { font-size: 0.78rem; color: var(--brand-600); font-weight: 500; }
 
-        .auth-header h3 {
-            color: #fff;
-            margin: 0;
-            font-weight: 700;
-        }
+        .btn-block { width: 100%; padding: 0.65rem 1rem; font-size: 0.95rem; font-weight: 600; }
 
-        .auth-header p {
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 5px;
-            margin-bottom: 0;
-            font-size: 0.9rem;
-        }
-
-        .auth-body {
-            padding: 40px;
-        }
-
-        .form-control {
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            background-color: #f8fafc;
-        }
-
-        .form-control:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.15);
-            background-color: #fff;
-        }
-
-        .btn-login {
-            padding: 12px;
-            font-weight: 600;
-            font-size: 1rem;
-            margin-top: 10px;
-            border-radius: 8px;
-        }
+        .help-text { text-align: center; color: var(--slate-500); font-size: 0.82rem; margin-top: 18px; }
     </style>
 </head>
 
 <body>
 
-    <div class="auth-card animate-fade-in">
-        <div class="auth-header">
-            <img src="{% static 'img/logo.png' %}" alt="Logo"
-                style="width: 80px; height: 80px; margin-bottom: 15px; border-radius: 50%; object-fit: cover;">
-            <h3>UMOJA HARDWARE</h3>
-            <p>Stock Management System</p>
+    <!-- Brand / pitch side -->
+    <aside class="auth-aside">
+        <div class="brand">
+            <img src="{% static 'img/logo.png' %}" alt="Umoja">
+            <div>
+                <h1>UMOJA</h1>
+                <span>HARDWARE</span>
+            </div>
         </div>
-        <div class="auth-body">
-            <h5 class="mb-4 text-center fw-bold text-secondary">Welcome Back</h5>
 
-            <form method="post">
+        <div class="pitch">
+            <h2>Run your branches like one operation.</h2>
+            <p>Real-time stock, sales, dispatch, and finance — across every branch — in a single workspace.</p>
+
+            <div class="pillars">
+                <div class="pillar">
+                    <i class="bi bi-boxes"></i>
+                    <div>Live multi-branch stock</div>
+                </div>
+                <div class="pillar">
+                    <i class="bi bi-cart-check"></i>
+                    <div>POS &amp; quotation flow</div>
+                </div>
+                <div class="pillar">
+                    <i class="bi bi-truck"></i>
+                    <div>Dispatch &amp; fleet board</div>
+                </div>
+                <div class="pillar">
+                    <i class="bi bi-cash-coin"></i>
+                    <div>Expense &amp; tax tracking</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-note">© Umoja Hardware · Stock Management System</div>
+    </aside>
+
+    <!-- Form side -->
+    <main class="auth-form-wrap">
+        <div class="auth-card">
+            <div class="mobile-brand">
+                <img src="{% static 'img/logo.png' %}" alt="Umoja">
+                <h1>UMOJA HARDWARE</h1>
+            </div>
+
+            <h2>Sign in to your workspace</h2>
+            <p class="lede">Enter your credentials to continue.</p>
+
+            <form method="post" novalidate>
                 {% csrf_token %}
 
                 {% if form.errors %}
-                <div class="alert alert-danger py-2 mb-3 text-center">
-                    <small>Invalid username or password</small>
+                <div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <span>Invalid username or password.</span>
                 </div>
                 {% endif %}
 
                 <div class="mb-3">
-                    <label for="id_username" class="form-label text-muted small fw-bold">USERNAME</label>
-                    <input type="text" name="username" class="form-control" id="id_username"
-                        placeholder="Enter your username" required>
+                    <label for="id_username" class="field-label">Username</label>
+                    <input type="text" name="username" class="form-control form-control-lg" id="id_username"
+                        placeholder="e.g. ibrahimu" autocomplete="username" required autofocus>
                 </div>
 
                 <div class="mb-4">
-                    <label for="id_password" class="form-label text-muted small fw-bold">PASSWORD</label>
-                    <input type="password" name="password" class="form-control" id="id_password"
-                        placeholder="Enter your password" required>
+                    <div class="password-row">
+                        <label for="id_password" class="field-label mb-0">Password</label>
+                        <a href="#" class="forgot" tabindex="-1">Forgot?</a>
+                    </div>
+                    <input type="password" name="password" class="form-control form-control-lg" id="id_password"
+                        placeholder="••••••••" autocomplete="current-password" required>
                 </div>
 
-                <div class="d-grid">
-                    <button type="submit" class="btn btn-primary btn-login">Sign In</button>
-                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    Sign in <i class="bi bi-arrow-right ms-1"></i>
+                </button>
             </form>
+
+            <p class="help-text">Trouble signing in? Contact your system administrator.</p>
         </div>
-    </div>
+    </main>
 
 </body>
 

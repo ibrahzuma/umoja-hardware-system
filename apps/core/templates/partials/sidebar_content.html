@@ -1,187 +1,248 @@
 <ul class="list-unstyled components" id="sidebarAccordion">
-    <!-- Dashboard -->
+
+    <!-- Overview -->
+    <li class="section-title">Overview</li>
     <li><a href="{% url 'dashboard' %}"><i class="bi bi-speedometer2"></i> Dashboard</a></li>
 
-    <!-- Branches -->
     {% if user.is_superuser or perms.inventory.view_branch %}
     <li><a href="{% url 'inventory:branches_list' %}"><i class="bi bi-shop"></i> Branches</a></li>
     {% endif %}
 
-    <!-- Services Dropdown -->
+    <!-- Catalog -->
+    {% if user.is_superuser or perms.inventory.view_product or perms.inventory.view_stock %}
+    <li class="section-title">Catalog</li>
+    {% endif %}
+
     {% if user.is_superuser or perms.inventory.view_product %}
     <li>
         <a href="#servicesSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-tools"></i> Services
         </a>
-        <ul class="collapse list-unstyled" id="servicesSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:services_list' %}"><i class="bi bi-eye"></i> View Service</a>
-            </li>
+        <ul class="collapse list-unstyled" id="servicesSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:services_list' %}"><i class="bi bi-eye"></i> View Services</a></li>
             {% if user.is_superuser or perms.inventory.add_product %}
-            <li><a href="{% url 'inventory:service_create' %}"><i class="bi bi-plus-circle"></i> Create
-                    Service</a></li>
+            <li><a href="{% url 'inventory:service_create' %}"><i class="bi bi-plus-circle"></i> Create Service</a></li>
             {% endif %}
         </ul>
     </li>
     {% endif %}
 
-    <!-- Products Dropdown -->
     {% if user.is_superuser or perms.inventory.view_product %}
     <li>
         <a href="#productSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-box"></i> Products
         </a>
-        <ul class="collapse list-unstyled" id="productSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:products_list' %}"><i class="bi bi-list-ul"></i> View
-                    Products</a></li>
+        <ul class="collapse list-unstyled" id="productSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:products_list' %}"><i class="bi bi-list-ul"></i> View Products</a></li>
             {% if user.is_superuser or perms.inventory.add_product %}
-            <li><a href="{% url 'inventory:product_create' %}"><i class="bi bi-plus-circle"></i> Create
-                    Products</a></li>
-            <li><a href="{% url 'inventory:product_import' %}"><i class="bi bi-upload"></i> Import
-                    Products</a></li>
+            <li><a href="{% url 'inventory:product_create' %}"><i class="bi bi-plus-circle"></i> Create Product</a></li>
+            <li><a href="{% url 'inventory:product_import' %}"><i class="bi bi-upload"></i> Import Products</a></li>
             {% endif %}
             {% if user.is_superuser or perms.inventory.view_category %}
-            <li><a href="{% url 'inventory:categories_list' %}"><i class="bi bi-tags"></i> Categories</a>
-            </li>
+            <li><a href="{% url 'inventory:categories_list' %}"><i class="bi bi-tags"></i> Categories</a></li>
             {% endif %}
         </ul>
     </li>
     {% endif %}
 
-    <!-- Inventory Dropdown -->
     {% if user.is_superuser or perms.inventory.view_stock %}
     <li>
         <a href="#inventorySubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-clipboard-data"></i> Inventory
         </a>
-        <ul class="collapse list-unstyled" id="inventorySubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
+        <ul class="collapse list-unstyled" id="inventorySubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'inventory:inventory_list' %}"><i class="bi bi-eye"></i> View Stock</a></li>
             {% if user.is_superuser or perms.inventory.change_stock %}
-            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock
-                    Management</a></li>
-            <li><a href="{% url 'inventory:inventory_transfer' %}"><i class="bi bi-arrow-left-right"></i>
-                    Transfer</a></li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Management</a></li>
+            <li><a href="{% url 'inventory:inventory_transfer' %}"><i class="bi bi-arrow-left-right"></i> Transfer</a></li>
             {% endif %}
-            <li><a href="{% url 'inventory:inventory_health' %}"><i class="bi bi-heart-pulse"></i> Inventory
-                    Health</a></li>
-            <li><a href="{% url 'inventory:inventory_aging' %}"><i class="bi bi-hourglass-split"></i>
-                    Inventory Aging</a></li>
-            <li><a href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-bar-chart"></i> ABC
-                    Analysis</a></li>
-            <li><a href="{% url 'inventory:profitability_report' %}"><i class="bi bi-cash-coin"></i>
-                    Profitability Report</a></li>
+            <li><a href="{% url 'inventory:inventory_health' %}"><i class="bi bi-heart-pulse"></i> Inventory Health</a></li>
+            <li><a href="{% url 'inventory:inventory_aging' %}"><i class="bi bi-hourglass-split"></i> Inventory Aging</a></li>
+            <li><a href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-bar-chart"></i> ABC Analysis</a></li>
+            <li><a href="{% url 'inventory:profitability_report' %}"><i class="bi bi-cash-coin"></i> Profitability</a></li>
         </ul>
     </li>
     {% endif %}
 
-    <!-- Sales Dropdown -->
+    <!-- Commerce -->
+    {% if user.is_superuser or perms.sales.view_sale or perms.inventory.view_purchase or perms.sales.view_customer %}
+    <li class="section-title">Commerce</li>
+    {% endif %}
+
     {% if user.is_superuser or perms.sales.view_sale %}
     <li>
         <a href="#salesSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-cart"></i> Sales
         </a>
-        <ul class="collapse list-unstyled" id="salesSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
+        <ul class="collapse list-unstyled" id="salesSubmenu" data-bs-parent="#sidebarAccordion">
             {% if user.is_superuser or perms.sales.add_sale %}
             <li><a href="{% url 'sales:pos' %}"><i class="bi bi-pc-display"></i> Record Sales (POS)</a></li>
             {% endif %}
             <li><a href="{% url 'sales:sale_list' %}"><i class="bi bi-list-check"></i> View Sales</a></li>
-            <li><a href="{% url 'sales:credit_sales' %}"><i class="bi bi-credit-card"></i> Credit Sales</a>
-            </li>
-            <li><a href="{% url 'sales:recent_sales' %}"><i class="bi bi-clock-history"></i> Recent
-                    Sales</a></li>
+            <li><a href="{% url 'sales:credit_sales' %}"><i class="bi bi-credit-card"></i> Credit Sales</a></li>
+            <li><a href="{% url 'sales:recent_sales' %}"><i class="bi bi-clock-history"></i> Recent Sales</a></li>
             {% if user.is_superuser or user.is_manager %}
-            <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Dispatch
-                    Board</a></li>
-            <li><a href="{% url 'sales:vehicle_list' %}"><i class="bi bi-car-front"></i> Vehicle
-                    Management</a></li>
+            <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Dispatch Board</a></li>
+            <li><a href="{% url 'sales:vehicle_list' %}"><i class="bi bi-car-front"></i> Vehicles</a></li>
             {% endif %}
             {% if user.is_superuser or user.is_admin_role %}
-            <li><a href="{% url 'sales:order_management' %}"><i class="bi bi-diagram-3"></i> Order
-                    Management</a></li>
-            <li><a href="{% url 'sales:commission_report' %}"><i class="bi bi-cash-stack"></i> Commission
-                    Report</a></li>
+            <li><a href="{% url 'sales:order_management' %}"><i class="bi bi-diagram-3"></i> Order Management</a></li>
+            <li><a href="{% url 'sales:commission_report' %}"><i class="bi bi-cash-stack"></i> Commission Report</a></li>
             {% endif %}
         </ul>
     </li>
     {% endif %}
 
-    <!-- Purchases Dropdown -->
     {% if user.is_superuser or perms.inventory.view_purchase %}
     <li>
         <a href="#purchasesSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-bag"></i> Purchases
         </a>
-        <ul class="collapse list-unstyled" id="purchasesSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
+        <ul class="collapse list-unstyled" id="purchasesSubmenu" data-bs-parent="#sidebarAccordion">
             {% if user.is_superuser or perms.inventory.add_purchase %}
-            <li><a href="{% url 'inventory:purchase_create' %}"><i class="bi bi-plus-lg"></i> Record
-                    Purchases</a></li>
+            <li><a href="{% url 'inventory:purchase_create' %}"><i class="bi bi-plus-lg"></i> Record Purchase</a></li>
             {% endif %}
-            <li><a href="{% url 'inventory:purchases_list' %}"><i class="bi bi-list-task"></i> View
-                    Purchases</a></li>
-            <li><a href="{% url 'inventory:recent_purchases' %}"><i class="bi bi-clock"></i> Recent
-                    Purchases</a></li>
+            <li><a href="{% url 'inventory:purchases_list' %}"><i class="bi bi-list-task"></i> View Purchases</a></li>
+            <li><a href="{% url 'inventory:recent_purchases' %}"><i class="bi bi-clock"></i> Recent</a></li>
             {% if user.is_superuser or perms.inventory.view_supplier %}
-            <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-truck"></i> Manage
-                    Supplier</a></li>
+            <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-truck"></i> Suppliers</a></li>
             {% endif %}
         </ul>
     </li>
     {% endif %}
 
-    <!-- Finance Dropdown -->
-    {% if user.is_superuser or perms.finance.view_expense %}
-    <li>
-        <a href="#financeSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-currency-dollar"></i> Finance
-        </a>
-        <ul class="collapse list-unstyled" id="financeSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-journal-minus"></i> View
-                    Expenses</a></li>
-            {% if user.is_superuser or perms.finance.add_expense %}
-            <li><a href="{% url 'finance:expense_create' %}"><i class="bi bi-plus-square"></i> Record
-                    Expense / Petty Cash</a></li>
-            {% endif %}
-            <li><a href="{% url 'finance:recent_expenses' %}"><i class="bi bi-clock-history"></i> Recent
-                    Expenses</a></li>
-            <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-journal-plus"></i> Other
-                    Income</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Customers Dropdown -->
     {% if user.is_superuser or perms.sales.view_customer %}
     <li>
         <a href="#customersSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-people"></i> Customers
         </a>
-        <ul class="collapse list-unstyled" id="customersSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-person-lines-fill"></i> View
-                    Customers</a></li>
+        <ul class="collapse list-unstyled" id="customersSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-person-lines-fill"></i> View Customers</a></li>
             {% if user.is_superuser or perms.sales.add_customer %}
-            <li><a href="{% url 'sales:customer_create' %}"><i class="bi bi-person-plus"></i> Add
-                    Customer</a></li>
-            <li><a href="{% url 'sales:customer_import' %}"><i class="bi bi-file-earmark-arrow-up"></i>
-                    Import Customers</a></li>
+            <li><a href="{% url 'sales:customer_create' %}"><i class="bi bi-person-plus"></i> Add Customer</a></li>
+            <li><a href="{% url 'sales:customer_import' %}"><i class="bi bi-file-earmark-arrow-up"></i> Import</a></li>
             {% endif %}
         </ul>
     </li>
     {% endif %}
 
-    <!-- Users Dropdown -->
+    <!-- Finance -->
+    {% if user.is_superuser or perms.finance.view_expense %}
+    <li class="section-title">Finance</li>
+    <li>
+        <a href="#financeSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-currency-dollar"></i> Finance
+        </a>
+        <ul class="collapse list-unstyled" id="financeSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-journal-minus"></i> View Expenses</a></li>
+            {% if user.is_superuser or perms.finance.add_expense %}
+            <li><a href="{% url 'finance:expense_create' %}"><i class="bi bi-plus-square"></i> Record Expense</a></li>
+            {% endif %}
+            <li><a href="{% url 'finance:recent_expenses' %}"><i class="bi bi-clock-history"></i> Recent</a></li>
+            <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-journal-plus"></i> Other Income</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Role-specific workspaces -->
+    {% if user.is_superuser or user.is_procurement_officer or user.is_stock_controller or user.is_sales_rep or user.is_store_manager or user.is_accountant or user.is_store_keeper %}
+    <li class="section-title">Workspaces</li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_procurement_officer %}
+    <li>
+        <a href="#procurementSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-truck-front"></i> Afisa Ugavi
+        </a>
+        <ul class="collapse list-unstyled" id="procurementSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:purchase_order_list' %}"><i class="bi bi-file-earmark-text"></i> Purchase Orders</a></li>
+            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck Allocation</a></li>
+            <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-shop"></i> Suppliers</a></li>
+            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-coin"></i> Supplier Payments</a></li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Checking</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_stock_controller %}
+    <li>
+        <a href="#stockSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-box-seam"></i> Stock Controller
+        </a>
+        <ul class="collapse list-unstyled" id="stockSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-clipboard-check"></i> Goods Received (GRN)</a></li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Balances</a></li>
+            <li><a href="{% url 'inventory:stock_adjustment' %}"><i class="bi bi-sliders"></i> Adjustments</a></li>
+            <li><a href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-graph-up"></i> ABC Analysis</a></li>
+            <li><a href="{% url 'inventory:inventory_aging' %}"><i class="bi bi-hourglass-split"></i> Aging Report</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_sales_rep %}
+    <li>
+        <a href="#salesRepSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-cart4"></i> Sales (Shop)
+        </a>
+        <ul class="collapse list-unstyled" id="salesRepSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'sales:sale_list' %}"><i class="bi bi-receipt"></i> Orders</a></li>
+            <li><a href="{% url 'sales:quotation_list' %}"><i class="bi bi-file-earmark-text"></i> Quotations</a></li>
+            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-people"></i> Customers</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_store_manager %}
+    <li>
+        <a href="#storeManagerSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-shop-window"></i> Store Manager
+        </a>
+        <ul class="collapse list-unstyled" id="storeManagerSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Daily Operations</a></li>
+            <li><a href="{% url 'inventory:driver_list' %}"><i class="bi bi-person-badge"></i> Drivers</a></li>
+            <li><a href="{% url 'inventory:truck_maintenance' %}"><i class="bi bi-wrench"></i> Truck Maintenance</a></li>
+            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck List</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_accountant %}
+    <li>
+        <a href="#accountantSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-calculator"></i> Accountant
+        </a>
+        <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes & Govt</a></li>
+            <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
+            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payments</a></li>
+            <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
+            <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-graph-up-arrow"></i> Income & Banking</a></li>
+            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-eye"></i> Stock Balances</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_store_keeper %}
+    <li>
+        <a href="#storeKeeperSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-box-seam"></i> Store Keeper
+        </a>
+        <ul class="collapse list-unstyled" id="storeKeeperSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-check2-square"></i> Verify GRN</a></li>
+            <li><a href="{% url 'inventory:inventory_list' %}"><i class="bi bi-boxes"></i> Physical Stock</a></li>
+            <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Loading / Offloading</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Administration -->
     {% if user.is_superuser %}
+    <li class="section-title">Administration</li>
     <li>
         <a href="#usersSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-person-badge"></i> Users
+            <i class="bi bi-person-badge"></i> Users & Roles
         </a>
-        <ul class="collapse list-unstyled" id="usersSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
+        <ul class="collapse list-unstyled" id="usersSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'users_list' %}"><i class="bi bi-people"></i> View Users</a></li>
             <li><a href="{% url 'user_create' %}"><i class="bi bi-person-plus"></i> Add User</a></li>
             <li><a href="{% url 'role_list' %}"><i class="bi bi-shield-lock"></i> View Roles</a></li>
@@ -191,118 +252,14 @@
     </li>
     {% endif %}
 
-    <!-- Afisa Ugavi / Procurement Dropdown -->
-    {% if user.is_superuser or user.is_procurement_officer %}
-    <li>
-        <a href="#procurementSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-truck-front"></i> Afisa Ugavi (Procurement)
-        </a>
-        <ul class="collapse list-unstyled" id="procurementSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:purchase_order_list' %}"><i class="bi bi-file-earmark-text"></i> Purchase
-                    Orders</a></li>
-            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck Allocation</a></li>
-            <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-shop"></i> Suppliers</a></li>
-            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-coin"></i> Supplier
-                    Payments</a></li>
-            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Checking</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Stock Controller Dropdown -->
-    {% if user.is_superuser or user.is_stock_controller %}
-    <li>
-        <a href="#stockSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-box-seam"></i> Stock Controller
-        </a>
-        <ul class="collapse list-unstyled" id="stockSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-clipboard-check"></i> Goods Received (GRN)</a>
-            </li>
-            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Balances</a></li>
-            <li><a href="{% url 'inventory:stock_adjustment' %}"><i class="bi bi-sliders"></i> Adjustments</a></li>
-            <li><a href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-graph-up"></i> ABC Analysis</a></li>
-            <li><a href="{% url 'inventory:inventory_aging' %}"><i class="bi bi-hourglass-split"></i> Aging Report</a>
-            </li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Sales Representative Dropdown -->
-    {% if user.is_superuser or user.is_sales_rep %}
-    <li>
-        <a href="#salesRepSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-cart4"></i> Sales (Shop)
-        </a>
-        <ul class="collapse list-unstyled" id="salesRepSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'sales:sale_list' %}"><i class="bi bi-receipt"></i> Orders</a></li>
-            <li><a href="{% url 'sales:quotation_list' %}"><i class="bi bi-file-earmark-text"></i> Quotations</a></li>
-            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-people"></i> Customers</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Store Manager Dropdown -->
-    {% if user.is_superuser or user.is_store_manager %}
-    <li>
-        <a href="#storeManagerSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-shop-window"></i> Store Manager
-        </a>
-        <ul class="collapse list-unstyled" id="storeManagerSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Daily Operations</a></li>
-            <li><a href="{% url 'inventory:driver_list' %}"><i class="bi bi-person-badge"></i> Drivers</a></li>
-            <li><a href="{% url 'inventory:truck_maintenance' %}"><i class="bi bi-wrench"></i> Truck Maintenance</a>
-            </li>
-            <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck List</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Accountant Dropdown -->
-    {% if user.is_superuser or user.is_accountant %}
-    <li>
-        <a href="#accountantSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-calculator"></i> Accountant
-        </a>
-        <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes & Govt</a></li>
-            <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
-            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier
-                    Payments</a></li>
-            <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
-            <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-graph-up-arrow"></i> Income & Banking</a>
-            </li>
-            <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-eye"></i> View Stock Balances</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
-    <!-- Store Keeper Dropdown -->
-    {% if user.is_superuser or user.is_store_keeper %}
-    <li>
-        <a href="#storeKeeperSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
-            <i class="bi bi-box-seam"></i> Store Keeper
-        </a>
-        <ul class="collapse list-unstyled" id="storeKeeperSubmenu" data-bs-parent="#sidebarAccordion"
-            style="padding-left: 20px; background: #3e444a;">
-            <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-check2-square"></i> Verify GRN</a></li>
-            <li><a href="{% url 'inventory:inventory_list' %}"><i class="bi bi-boxes"></i> Physical Stock</a></li>
-            <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Loading/Offloading</a></li>
-        </ul>
-    </li>
-    {% endif %}
-
+    <li class="section-title">System</li>
     <li><a href="{% url 'settings_list' %}"><i class="bi bi-gear"></i> Settings</a></li>
     <li>
         <form id="logout-form-sidebar" action="{% url 'logout' %}" method="post" style="display: none;">
             {% csrf_token %}
         </form>
         <a href="javascript:void(0)" onclick="document.getElementById('logout-form-sidebar').submit();">
-            <i class="bi bi-box-arrow-right"></i> Logout
+            <i class="bi bi-box-arrow-right"></i> Sign out
         </a>
     </li>
 </ul>
