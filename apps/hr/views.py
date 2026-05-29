@@ -17,6 +17,23 @@ from .serializers import (
 )
 
 
+class StrictDjangoModelPermissions(permissions.DjangoModelPermissions):
+    """Like DjangoModelPermissions but ALSO requires the `view` permission for
+    reads. Stock DRF leaves GET/HEAD open to any authenticated user, which
+    would expose salaries, payslips and disciplinary records to every login.
+    HR data must be readable only by users with the explicit hr.view_* perm.
+    """
+    perms_map = {
+        'GET': ['%(app_label)s.view_%(model_name)s'],
+        'OPTIONS': [],
+        'HEAD': ['%(app_label)s.view_%(model_name)s'],
+        'POST': ['%(app_label)s.add_%(model_name)s'],
+        'PUT': ['%(app_label)s.change_%(model_name)s'],
+        'PATCH': ['%(app_label)s.change_%(model_name)s'],
+        'DELETE': ['%(app_label)s.delete_%(model_name)s'],
+    }
+
+
 # ---------------------------------------------------------------------------
 # ViewSets
 # ---------------------------------------------------------------------------
@@ -25,19 +42,19 @@ from .serializers import (
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
 
 class JobPositionViewSet(viewsets.ModelViewSet):
     queryset = JobPosition.objects.select_related('department').all()
     serializer_class = JobPositionSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.select_related('department', 'position', 'branch', 'user').all()
     serializer_class = EmployeeSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -60,13 +77,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 class LeaveTypeViewSet(viewsets.ModelViewSet):
     queryset = LeaveType.objects.all()
     serializer_class = LeaveTypeSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
 
 class LeaveRequestViewSet(viewsets.ModelViewSet):
     queryset = LeaveRequest.objects.select_related('employee', 'leave_type', 'approved_by').all()
     serializer_class = LeaveRequestSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     @action(detail=True, methods=['POST'])
     def approve(self, request, pk=None):
@@ -102,7 +119,7 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 class AttendanceRecordViewSet(viewsets.ModelViewSet):
     queryset = AttendanceRecord.objects.select_related('employee').all()
     serializer_class = AttendanceRecordSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     # Self-service actions are available to ANY authenticated employee; the
     # HR-wide list/create/update/delete still require hr.* model permissions.
@@ -201,7 +218,7 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
 class PayrollPeriodViewSet(viewsets.ModelViewSet):
     queryset = PayrollPeriod.objects.all()
     serializer_class = PayrollPeriodSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     @action(detail=True, methods=['POST'])
     def generate_payslips(self, request, pk=None):
@@ -254,13 +271,13 @@ class PayrollPeriodViewSet(viewsets.ModelViewSet):
 class PayslipViewSet(viewsets.ModelViewSet):
     queryset = Payslip.objects.select_related('period', 'employee').all()
     serializer_class = PayslipSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
 
 class EmployeeDocumentViewSet(viewsets.ModelViewSet):
     queryset = EmployeeDocument.objects.select_related('employee').all()
     serializer_class = EmployeeDocumentSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(uploaded_by=self.request.user)
@@ -269,7 +286,7 @@ class EmployeeDocumentViewSet(viewsets.ModelViewSet):
 class PerformanceReviewViewSet(viewsets.ModelViewSet):
     queryset = PerformanceReview.objects.select_related('employee', 'reviewer').all()
     serializer_class = PerformanceReviewSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(reviewer=self.request.user)
@@ -278,7 +295,7 @@ class PerformanceReviewViewSet(viewsets.ModelViewSet):
 class DisciplinaryActionViewSet(viewsets.ModelViewSet):
     queryset = DisciplinaryAction.objects.select_related('employee', 'issued_by').all()
     serializer_class = DisciplinaryActionSerializer
-    permission_classes = [permissions.DjangoModelPermissions]
+    permission_classes = [StrictDjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(issued_by=self.request.user)
