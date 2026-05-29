@@ -111,12 +111,21 @@ systemctl enable --now django_app
 systemctl restart django_app
 
 step "Nginx site for ${DOMAIN}"
+# server_tokens off hides the nginx version from the Server header + error
+# pages. proxy_hide_header drops any stack-revealing headers the backend
+# emits. We don't expose an OS/version anywhere.
 cat > /etc/nginx/sites-available/django_app <<EOF
 server {
     listen 80;
     server_name ${DOMAIN};
 
+    server_tokens off;
     client_max_body_size 25M;
+
+    # Strip fingerprinting headers coming from the upstream
+    proxy_hide_header X-Powered-By;
+    proxy_hide_header X-Runtime;
+    proxy_hide_header X-AspNet-Version;
 
     location = /favicon.ico { access_log off; log_not_found off; }
 

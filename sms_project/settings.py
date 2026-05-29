@@ -45,6 +45,22 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
+
+# Cookie hardening. HttpOnly stops JS from reading the cookies (XSS token
+# theft); SameSite=Lax blocks cross-site CSRF carrying the cookie. The CSRF
+# token is delivered to the frontend via the {{ csrf_token }} template var
+# (see base.html → CSRF_TOKEN), so the cookie itself can stay HttpOnly.
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Rename the default Django cookie names so the framework isn't fingerprintable
+# from Set-Cookie headers (default 'sessionid' / 'csrftoken' give it away).
+SESSION_COOKIE_NAME = 'umoja_sid'
+CSRF_COOKIE_NAME = 'umoja_csrf'
 
 
 # Application definition
@@ -206,6 +222,15 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # In production serve JSON only. The browsable API renders an HTML page
+    # that advertises "Django REST framework" in its chrome — a free
+    # fingerprint of the stack — so we drop it outside DEBUG.
+    'DEFAULT_RENDERER_CLASSES': (
+        ('rest_framework.renderers.JSONRenderer',)
+        if not DEBUG else
+        ('rest_framework.renderers.JSONRenderer',
+         'rest_framework.renderers.BrowsableAPIRenderer')
+    ),
 }
 
 SPECTACULAR_SETTINGS = {

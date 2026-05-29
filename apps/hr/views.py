@@ -25,16 +25,19 @@ from .serializers import (
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
 
 class JobPositionViewSet(viewsets.ModelViewSet):
     queryset = JobPosition.objects.select_related('department').all()
     serializer_class = JobPositionSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.select_related('department', 'position', 'branch', 'user').all()
     serializer_class = EmployeeSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -57,11 +60,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 class LeaveTypeViewSet(viewsets.ModelViewSet):
     queryset = LeaveType.objects.all()
     serializer_class = LeaveTypeSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
 
 class LeaveRequestViewSet(viewsets.ModelViewSet):
     queryset = LeaveRequest.objects.select_related('employee', 'leave_type', 'approved_by').all()
     serializer_class = LeaveRequestSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     @action(detail=True, methods=['POST'])
     def approve(self, request, pk=None):
@@ -97,6 +102,16 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
 class AttendanceRecordViewSet(viewsets.ModelViewSet):
     queryset = AttendanceRecord.objects.select_related('employee').all()
     serializer_class = AttendanceRecordSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
+
+    # Self-service actions are available to ANY authenticated employee; the
+    # HR-wide list/create/update/delete still require hr.* model permissions.
+    SELF_SERVICE_ACTIONS = {'clock_in', 'clock_out', 'my_today', 'my_history'}
+
+    def get_permissions(self):
+        if getattr(self, 'action', None) in self.SELF_SERVICE_ACTIONS:
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
 
     def _resolve_self_employee(self, request) -> 'Employee | None':
         return getattr(request.user, 'employee', None)
@@ -186,6 +201,7 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
 class PayrollPeriodViewSet(viewsets.ModelViewSet):
     queryset = PayrollPeriod.objects.all()
     serializer_class = PayrollPeriodSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     @action(detail=True, methods=['POST'])
     def generate_payslips(self, request, pk=None):
@@ -238,11 +254,13 @@ class PayrollPeriodViewSet(viewsets.ModelViewSet):
 class PayslipViewSet(viewsets.ModelViewSet):
     queryset = Payslip.objects.select_related('period', 'employee').all()
     serializer_class = PayslipSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
 
 class EmployeeDocumentViewSet(viewsets.ModelViewSet):
     queryset = EmployeeDocument.objects.select_related('employee').all()
     serializer_class = EmployeeDocumentSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(uploaded_by=self.request.user)
@@ -251,6 +269,7 @@ class EmployeeDocumentViewSet(viewsets.ModelViewSet):
 class PerformanceReviewViewSet(viewsets.ModelViewSet):
     queryset = PerformanceReview.objects.select_related('employee', 'reviewer').all()
     serializer_class = PerformanceReviewSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(reviewer=self.request.user)
@@ -259,6 +278,7 @@ class PerformanceReviewViewSet(viewsets.ModelViewSet):
 class DisciplinaryActionViewSet(viewsets.ModelViewSet):
     queryset = DisciplinaryAction.objects.select_related('employee', 'issued_by').all()
     serializer_class = DisciplinaryActionSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
 
     def perform_create(self, serializer):
         serializer.save(issued_by=self.request.user)

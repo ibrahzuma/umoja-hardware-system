@@ -1,7 +1,15 @@
+import os
+
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+# Obscure the admin path. Set ADMIN_URL in the server .env to something
+# unguessable (e.g. "ops-7f3k9/"). Falls back to the default only in DEBUG.
+ADMIN_URL = os.environ.get('ADMIN_URL', 'admin/' if os.environ.get('DEBUG') == 'True' else 'manage-panel/')
+if not ADMIN_URL.endswith('/'):
+    ADMIN_URL += '/'
 
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
@@ -52,7 +60,7 @@ router.register(r'performance-reviews', PerformanceReviewViewSet)
 router.register(r'disciplinary-actions', DisciplinaryActionViewSet)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path(ADMIN_URL, admin.site.urls),
     path('api/', include(router.urls)),
     path('inventory/', include('apps.inventory.urls', namespace='inventory')),
     path('sales/', include('apps.sales.urls', namespace='sales')),
