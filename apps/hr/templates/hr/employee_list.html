@@ -53,6 +53,7 @@
                     <th>Hire date</th>
                     <th class="text-end pe-4">Gross salary</th>
                     <th>Status</th>
+                    {% if user.is_superuser or user.is_admin_role %}<th class="text-end pe-4">Actions</th>{% endif %}
                 </tr>
             </thead>
             <tbody id="empBody">
@@ -68,6 +69,7 @@
 async function jget(url) { const r = await fetch(url); return r.json(); }
 async function results(url) { const d = await jget(url); return Array.isArray(d) ? d : (d.results || []); }
 
+const IS_ADMIN = {% if user.is_superuser or user.is_admin_role %}true{% else %}false{% endif %};
 let allEmps = [], allDepts = [];
 
 function fmtTzs(n) { return 'TZS ' + Number(n || 0).toLocaleString(); }
@@ -102,9 +104,28 @@ function render() {
             <td>${e.hire_date || '—'}</td>
             <td class="text-end pe-4">${fmtTzs(e.gross_salary)}</td>
             <td><span class="badge bg-${badgeFor(e.status)}">${e.status.replace('_', ' ')}</span></td>
+            ${IS_ADMIN ? `<td class="text-end pe-4">
+                <button class="btn btn-sm btn-outline-danger" onclick="removeEmployee(${e.id}, '${e.full_name.replace(/'/g, "\\'")}')">
+                    <i class="bi bi-trash"></i></button></td>` : ''}
         `;
         tbody.appendChild(tr);
     });
+}
+
+async function removeEmployee(id, name) {
+    if (!confirm(`Delete employee "${name}"? This cannot be undone.`)) return;
+    const r = await fetch(`/api/employees/${id}/`, {
+        method: 'DELETE', headers: {'X-CSRFToken': CSRF_TOKEN},
+    });
+    if (r.status === 204) {
+        allEmps = allEmps.filter(e => e.id !== id);
+        render();
+    } else if (r.status === 403) {
+        alert('You do not have permission to delete employees.');
+    } else {
+        // PROTECT on Payslip.employee blocks deletion of employees with payslips
+        alert('Could not delete this employee. They may have payslips or other records that must be removed first.');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

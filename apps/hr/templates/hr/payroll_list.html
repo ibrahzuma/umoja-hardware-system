@@ -59,6 +59,7 @@
 
 {% block extra_js %}
 <script>
+const IS_ADMIN = {% if user.is_superuser or user.is_admin_role %}true{% else %}false{% endif %};
 function badge(s) { return ({draft:'secondary', processed:'info', paid:'success', cancelled:'danger'})[s] || 'secondary'; }
 
 async function listPeriods() {
@@ -74,7 +75,9 @@ async function listPeriods() {
             ${p.status === 'draft' || p.status === 'processed'
                 ? `<button class="btn btn-sm btn-primary me-1" onclick="generate(${p.id})"><i class="bi bi-gear"></i> Generate</button>` : ''}
             ${p.status === 'processed'
-                ? `<button class="btn btn-sm btn-success" onclick="markPaid(${p.id})"><i class="bi bi-check2-circle"></i> Mark paid</button>` : ''}`;
+                ? `<button class="btn btn-sm btn-success me-1" onclick="markPaid(${p.id})"><i class="bi bi-check2-circle"></i> Mark paid</button>` : ''}
+            ${IS_ADMIN
+                ? `<button class="btn btn-sm btn-outline-danger" onclick="removePeriod(${p.id}, '${p.year}-${String(p.month).padStart(2,'0')}')"><i class="bi bi-trash"></i></button>` : ''}`;
         tr.innerHTML = `
             <td class="ps-4">${p.year}-${String(p.month).padStart(2,'0')}</td>
             <td><span class="badge bg-${badge(p.status)}">${p.status}</span></td>
@@ -104,6 +107,16 @@ async function markPaid(id) {
         method: 'POST', headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json'}, body: '{}',
     });
     if (r.ok) listPeriods(); else alert('Failed');
+}
+
+async function removePeriod(id, label) {
+    if (!confirm(`Delete payroll period ${label}? This permanently removes the period and all its payslips.`)) return;
+    const r = await fetch(`/api/payroll-periods/${id}/`, {
+        method: 'DELETE', headers: {'X-CSRFToken': CSRF_TOKEN},
+    });
+    if (r.status === 204) listPeriods();
+    else if (r.status === 403) alert('You do not have permission to delete payroll periods.');
+    else alert('Could not delete this payroll period.');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
