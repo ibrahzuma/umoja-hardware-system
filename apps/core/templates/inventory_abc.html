@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block content %}
 <h2 class="text-primary fw-bold mb-4">ABC Analysis</h2>
@@ -20,7 +21,7 @@
                     {% for item in abc_data %}
                     <tr>
                         <td>{{ item.product_name }}</td>
-                        <td>TZS {{ item.revenue|floatformat:2 }}</td>
+                        <td>TZS {{ item.revenue|floatformat:2|intcomma }}</td>
                         <td><span class="badge bg-{{ item.label }}">{{ item.class }}</span></td>
                     </tr>
                     {% empty %}

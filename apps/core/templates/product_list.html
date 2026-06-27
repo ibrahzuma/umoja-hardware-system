@@ -289,8 +289,8 @@
                 <td class="fw-medium">${p.name}</td>
                 <td><span class="badge bg-light text-dark border">${catName}</span></td>
                 <td><small class="text-uppercase">${p.product_type}</small></td>
-                <td class="text-end">TZS ${parseFloat(p.cost).toFixed(2)}</td>
-                <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toFixed(2)}</td>
+                <td class="text-end">TZS ${parseFloat(p.cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td class="text-end">${p.weight} kg</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct(${p.id})">

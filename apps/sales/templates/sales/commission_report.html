@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block content %}
 <div class="container-fluid">
@@ -33,8 +34,8 @@
                                 <strong>{{ row.sale__user__first_name }} {{ row.sale__user__last_name }}</strong>
                                 <span class="text-muted small">({{ row.sale__user__username }})</span>
                             </td>
-                            <td class="text-end">KES {{ row.total_sales|floatformat:2 }}</td>
-                            <td class="text-end fw-bold text-success">KES {{ row.total_commission|floatformat:2 }}</td>
+                            <td class="text-end">KES {{ row.total_sales|floatformat:2|intcomma }}</td>
+                            <td class="text-end fw-bold text-success">KES {{ row.total_commission|floatformat:2|intcomma }}</td>
                         </tr>
                         {% endfor %}
                         {% else %}

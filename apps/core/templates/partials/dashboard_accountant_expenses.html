@@ -1,10 +1,11 @@
+{% load humanize %}
 <!-- Accountant dashboard: expenses only -->
 <div class="row g-3 mb-4">
     <div class="col-6 col-lg-3">
         <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
             <div class="card-body">
                 <h6 class="text-muted text-uppercase mb-2 small">Today</h6>
-                <h4 class="fw-bold mb-0 text-danger">TZS {{ exp_today|floatformat:0 }}</h4>
+                <h4 class="fw-bold mb-0 text-danger">TZS {{ exp_today|floatformat:0|intcomma }}</h4>
             </div>
         </div>
     </div>
@@ -12,7 +13,7 @@
         <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
             <div class="card-body">
                 <h6 class="text-muted text-uppercase mb-2 small">This Week</h6>
-                <h4 class="fw-bold mb-0">TZS {{ exp_week|floatformat:0 }}</h4>
+                <h4 class="fw-bold mb-0">TZS {{ exp_week|floatformat:0|intcomma }}</h4>
             </div>
         </div>
     </div>
@@ -20,7 +21,7 @@
         <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
             <div class="card-body">
                 <h6 class="text-muted text-uppercase mb-2 small">This Month</h6>
-                <h4 class="fw-bold mb-0">TZS {{ exp_month|floatformat:0 }}</h4>
+                <h4 class="fw-bold mb-0">TZS {{ exp_month|floatformat:0|intcomma }}</h4>
             </div>
         </div>
     </div>
@@ -28,7 +29,7 @@
         <div class="card shadow-sm border-0 border-start border-secondary border-4 h-100">
             <div class="card-body">
                 <h6 class="text-muted text-uppercase mb-2 small">This Year</h6>
-                <h4 class="fw-bold mb-0">TZS {{ exp_year|floatformat:0 }}</h4>
+                <h4 class="fw-bold mb-0">TZS {{ exp_year|floatformat:0|intcomma }}</h4>
             </div>
         </div>
     </div>
@@ -65,7 +66,7 @@
                             {% for c in exp_by_category %}
                             <tr>
                                 <td>{{ c.name }}</td>
-                                <td class="text-end fw-semibold text-danger">TZS {{ c.total|floatformat:0 }}</td>
+                                <td class="text-end fw-semibold text-danger">TZS {{ c.total|floatformat:0|intcomma }}</td>
                             </tr>
                             {% empty %}
                             <tr><td class="text-muted text-center py-3">No expenses this year.</td></tr>
@@ -89,7 +90,7 @@
                             {% for b in exp_by_bank %}
                             <tr>
                                 <td>{{ b.name }}</td>
-                                <td class="text-end fw-semibold">TZS {{ b.total|floatformat:0 }}</td>
+                                <td class="text-end fw-semibold">TZS {{ b.total|floatformat:0|intcomma }}</td>
                             </tr>
                             {% empty %}
                             <tr><td class="text-muted text-center py-3">No expenses this year.</td></tr>

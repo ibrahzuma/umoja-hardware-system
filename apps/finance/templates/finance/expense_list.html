@@ -249,7 +249,7 @@
                 <td>${e.description}</td>
                 <td>${branchName}</td>
                 <td>${bankCell}</td>
-                 <td class="fw-bold text-danger">-TZS ${parseFloat(e.amount).toFixed(2)}</td>
+                 <td class="fw-bold text-danger">-TZS ${parseFloat(e.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${e.id})">
                         <i class="bi bi-trash"></i>

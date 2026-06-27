@@ -1,3 +1,4 @@
+{% load humanize %}
 {% if user.is_superuser or user.is_sales_manager %}
 <!-- Sales Operations Center -->
 <div class="card mb-4">
@@ -38,7 +39,7 @@
                                     <i class="bi bi-currency-dollar"></i>
                                 </div>
                             </div>
-                            <div class="stat-value">TZS {{ todays_revenue|default:0|floatformat:0 }}</div>
+                            <div class="stat-value">TZS {{ todays_revenue|default:0|floatformat:0|intcomma }}</div>
                             <div class="stat-meta">{{ todays_sales_count|default:0 }} sales today</div>
                         </div>
                     </div>

@@ -63,7 +63,7 @@
                     <td><span class="badge bg-light text-dark border">${e.category_name || '-'}</span></td>
                     <td>${e.branch_name || '-'}</td>
                     <td>${bankCell}</td>
-                    <td class="text-end pe-4 fw-bold text-danger">TZS ${parseFloat(e.amount).toFixed(2)}</td>
+                    <td class="text-end pe-4 fw-bold text-danger">TZS ${parseFloat(e.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 `;
                 tbody.appendChild(tr);
             });
