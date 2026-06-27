@@ -112,16 +112,6 @@
             <div class="col-md-4"><label class="form-label">Account #</label>
                 <input type="text" class="form-control" name="bank_account"></div>
         </div>
-
-        <hr class="my-4">
-        <h6 class="text-uppercase text-muted small mb-3">System access &amp; role</h6>
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Linked user account</label>
-                <select class="form-select" name="user" id="user-sel"><option value="">— No login account —</option></select>
-                <div class="form-text">Optional. Connect this employee to a login. The account's
-                    role controls what they can access. You can also link this later from the employee list.</div>
-            </div>
-        </div>
     </div>
     <div class="card-footer d-flex justify-content-end gap-2">
         <a class="btn btn-secondary" href="{% url 'hr:employee_list' %}">Cancel</a>
@@ -145,25 +135,11 @@ async function fillSelect(id, url, value='id', label='name') {
     });
 }
 
-async function fillUsers() {
-    const r = await fetch('/api/users/');
-    const d = await r.json();
-    const list = Array.isArray(d) ? d : (d.results || []);
-    const sel = document.getElementById('user-sel');
-    list.forEach(u => {
-        const o = document.createElement('option');
-        o.value = u.id;
-        o.text = `${u.username}${u.role_name ? ' — ' + u.role_name : (u.role ? ' — ' + u.role : '')}`;
-        sel.appendChild(o);
-    });
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
     await Promise.all([
         fillSelect('dept-sel', '/api/departments/'),
         fillSelect('pos-sel',  '/api/job-positions/', 'id', 'title'),
         fillSelect('branch-sel', '/api/branches/'),
-        fillUsers(),
     ]);
 });
 
@@ -171,7 +147,7 @@ document.getElementById('empForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target).entries());
     // strip empty FK values
-    ['department', 'position', 'branch', 'user'].forEach(k => { if (!data[k]) delete data[k]; });
+    ['department', 'position', 'branch'].forEach(k => { if (!data[k]) delete data[k]; });
     const r = await fetch('/api/employees/', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
