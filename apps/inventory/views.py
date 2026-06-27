@@ -192,10 +192,13 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         with transaction.atomic():
-            purchase = serializer.save()
+            # total_cost is computed (read-only in the serializer) so clients
+            # only send quantity + unit_cost.
+            total_cost = serializer.validated_data['quantity'] * serializer.validated_data['unit_cost']
+            purchase = serializer.save(total_cost=total_cost)
             # Increase Stock
             stock, _ = Stock.objects.get_or_create(
-                product=purchase.product, 
+                product=purchase.product,
                 branch=purchase.branch,
                 defaults={'quantity': 0}
             )

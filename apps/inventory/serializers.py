@@ -61,6 +61,7 @@ class PurchaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Purchase
         fields = '__all__'
+        read_only_fields = ('total_cost',)   # computed from quantity * unit_cost
 
 class StockTransferSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
