@@ -30,6 +30,7 @@ class Command(BaseCommand):
                 'inventory.view_param_report',
                 'sales.view_sale', 'sales.change_sale', 'sales.delete_sale',
                 'sales.view_report',
+                'finance.view_paymentreceipt',
             ],
             'Afisa Ugavi': [
                 'inventory.view_purchaseorder', 'inventory.add_purchaseorder', 'inventory.change_purchaseorder',
@@ -58,6 +59,7 @@ class Command(BaseCommand):
             'Accountant': [
                 'finance.view_expense', 'finance.add_expense', 'finance.change_expense',
                 'finance.view_taxpayment', 'finance.add_taxpayment',
+                'finance.view_paymentreceipt', 'finance.add_paymentreceipt', 'finance.change_paymentreceipt',
                 'sales.view_transaction',
             ],
             'Store Keeper': [

@@ -13,7 +13,7 @@ if not ADMIN_URL.endswith('/'):
 
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
-from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet
+from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
 from apps.core.api_views import ActivityViewSet
 from apps.hr.views import (
@@ -46,6 +46,7 @@ router.register(r'permissions', PermissionViewSet)
 router.register(r'quotations', QuotationViewSet)
 router.register(r'taxes', TaxPaymentViewSet)
 router.register(r'supplier-payments', SupplierPaymentViewSet)
+router.register(r'payment-receipts', PaymentReceiptViewSet)
 # HR
 router.register(r'departments', DepartmentViewSet)
 router.register(r'job-positions', JobPositionViewSet)

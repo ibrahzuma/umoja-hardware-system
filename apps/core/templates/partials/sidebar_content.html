@@ -141,6 +141,9 @@
             {% endif %}
             <li><a href="{% url 'finance:recent_expenses' %}"><i class="bi bi-clock-history"></i> Recent</a></li>
             <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-journal-plus"></i> Other Income</a></li>
+            {% if user.is_superuser or perms.finance.view_paymentreceipt %}
+            <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
+            {% endif %}
         </ul>
     </li>
     {% endif %}
@@ -213,6 +216,7 @@
             <i class="bi bi-calculator"></i> Accountant
         </a>
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
             <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes & Govt</a></li>
             <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payments</a></li>

@@ -1,0 +1,304 @@
+{% extends 'base.html' %}
+
+{% block title %}Payment Receipts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Payment Receipts</h2>
+        <p class="text-muted mb-0 small">Customer proof-of-payment, matched to invoices with outstanding balances tracked.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openModal()">
+        <i class="bi bi-receipt-cutoff"></i> Upload Receipt
+    </button>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-3">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" id="filterInput" class="form-control" placeholder="Filter by invoice # or customer…">
+                </div>
+            </div>
+            <div class="col-md-7 text-md-end">
+                <span class="badge bg-danger-subtle text-danger me-2" id="outstandingSummary">Outstanding: TZS 0</span>
+                <span class="badge bg-secondary-subtle text-secondary" id="countSummary">0 receipts</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th class="text-end">Invoice Amt</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Outstanding</th>
+                        <th>Issued By</th>
+                        <th>Receipt</th>
+                        <th>Recorded By</th>
+                    </tr>
+                </thead>
+                <tbody id="receiptTableBody">
+                    <tr><td colspan="9" class="text-center py-4">Loading receipts…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Upload Payment Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="receiptForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Invoice Number <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="invoiceNumber" placeholder="e.g. INV-001" required>
+                            <div class="form-text" id="invoiceHint">Enter the invoice the customer paid against.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Amount Paid (TZS) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="amountPaid" placeholder="Figure on the receipt" required>
+                        </div>
+                    </div>
+
+                    <!-- Invoice preview (populated from lookup) -->
+                    <div class="alert alert-secondary mt-3 mb-0 d-none" id="invoicePreview">
+                        <div class="row text-center">
+                            <div class="col">
+                                <div class="small text-muted">Customer</div>
+                                <div class="fw-semibold" id="prevCustomer">—</div>
+                            </div>
+                            <div class="col">
+                                <div class="small text-muted">Invoice Total</div>
+                                <div class="fw-semibold" id="prevTotal">—</div>
+                            </div>
+                            <div class="col">
+                                <div class="small text-muted">Already Paid</div>
+                                <div class="fw-semibold" id="prevPaid">—</div>
+                            </div>
+                            <div class="col">
+                                <div class="small text-muted">Outstanding</div>
+                                <div class="fw-bold text-danger" id="prevOutstanding">—</div>
+                            </div>
+                            <div class="col">
+                                <div class="small text-muted">Issued By</div>
+                                <div class="fw-semibold" id="prevIssuer">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label">Payment Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="paymentDate" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Reference</label>
+                            <input type="text" class="form-control" id="reference" placeholder="Mobile money / bank ref">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Receipt Image</label>
+                            <input type="file" class="form-control" id="receiptImage" accept="image/*">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Notes</label>
+                            <textarea class="form-control" id="notes" rows="1"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="d-grid mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-cloud-arrow-up me-1"></i> Save Receipt
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let modal;
+    let allReceipts = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        modal = new bootstrap.Modal(document.getElementById('receiptModal'));
+        loadData();
+        document.getElementById('receiptForm').addEventListener('submit', handleSubmit);
+        document.getElementById('paymentDate').valueAsDate = new Date();
+        document.getElementById('invoiceNumber').addEventListener('blur', lookupInvoice);
+        document.getElementById('filterInput').addEventListener('input', applyFilter);
+    });
+
+    function fmt(n) {
+        return 'TZS ' + parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    async function loadData() {
+        try {
+            const res = await fetch('/api/payment-receipts/');
+            if (!res.ok) throw new Error('Failed to load');
+            allReceipts = await res.json();
+            renderReceipts(allReceipts);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('receiptTableBody').innerHTML =
+                '<tr><td colspan="9" class="text-center py-4 text-danger">Could not load receipts.</td></tr>';
+        }
+    }
+
+    function renderReceipts(data) {
+        const tbody = document.getElementById('receiptTableBody');
+        tbody.innerHTML = '';
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">No receipts recorded yet.</td></tr>';
+        } else {
+            data.forEach(r => {
+                const outstanding = parseFloat(r.outstanding_amount || 0);
+                const badge = outstanding > 0
+                    ? `<span class="badge bg-danger-subtle text-danger fw-semibold">${fmt(outstanding)}</span>`
+                    : `<span class="badge bg-success-subtle text-success">Settled</span>`;
+                const receiptCell = r.receipt_image
+                    ? `<a href="${r.receipt_image}" target="_blank" rel="noopener" title="View receipt"><img src="${r.receipt_image}" alt="receipt" style="height:34px;width:34px;object-fit:cover;border-radius:6px;border:1px solid #e5e7eb;"></a>`
+                    : '<span class="text-muted small">—</span>';
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4">${new Date(r.payment_date).toLocaleDateString()}</td>
+                    <td class="fw-medium">${r.invoice_number}</td>
+                    <td>${r.customer_name || '—'}</td>
+                    <td class="text-end">${fmt(r.invoice_amount)}</td>
+                    <td class="text-end fw-semibold">${fmt(r.amount_paid)}</td>
+                    <td class="text-end">${badge}</td>
+                    <td><small class="text-muted">${r.issued_by_name || '—'}</small></td>
+                    <td>${receiptCell}</td>
+                    <td><small class="text-muted">${r.created_by_name || '—'}</small></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Summary chips
+        const totalOutstanding = data.reduce((s, r) => s + Math.max(0, parseFloat(r.outstanding_amount || 0)), 0);
+        document.getElementById('outstandingSummary').textContent = 'Outstanding: ' + fmt(totalOutstanding);
+        document.getElementById('countSummary').textContent = data.length + ' receipt' + (data.length === 1 ? '' : 's');
+    }
+
+    function applyFilter() {
+        const q = document.getElementById('filterInput').value.trim().toLowerCase();
+        if (!q) return renderReceipts(allReceipts);
+        renderReceipts(allReceipts.filter(r =>
+            (r.invoice_number || '').toLowerCase().includes(q) ||
+            (r.customer_name || '').toLowerCase().includes(q)
+        ));
+    }
+
+    async function lookupInvoice() {
+        const inv = document.getElementById('invoiceNumber').value.trim();
+        const preview = document.getElementById('invoicePreview');
+        const hint = document.getElementById('invoiceHint');
+        if (!inv) { preview.classList.add('d-none'); return; }
+        try {
+            const res = await fetch('/api/payment-receipts/lookup/?invoice=' + encodeURIComponent(inv));
+            const d = await res.json();
+            if (d.found) {
+                document.getElementById('prevCustomer').textContent = d.customer_name || '—';
+                document.getElementById('prevTotal').textContent = fmt(d.invoice_amount);
+                document.getElementById('prevPaid').textContent = fmt(d.already_paid);
+                document.getElementById('prevOutstanding').textContent = fmt(d.outstanding);
+                document.getElementById('prevIssuer').textContent = d.issued_by_name || '—';
+                preview.classList.remove('d-none');
+                hint.innerHTML = '<span class="text-success">Invoice found.</span>';
+            } else {
+                preview.classList.add('d-none');
+                hint.innerHTML = '<span class="text-danger">No invoice found with that number.</span>';
+            }
+        } catch (e) { console.error(e); }
+    }
+
+    function openModal() { modal.show(); }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+
+        const fd = new FormData();
+        fd.append('invoice_number', document.getElementById('invoiceNumber').value.trim());
+        fd.append('amount_paid', document.getElementById('amountPaid').value);
+        fd.append('payment_date', document.getElementById('paymentDate').value);
+        fd.append('reference', document.getElementById('reference').value);
+        fd.append('notes', document.getElementById('notes').value);
+        const img = document.getElementById('receiptImage').files[0];
+        if (img) fd.append('receipt_image', img);
+
+        try {
+            const res = await fetch('/api/payment-receipts/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },  // no Content-Type: browser sets multipart boundary
+                body: fd
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                modal.hide();
+                document.getElementById('receiptForm').reset();
+                document.getElementById('paymentDate').valueAsDate = new Date();
+                document.getElementById('invoicePreview').classList.add('d-none');
+
+                const outstanding = parseFloat(data.outstanding_amount || 0);
+                if (outstanding > 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Partial payment recorded',
+                        html: `The remaining amount for invoice <strong>${data.invoice_number}</strong> is ` +
+                              `<strong>${fmt(outstanding)}</strong>.<br><br>` +
+                              `This has been recorded as <strong>credit owed by ${data.customer_name || 'the customer'}</strong>.<br>` +
+                              `Invoice issued by <strong>${data.issued_by_name || 'unknown'}</strong> — please follow up with the customer.`,
+                        confirmButtonText: 'Got it'
+                    });
+                } else if (outstanding < 0) {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'Overpayment recorded',
+                        html: `Invoice <strong>${data.invoice_number}</strong> has been overpaid by ` +
+                              `<strong>${fmt(Math.abs(outstanding))}</strong>. Please review with ${data.customer_name || 'the customer'}.`
+                    });
+                } else {
+                    Swal.fire({ icon: 'success', title: 'Payment fully settled', text: 'Invoice ' + data.invoice_number + ' is now fully paid.' });
+                }
+                loadData();
+            } else {
+                let msg = 'Failed to save receipt.';
+                try {
+                    const err = await res.json();
+                    if (err.invoice_number) msg = err.invoice_number[0];
+                    else if (err.amount_paid) msg = 'Amount paid: ' + err.amount_paid[0];
+                    else if (err.payment_date) msg = 'Payment date: ' + err.payment_date[0];
+                    else if (err.detail) msg = err.detail;
+                } catch (_) {}
+                Swal.fire('Error', msg, 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Network error while saving the receipt.', 'error');
+        }
+    }
+</script>
+{% endblock %}
