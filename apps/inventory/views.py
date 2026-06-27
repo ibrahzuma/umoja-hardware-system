@@ -238,6 +238,48 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @action(detail=True, methods=['GET'])
+    def pdf(self, request, pk=None):
+        po = self.get_object()
+        # Reuse the shared branded PDF document (same layout as invoice/quotation)
+        from apps.sales.utils import render_to_pdf
+        from apps.sales.views import _company_ctx, _money_breakdown, _person
+        company, currency, tax_rate = _company_ctx()
+        items = [{
+            'code': getattr(it.product, 'sku', '') or '',
+            'description': it.product.name,
+            'qty': it.quantity,
+            'uom': 'PCS',
+            'price': it.unit_cost,
+            'total': it.total_cost,
+        } for it in po.items.all()]
+        subtotal_ex, tax_amount, total = _money_breakdown(po.total_amount, tax_rate)
+        sup = po.supplier
+        ctx = {
+            'doc': {
+                'type': 'PURCHASE ORDER', 'number_label': 'P.O. No.',
+                'number': 'PO-%05d' % po.id, 'date': po.order_date or po.created_at,
+                'valid_until': None, 'page': '1/1',
+                'recipient_label': 'Supplier',
+                'branch': po.branch.name if po.branch else '',
+                'contact': _person(po.created_by),
+                'authorized_by': _person(po.created_by),
+                'status': None, 'payment_term': 'As agreed',
+                'delivery_label': '',
+            },
+            'company': company,
+            'customer': {
+                'name': sup.name if sup else '',
+                'phone': (sup.phone if sup else '') or (sup.contact_name if sup else ''),
+                'address': sup.address if sup else '',
+                'tin': '',
+            },
+            'items': items, 'currency': currency,
+            'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
+            'tax_amount': tax_amount, 'total': total,
+        }
+        return render_to_pdf('sales/pdf_document.html', ctx)
+
     @action(detail=True, methods=['POST'])
     def add_item(self, request, pk=None):
         po = self.get_object()

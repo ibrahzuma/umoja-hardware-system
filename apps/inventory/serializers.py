@@ -94,11 +94,31 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     items = PurchaseOrderItemSerializer(many=True, read_only=True)
+    # Accept all line items in one request when creating the order.
+    items_input = serializers.ListField(
+        child=serializers.DictField(), write_only=True, required=False
+    )
 
     class Meta:
         model = PurchaseOrder
         fields = '__all__'
         read_only_fields = ('created_by', 'created_at', 'updated_at', 'total_amount')
+
+    def create(self, validated_data):
+        from decimal import Decimal
+        items = validated_data.pop('items_input', [])
+        po = PurchaseOrder.objects.create(**validated_data)
+        for it in items:
+            pid = it.get('product')
+            qty = int(it.get('quantity') or 0)
+            cost = Decimal(str(it.get('unit_cost') or 0))
+            if pid and qty > 0:
+                PurchaseOrderItem.objects.create(
+                    purchase_order=po, product_id=pid, quantity=qty, unit_cost=cost
+                )
+        po.total_amount = sum((i.total_cost for i in po.items.all()), Decimal('0'))
+        po.save()
+        return po
 
 class TruckSerializer(serializers.ModelSerializer):
     class Meta:

@@ -99,7 +99,7 @@
     <table class="band">
         <tr>
             <td width="50%">
-                <div class="billto-label">Bill To</div>
+                <div class="billto-label">{{ doc.recipient_label|default:"Bill To" }}</div>
                 <div class="cust-name">{{ customer.name|default:"Walk-in Customer" }}</div>
                 {% if customer.phone %}<div class="cust-line">{{ customer.phone }}</div>{% endif %}
                 {% if customer.address %}<div class="cust-line">{{ customer.address }}</div>{% endif %}

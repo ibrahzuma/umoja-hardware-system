@@ -11,7 +11,7 @@ ADMIN_URL = os.environ.get('ADMIN_URL', 'admin/' if os.environ.get('DEBUG') == '
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL += '/'
 
-from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet
+from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet, PurchaseOrderViewSet, GoodsReceivedNoteViewSet, TruckViewSet, TruckAllocationViewSet, DriverViewSet, StockAdjustmentViewSet, TruckMaintenanceViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
@@ -31,6 +31,13 @@ router.register(r'products', ProductViewSet)
 router.register(r'stocks', StockViewSet)
 router.register(r'suppliers', SupplierViewSet)
 router.register(r'purchases', PurchaseViewSet)
+router.register(r'purchase-orders', PurchaseOrderViewSet)
+router.register(r'grns', GoodsReceivedNoteViewSet)
+router.register(r'trucks', TruckViewSet)
+router.register(r'truck-allocations', TruckAllocationViewSet)
+router.register(r'truck-maintenance', TruckMaintenanceViewSet)
+router.register(r'drivers', DriverViewSet)
+router.register(r'stock-adjustments', StockAdjustmentViewSet)
 router.register(r'transfers', StockTransferViewSet)
 router.register(r'customers', CustomerViewSet)
 router.register(r'sales', SaleViewSet)
