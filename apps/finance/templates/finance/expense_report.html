@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block title %}Expense Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-file-earmark-bar-graph me-2"></i>Expense Report</h2>
+        <p class="text-muted mb-0 small">Filter expenses and export to Excel or PDF.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-success" href="{% url 'finance:expense_report_export' %}?format=excel{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a class="btn btn-danger" href="{% url 'finance:expense_report_export' %}?format=pdf{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-pdf"></i> Export PDF
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ f.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ f.date_to }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Category</label>
+                <select name="category" class="form-select">
+                    <option value="">All</option>
+                    {% for c in categories %}
+                    <option value="{{ c.id }}" {% if f.category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Bank</label>
+                <select name="bank" class="form-select">
+                    <option value="">All</option>
+                    <option value="none" {% if f.bank == 'none' %}selected{% endif %}>Cash / none</option>
+                    {% for b in banks %}
+                    <option value="{{ b.id }}" {% if f.bank == b.id|stringformat:'s' %}selected{% endif %}>{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Branch</label>
+                <select name="branch" class="form-select">
+                    <option value="">All</option>
+                    {% for br in branches %}
+                    <option value="{{ br.id }}" {% if f.branch == br.id|stringformat:'s' %}selected{% endif %}>{{ br.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Search description</label>
+                <input type="text" name="q" class="form-control" placeholder="keyword…" value="{{ f.q }}">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Apply Filters</button>
+                <a href="{% url 'finance:expense_report' %}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total (filtered)</h6>
+                <h3 class="fw-bold mb-0 text-danger">TZS {{ total|floatformat:2 }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Records</h6>
+                <h3 class="fw-bold mb-0">{{ count }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Category</th>
+                        <th>Description</th>
+                        <th>Branch</th>
+                        <th>Bank</th>
+                        <th class="text-end pe-4">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in expenses %}
+                    <tr>
+                        <td class="ps-4">{{ e.date_incurred|date:'Y-m-d' }}</td>
+                        <td><span class="badge bg-secondary">{{ e.category.name|default:'Uncategorized' }}</span></td>
+                        <td>{{ e.description }}</td>
+                        <td>{{ e.branch.name|default:'-' }}</td>
+                        <td>
+                            {% if e.bank %}
+                            <span class="badge bg-info-subtle text-info"><i class="bi bi-bank me-1"></i>{{ e.bank.name }}</span>
+                            {% else %}
+                            <span class="text-muted small">— cash —</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end pe-4 fw-bold text-danger">-TZS {{ e.amount|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center py-4 text-muted">No expenses match these filters.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if expenses %}
+                <tfoot class="bg-light">
+                    <tr>
+                        <th colspan="5" class="text-end">TOTAL</th>
+                        <th class="text-end pe-4 text-danger">-TZS {{ total|floatformat:2 }}</th>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

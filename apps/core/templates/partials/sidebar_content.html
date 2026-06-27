@@ -140,6 +140,7 @@
             <li><a href="{% url 'finance:expense_create' %}"><i class="bi bi-plus-square"></i> Record Expense</a></li>
             {% endif %}
             <li><a href="{% url 'finance:recent_expenses' %}"><i class="bi bi-clock-history"></i> Recent</a></li>
+            <li><a href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph"></i> Expense Report</a></li>
             <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-journal-plus"></i> Other Income</a></li>
             {% if user.is_superuser or perms.finance.view_paymentreceipt %}
             <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
@@ -225,6 +226,7 @@
             <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payments</a></li>
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
+            <li><a href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph"></i> Expense Report</a></li>
             <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-graph-up-arrow"></i> Income & Banking</a></li>
             <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-eye"></i> Stock Balances</a></li>
         </ul>
