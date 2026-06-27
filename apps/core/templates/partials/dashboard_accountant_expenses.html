@@ -1,0 +1,108 @@
+<!-- Accountant dashboard: expenses only -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Today</h6>
+                <h4 class="fw-bold mb-0 text-danger">TZS {{ exp_today|floatformat:0 }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">This Week</h6>
+                <h4 class="fw-bold mb-0">TZS {{ exp_week|floatformat:0 }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">This Month</h6>
+                <h4 class="fw-bold mb-0">TZS {{ exp_month|floatformat:0 }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">This Year</h6>
+                <h4 class="fw-bold mb-0">TZS {{ exp_year|floatformat:0 }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Expenses over time, with granularity toggle -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold mb-0"><i class="bi bi-graph-down-arrow text-danger me-2"></i>Expenses Over Time</h5>
+            <div class="btn-group btn-group-sm" role="group" id="expRangeToggle">
+                <button type="button" class="btn btn-outline-primary" data-range="day">Day</button>
+                <button type="button" class="btn btn-outline-primary" data-range="week">Week</button>
+                <button type="button" class="btn btn-primary active" data-range="month">Month</button>
+                <button type="button" class="btn btn-outline-primary" data-range="year">Year</button>
+            </div>
+        </div>
+        <div style="height: 320px;">
+            <canvas id="expTimeChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- By Category -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-tags text-primary me-2"></i>By Category <span class="text-muted small fw-normal">({{ exp_year_label }})</span></h5>
+                <div style="height: 240px;"><canvas id="expCategoryChart"></canvas></div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for c in exp_by_category %}
+                            <tr>
+                                <td>{{ c.name }}</td>
+                                <td class="text-end fw-semibold text-danger">TZS {{ c.total|floatformat:0 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td class="text-muted text-center py-3">No expenses this year.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- By Bank -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-bank text-info me-2"></i>By Bank <span class="text-muted small fw-normal">({{ exp_year_label }})</span></h5>
+                <div style="height: 240px;"><canvas id="expBankChart"></canvas></div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for b in exp_by_bank %}
+                            <tr>
+                                <td>{{ b.name }}</td>
+                                <td class="text-end fw-semibold">TZS {{ b.total|floatformat:0 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td class="text-muted text-center py-3">No expenses this year.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <a href="{% url 'finance:expense_report' %}" class="btn btn-outline-primary me-2"><i class="bi bi-file-earmark-bar-graph"></i> Full Expense Report</a>
+    <a href="{% url 'finance:expense_create' %}" class="btn btn-danger"><i class="bi bi-plus-lg"></i> Record Expense</a>
+</div>

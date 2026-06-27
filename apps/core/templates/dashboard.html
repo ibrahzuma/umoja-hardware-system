@@ -32,6 +32,10 @@
 
 {% block content %}
 
+{% if is_accountant_dashboard %}
+{% include 'partials/dashboard_accountant_expenses.html' %}
+{% else %}
+
 {% include 'partials/dashboard_manager_operations.html' %}
 {% include 'partials/dashboard_sales_operations.html' %}
 {% include 'partials/dashboard_metrics.html' %}
@@ -84,11 +88,69 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% if is_accountant_dashboard %}
+<script>
+    const EXP_SERIES = {{ exp_time_series|default:"{}"|safe }};
+    const EXP_CATEGORY = {{ exp_by_category_json|default:"[]"|safe }};
+    const EXP_BANK = {{ exp_by_bank_json|default:"[]"|safe }};
+    const PIE_COLORS = ['#4055e6', '#e63946', '#f4a261', '#2a9d8f', '#7209b7', '#0096c7', '#e9c46a', '#9d4edd', '#06d6a0', '#ef476f', '#118ab2', '#8d99ae'];
+    const fmtTZS = v => 'TZS ' + Number(v).toLocaleString();
+
+    let expTimeChart;
+
+    function renderTimeChart(range) {
+        const s = EXP_SERIES[range] || { labels: [], data: [] };
+        const canvas = document.getElementById('expTimeChart');
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 320);
+        grad.addColorStop(0, 'rgba(230, 57, 70, 0.25)');
+        grad.addColorStop(1, 'rgba(230, 57, 70, 0)');
+        if (expTimeChart) expTimeChart.destroy();
+        expTimeChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: s.labels, datasets: [{ label: 'Expenses', data: s.data, backgroundColor: grad, borderColor: '#e63946', borderWidth: 1.5, borderRadius: 4, maxBarThickness: 48 }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTZS(c.raw) } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    x: { ticks: { color: '#6b7686' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    function renderPie(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!rows.length) { canvas.parentElement.innerHTML = '<div class="text-muted text-center py-5">No data this year.</div>'; return; }
+        new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: rows.map(r => r.name), datasets: [{ data: rows.map(r => r.total), backgroundColor: PIE_COLORS, borderWidth: 1, borderColor: '#fff' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: c => c.label + ': ' + fmtTZS(c.raw) } } } }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderTimeChart('month');
+        renderPie('expCategoryChart', EXP_CATEGORY);
+        renderPie('expBankChart', EXP_BANK);
+
+        document.querySelectorAll('#expRangeToggle [data-range]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#expRangeToggle [data-range]').forEach(b => { b.classList.remove('btn-primary', 'active'); b.classList.add('btn-outline-primary'); });
+                btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary', 'active');
+                renderTimeChart(btn.dataset.range);
+            });
+        });
+    });
+</script>
+{% else %}
 <script src="/static/js/api_service.js"></script>
 <script src="/static/js/socket_service.js"></script>
 <script>
@@ -255,4 +317,5 @@
         if (list.children.length > 15) list.lastChild.remove();
     }
 </script>
+{% endif %}
 {% endblock %}
