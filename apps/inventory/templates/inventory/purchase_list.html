@@ -84,11 +84,34 @@
                 <td class="text-end fw-bold">TZS ${parseFloat(o.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                 <td>${statusBadge(o.status)}</td>
                 <td class="text-end pe-4">
-                    <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${o.id}/pdf/" target="_blank" rel="noopener" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="/api/purchase-orders/${o.id}/pdf/" target="_blank" rel="noopener" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
                     ${confirmBtn}
+                    ${received ? '' : `<button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteOrder(${o.id})" title="Delete order"><i class="bi bi-trash"></i></button>`}
                 </td>`;
             tbody.appendChild(tr);
         });
+    }
+
+    async function deleteOrder(id) {
+        const result = await Swal.fire({
+            icon: 'warning', title: 'Delete this order?',
+            text: 'The purchase order will be permanently removed. (Only allowed before goods are received.)',
+            showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: 'Delete'
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch(`/api/purchase-orders/${id}/`, {
+                method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            if (res.ok) {
+                Swal.fire({ icon: 'success', title: 'Deleted', timer: 1400, showConfirmButton: false });
+                loadOrders();
+            } else {
+                let msg = 'Failed to delete the order.';
+                try { const e = await res.json(); msg = e.detail || msg; } catch (_) {}
+                Swal.fire('Error', msg, 'error');
+            }
+        } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
     async function confirmReceived(id) {

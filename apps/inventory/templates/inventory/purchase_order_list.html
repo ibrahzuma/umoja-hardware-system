@@ -82,11 +82,26 @@
                     <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${po.id}/pdf/" target="_blank" rel="noopener" title="Download PO PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
                     ${po.status === 'received'
                         ? '<span class="badge bg-success-subtle text-success ms-1"><i class="bi bi-check2-circle"></i> Received</span>'
-                        : `<button class="btn btn-sm btn-success ms-1" onclick="confirmReceived(${po.id})" title="Confirm goods arrived (adds to stock)"><i class="bi bi-box-arrow-in-down"></i> Confirm Received</button>`}
+                        : `<button class="btn btn-sm btn-success ms-1" onclick="confirmReceived(${po.id})" title="Confirm goods arrived (adds to stock)"><i class="bi bi-box-arrow-in-down"></i> Confirm Received</button>
+                           <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteOrder(${po.id})" title="Delete order"><i class="bi bi-trash"></i></button>`}
                 </td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    async function deleteOrder(id) {
+        const result = await Swal.fire({
+            icon: 'warning', title: 'Delete this order?',
+            text: 'The purchase order will be permanently removed. (Only allowed before goods are received.)',
+            showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: 'Delete'
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch(`/api/purchase-orders/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) { Swal.fire({ icon: 'success', title: 'Deleted', timer: 1400, showConfirmButton: false }); fetchData(); }
+            else { let msg='Failed to delete.'; try { const e=await res.json(); msg=e.detail||msg; } catch(_){} Swal.fire('Error', msg, 'error'); }
+        } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
     async function confirmReceived(id) {

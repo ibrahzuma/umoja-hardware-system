@@ -241,6 +241,15 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def destroy(self, request, *args, **kwargs):
+        po = self.get_object()
+        if po.status == 'received':
+            return Response(
+                {'detail': 'Cannot delete an order whose goods were already received (stock has been updated).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=['POST'])
     def receive(self, request, pk=None):
         """Confirm goods have arrived: increase stock for every line item and
