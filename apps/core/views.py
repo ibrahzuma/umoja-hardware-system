@@ -138,8 +138,11 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         settings.tax_rate = request.POST.get('tax_rate', settings.tax_rate)
         settings.phone = request.POST.get('phone', settings.phone)
         settings.email = request.POST.get('email', settings.email)
+        settings.website = request.POST.get('website', settings.website)
         settings.address = request.POST.get('address', settings.address)
-        
+        settings.tin = request.POST.get('tin', settings.tin)
+        settings.vrn = request.POST.get('vrn', settings.vrn)
+
         if 'logo' in request.FILES:
             settings.logo = request.FILES['logo']
             

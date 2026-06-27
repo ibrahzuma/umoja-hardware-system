@@ -1,0 +1,205 @@
+{% load humanize static %}<!DOCTYPE html>
+<html>
+<head>
+<style>
+    @page { size: A4; margin: 1.2cm 1.3cm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #2b3440; font-size: 9.5pt; }
+
+    .accent { color: #C8932B; }
+    table { border-collapse: collapse; }
+
+    /* Header */
+    .hdr { width: 100%; margin-bottom: 6px; }
+    .hdr td { vertical-align: top; }
+    .logo { height: 64px; }
+    .co-contact { font-size: 8.5pt; color: #444; line-height: 1.45; }
+    .co-name { font-size: 12pt; font-weight: bold; color: #1f2a37; }
+
+    .rule { border-bottom: 2px solid #C8932B; height: 1px; font-size: 1px; margin: 4px 0 12px 0; }
+
+    /* Title band */
+    .band { width: 100%; margin-bottom: 10px; }
+    .band td { vertical-align: top; }
+    .billto-label { color: #8a8f98; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; }
+    .cust-name { font-size: 12pt; font-weight: bold; color: #1f2a37; margin-top: 2px; }
+    .cust-line { font-size: 9pt; color: #555; }
+
+    .doc-title { font-size: 22pt; font-weight: bold; color: #1f2a37; text-transform: uppercase;
+                 border-left: 5px solid #C8932B; padding-left: 8px; }
+    .orig { font-size: 8pt; color: #8a8f98; text-transform: uppercase; letter-spacing: 1px; text-align: right; }
+
+    .meta { width: 100%; margin-top: 10px; }
+    .meta td { padding: 2px 0; font-size: 9pt; }
+    .meta .m-l { color: #6b7280; }
+    .meta .m-v { text-align: right; font-weight: bold; color: #1f2a37; }
+
+    .tinband { width: 100%; margin-top: 8px; background-color: #f3f1ea; }
+    .tinband td { padding: 5px 8px; font-size: 8.5pt; font-weight: bold; color: #1f2a37; }
+
+    /* Currency strip */
+    .strip { width: 100%; margin-top: 6px; }
+    .strip td { font-size: 8.5pt; color: #8a8f98; padding-bottom: 3px; }
+
+    /* Items */
+    .items { width: 100%; margin-top: 2px; }
+    .items th { background-color: #1f2a37; color: #fff; font-size: 8.5pt; text-transform: uppercase;
+                padding: 7px 8px; text-align: left; }
+    .items td { padding: 7px 8px; font-size: 9pt; border-bottom: 1px solid #e7e4db; }
+    .r { text-align: right; }
+
+    /* Totals */
+    .totwrap { width: 100%; margin-top: 10px; }
+    .totals { width: 100%; }
+    .totals td { padding: 4px 8px; font-size: 9.5pt; white-space: nowrap; }
+    .totals .t-l { text-align: right; color: #6b7280; }
+    .totals .t-v { text-align: right; font-weight: bold; color: #1f2a37; width: 50%; }
+    .grand td { border-top: 2px solid #C8932B; font-size: 11pt; }
+    .grand .t-l { color: #1f2a37; font-weight: bold; }
+    .grand .t-v { color: #C8932B; }
+
+    .payterm { margin-top: 14px; font-size: 9pt; }
+    .payterm-label { border-left: 4px solid #C8932B; padding-left: 6px; font-weight: bold; color: #1f2a37; }
+
+    /* Footer signatures */
+    .sign { width: 100%; margin-top: 22px; }
+    .sign td { font-size: 8.5pt; color: #6b7280; vertical-align: bottom; padding-top: 22px; }
+    .sign .ln { border-top: 1px solid #9aa1ab; width: 80%; padding-top: 3px; }
+
+    .branches { margin-top: 14px; border-top: 1px solid #e7e4db; padding-top: 6px;
+                font-size: 8pt; color: #6b7280; text-align: center; }
+    .stamp { text-align: center; margin-top: 10px; }
+    .approved-badge { display: inline-block; border: 2px solid #15803d; color: #15803d;
+                      font-weight: bold; font-size: 12pt; letter-spacing: 2px;
+                      padding: 6px 18px; }
+</style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <table class="hdr">
+        <tr>
+            <td width="42%">
+                {% if company.logo_url %}
+                <img src="{{ company.logo_url }}" class="logo" alt="logo">
+                {% else %}
+                <div class="co-name">{{ company.name }}</div>
+                {% endif %}
+            </td>
+            <td width="58%" class="co-contact" style="text-align: right;">
+                <span class="co-name">{{ company.name }}</span><br>
+                {% if company.address %}{{ company.address|linebreaksbr }}<br>{% endif %}
+                {% if company.phone %}Tel: {{ company.phone }}<br>{% endif %}
+                {% if company.email %}{{ company.email }}{% if company.website %} &nbsp;|&nbsp; {% endif %}{% endif %}{% if company.website %}{{ company.website }}{% endif %}
+            </td>
+        </tr>
+    </table>
+    <div class="rule"></div>
+
+    <!-- TITLE BAND -->
+    <table class="band">
+        <tr>
+            <td width="50%">
+                <div class="billto-label">Bill To</div>
+                <div class="cust-name">{{ customer.name|default:"Walk-in Customer" }}</div>
+                {% if customer.phone %}<div class="cust-line">{{ customer.phone }}</div>{% endif %}
+                {% if customer.address %}<div class="cust-line">{{ customer.address }}</div>{% endif %}
+                <div class="cust-line">TANZANIA</div>
+                {% if customer.tin %}<div class="cust-line">TIN: {{ customer.tin }}</div>{% endif %}
+            </td>
+            <td width="50%">
+                <div class="orig">Original</div>
+                <div class="doc-title">{{ doc.type }}</div>
+                <table class="meta">
+                    <tr><td class="m-l">{{ doc.number_label }}</td><td class="m-v">{{ doc.number }}</td></tr>
+                    <tr><td class="m-l">Date</td><td class="m-v">{{ doc.date|date:'d.m.Y' }}</td></tr>
+                    {% if doc.valid_until %}<tr><td class="m-l">Valid Until</td><td class="m-v">{{ doc.valid_until|date:'d.m.Y' }}</td></tr>{% endif %}
+                    <tr><td class="m-l">Page</td><td class="m-v">{{ doc.page }}</td></tr>
+                    <tr><td class="m-l">Branch</td><td class="m-v">{{ doc.branch }}</td></tr>
+                    <tr><td class="m-l">Our Contact</td><td class="m-v">{{ doc.contact }}</td></tr>
+                </table>
+                <table class="tinband">
+                    <tr>
+                        <td width="55%">TIN : {{ company.tin|default:"—" }}</td>
+                        <td width="45%">VRN : {{ company.vrn|default:"—" }}</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <!-- CURRENCY STRIP -->
+    <table class="strip">
+        <tr>
+            <td>{% if doc.delivery_label %}{{ doc.delivery_label }}{% endif %}</td>
+            <td style="text-align: right;">Currency <strong style="color:#1f2a37;">{{ currency }}</strong></td>
+        </tr>
+    </table>
+
+    <!-- ITEMS -->
+    <table class="items">
+        <thead>
+            <tr>
+                <th width="16%">Code</th>
+                <th width="34%">Description</th>
+                <th width="12%" class="r">Quantity</th>
+                <th width="8%">UoM</th>
+                <th width="15%" class="r">Price</th>
+                <th width="15%" class="r">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for it in items %}
+            <tr>
+                <td>{{ it.code }}</td>
+                <td>{{ it.description }}</td>
+                <td class="r">{{ it.qty|floatformat:0|intcomma }}</td>
+                <td>{{ it.uom }}</td>
+                <td class="r">{{ it.price|floatformat:2|intcomma }}</td>
+                <td class="r">{{ it.total|floatformat:2|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" style="text-align:center; color:#9aa1ab;">No items</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- TOTALS -->
+    <table class="totwrap">
+        <tr>
+            <td width="40%">&nbsp;</td>
+            <td width="60%">
+                <table class="totals">
+                    <tr><td class="t-l">Order Subtotal</td><td class="t-v">{{ currency }} {{ subtotal_ex|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="t-l">Total Before Tax</td><td class="t-v">{{ currency }} {{ subtotal_ex|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="t-l">Total Tax ({{ tax_rate|floatformat:0 }}% VAT)</td><td class="t-v">{{ currency }} {{ tax_amount|floatformat:2|intcomma }}</td></tr>
+                    <tr class="grand"><td class="t-l">Total Amount</td><td class="t-v">{{ currency }} {{ total|floatformat:2|intcomma }}</td></tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <div class="payterm">
+        <span class="payterm-label">Payment Term</span> &nbsp; {{ doc.payment_term|default:"Cash Basis" }}
+    </div>
+
+    {% if doc.status == 'approved' or doc.status == 'dispatched' %}
+    <div class="stamp">
+        <span class="approved-badge">APPROVED &nbsp;&middot;&nbsp; {{ doc.date|date:'d M Y'|upper }}</span>
+    </div>
+    {% endif %}
+
+    <!-- SIGNATURES -->
+    <table class="sign">
+        <tr>
+            <td width="40%">Prepared By<div class="ln">{{ doc.contact }}</div></td>
+            <td width="35%">Authorized By<div class="ln">{{ doc.authorized_by|default:"&nbsp;" }}</div></td>
+            <td width="25%">Date<div class="ln">{{ doc.date|date:'d.m.Y' }}</div></td>
+        </tr>
+    </table>
+
+    {% if company.branches %}
+    <div class="branches">We are also at : {{ company.branches }}</div>
+    {% endif %}
+
+</body>
+</html>

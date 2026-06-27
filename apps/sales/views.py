@@ -8,10 +8,54 @@ from .serializers import SaleSerializer, SaleItemSerializer, TransactionSerializ
 
 import io
 import csv
+from decimal import Decimal, ROUND_HALF_UP
 from django.http import HttpResponse
 from django.views.generic import TemplateView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .views_report import CommissionReportView
+
+
+def _company_ctx():
+    """Company header data + currency + tax rate for PDF documents."""
+    from apps.core.models import SystemSettings
+    from apps.inventory.models import Branch
+    from django.templatetags.static import static
+    s = SystemSettings.objects.first()
+    logo_url = s.logo.url if (s and s.logo) else static('img/logo.png')
+    branch_names = list(Branch.objects.order_by('name').values_list('name', flat=True))[:10]
+    company = {
+        'name': getattr(s, 'company_name', 'Umoja Hardware') if s else 'Umoja Hardware',
+        'address': getattr(s, 'address', '') if s else '',
+        'phone': getattr(s, 'phone', '') if s else '',
+        'email': getattr(s, 'email', '') if s else '',
+        'website': getattr(s, 'website', '') if s else '',
+        'tin': getattr(s, 'tin', '') if s else '',
+        'vrn': getattr(s, 'vrn', '') if s else '',
+        'logo_url': logo_url,
+        'branches': ' | '.join(branch_names),
+    }
+    currency = (getattr(s, 'currency', 'TZS') if s else 'TZS') or 'TZS'
+    tax_rate = (getattr(s, 'tax_rate', Decimal('18')) if s else Decimal('18'))
+    return company, currency, tax_rate
+
+
+def _money_breakdown(total, tax_rate):
+    """Treat `total` as the VAT-inclusive final amount; back-calculate the
+    pre-tax subtotal and VAT so the Total Amount never changes."""
+    total = Decimal(str(total or 0))
+    rate = Decimal(str(tax_rate or 0)) / Decimal('100')
+    if rate > 0:
+        subtotal_ex = (total / (1 + rate)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    else:
+        subtotal_ex = total
+    tax_amount = (total - subtotal_ex).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return subtotal_ex, tax_amount, total
+
+
+def _person(user):
+    if not user:
+        return ''
+    return user.get_full_name() or user.username
 
 class SaleViewSet(viewsets.ModelViewSet):
     queryset = Sale.objects.all().order_by('-created_at')
@@ -164,7 +208,39 @@ class SaleViewSet(viewsets.ModelViewSet):
     def receipt(self, request, pk=None):
         sale = self.get_object()
         from .utils import render_to_pdf
-        return render_to_pdf('sales/pdf_invoice.html', {'sale': sale})
+        company, currency, tax_rate = _company_ctx()
+        items = [{
+            'code': getattr(it.product, 'sku', '') or '',
+            'description': it.product.name,
+            'qty': it.quantity,
+            'uom': 'PCS',
+            'price': it.price_at_sale,
+            'total': it.subtotal,
+        } for it in sale.items.all()]
+        subtotal_ex, tax_amount, total = _money_breakdown(sale.total_amount, tax_rate)
+        ctx = {
+            'doc': {
+                'type': 'TAX INVOICE', 'number_label': 'Invoice No.',
+                'number': sale.invoice_number, 'date': sale.created_at,
+                'valid_until': None, 'page': '1/1',
+                'branch': sale.branch.name if sale.branch else '',
+                'contact': _person(sale.user),
+                'authorized_by': _person(sale.approved_by),
+                'status': sale.status, 'payment_term': 'Cash Basis',
+                'delivery_label': '',
+            },
+            'company': company,
+            'customer': {
+                'name': sale.customer.name if sale.customer else sale.customer_name,
+                'phone': sale.customer.phone if sale.customer else '',
+                'address': sale.customer.address if sale.customer else '',
+                'tin': '',
+            },
+            'items': items, 'currency': currency,
+            'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
+            'tax_amount': tax_amount, 'total': total,
+        }
+        return render_to_pdf('sales/pdf_document.html', ctx)
 
     @action(detail=True, methods=['GET'])
     def delivery_note(self, request, pk=None):
@@ -294,6 +370,44 @@ class QuotationViewSet(viewsets.ModelViewSet):
              from apps.inventory.models import Branch
              branch = Branch.objects.first()
         serializer.save(created_by=self.request.user, branch=branch)
+
+    @action(detail=True, methods=['GET'])
+    def pdf(self, request, pk=None):
+        quote = self.get_object()
+        from .utils import render_to_pdf
+        company, currency, tax_rate = _company_ctx()
+        items = [{
+            'code': getattr(it.product, 'sku', '') or '',
+            'description': it.product.name,
+            'qty': it.quantity,
+            'uom': 'PCS',
+            'price': it.unit_price,
+            'total': it.total_price,
+        } for it in quote.items.all()]
+        subtotal_ex, tax_amount, total = _money_breakdown(quote.total_amount, tax_rate)
+        ctx = {
+            'doc': {
+                'type': 'QUOTATION', 'number_label': 'Quotation No.',
+                'number': 'QT-%s' % quote.id, 'date': quote.created_at,
+                'valid_until': quote.valid_until, 'page': '1/1',
+                'branch': quote.branch.name if quote.branch else '',
+                'contact': _person(quote.created_by),
+                'authorized_by': _person(quote.created_by),
+                'status': None, 'payment_term': 'Valid as quoted',
+                'delivery_label': '',
+            },
+            'company': company,
+            'customer': {
+                'name': quote.customer.name if quote.customer else quote.customer_name,
+                'phone': quote.customer.phone if quote.customer else '',
+                'address': quote.customer.address if quote.customer else '',
+                'tin': '',
+            },
+            'items': items, 'currency': currency,
+            'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
+            'tax_amount': tax_amount, 'total': total,
+        }
+        return render_to_pdf('sales/pdf_document.html', ctx)
 
 class QuotationListView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/quotation_list.html'

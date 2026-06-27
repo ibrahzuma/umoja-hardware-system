@@ -21,7 +21,10 @@ class SystemSettings(models.Model):
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18.00, help_text="Percentage (e.g. 18.00)")
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    website = models.CharField(max_length=120, blank=True)
     address = models.TextField(blank=True)
+    tin = models.CharField(max_length=40, blank=True, help_text="Taxpayer Identification Number")
+    vrn = models.CharField(max_length=40, blank=True, help_text="VAT Registration Number")
     logo = models.ImageField(upload_to='company_logo/', blank=True, null=True)
 
     def save(self, *args, **kwargs):

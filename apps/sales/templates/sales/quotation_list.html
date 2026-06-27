@@ -70,6 +70,7 @@
                 <td><span class="badge bg-${badge}">${q.status}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewQuote(${q.id})">View</button>
+                    <a class="btn btn-sm btn-outline-danger" href="/api/quotations/${q.id}/pdf/" target="_blank" rel="noopener" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
                 </td>
             `;
             tbody.appendChild(tr);

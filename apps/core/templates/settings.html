@@ -40,8 +40,25 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">Website</label>
+                        <input type="text" name="website" class="form-control" value="{{ settings.website }}" placeholder="www.example.co.tz">
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label">Address</label>
                         <textarea name="address" class="form-control" rows="3">{{ settings.address }}</textarea>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">TIN</label>
+                            <input type="text" name="tin" class="form-control" value="{{ settings.tin }}" placeholder="Taxpayer ID Number">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">VRN</label>
+                            <input type="text" name="vrn" class="form-control" value="{{ settings.vrn }}" placeholder="VAT Registration Number">
+                            <div class="form-text">Shown on tax invoices &amp; quotations.</div>
+                        </div>
                     </div>
 
                     <div class="mb-3">
