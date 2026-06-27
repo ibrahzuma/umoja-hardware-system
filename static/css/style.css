@@ -927,9 +927,55 @@ small, .small { font-size: 0.82rem; }
     .page-body { padding: 28px clamp(24px, 2.4vw, 48px); }
 }
 
+/* Global loading overlay (shown by static/js/loading_overlay.js during fetch) */
+.global-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 2000; /* above Bootstrap modals (1055) and toasts (1090) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 26, 35, 0.35);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.global-loader.show { opacity: 1; visibility: visible; }
+.global-loader__box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 26px 34px;
+    background: var(--slate-0);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.global-loader__spinner {
+    width: 46px;
+    height: 46px;
+    border: 4px solid var(--brand-100);
+    border-top-color: var(--brand-500);
+    border-radius: 50%;
+    animation: umoja-spin 0.7s linear infinite;
+}
+.global-loader__text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--slate-900);
+    letter-spacing: 0.02em;
+}
+@keyframes umoja-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .global-loader__spinner { animation-duration: 1.6s; }
+}
+
 /* Print */
 @media print {
     #sidebar, .navbar, .page-progress-bar { display: none !important; }
+    .global-loader { display: none !important; }
     #content { background: #fff; }
     .card { box-shadow: none; border-color: #ddd; }
 }
