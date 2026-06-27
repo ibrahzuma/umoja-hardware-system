@@ -40,13 +40,14 @@
                         <th>Description</th>
                         <th>Branch</th>
                         <th>Bank</th>
+                        <th>Receipt</th>
                         <th>Amount</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="expenseTableBody">
                     <tr>
-                        <td colspan="7" class="text-center py-4">Loading expenses...</td>
+                        <td colspan="8" class="text-center py-4">Loading expenses...</td>
                     </tr>
                 </tbody>
             </table>
@@ -94,6 +95,11 @@
                     <div class="mb-3">
                         <label class="form-label">Description</label>
                         <textarea class="form-control" id="expenseDescription" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Receipt Image <span class="text-muted small">— optional</span></label>
+                        <input type="file" class="form-control" id="expenseReceipt" accept="image/*;capture=camera">
+                        <div class="form-text">Photo or scan of the receipt.</div>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-danger">Save Expense</button>
@@ -227,7 +233,7 @@
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No expenses recorded</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No expenses recorded</td></tr>';
             return;
         }
 
@@ -241,6 +247,9 @@
             const bankCell = bankName
                 ? `<span class="badge bg-info-subtle text-info"><i class="bi bi-bank me-1"></i>${bankName}</span>`
                 : '<span class="text-muted small">— cash —</span>';
+            const receiptCell = e.receipt_image
+                ? `<a href="${e.receipt_image}" target="_blank" rel="noopener" title="View receipt"><img src="${e.receipt_image}" alt="receipt" style="height:32px;width:32px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;"></a>`
+                : '<span class="text-muted small">—</span>';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -249,6 +258,7 @@
                 <td>${e.description}</td>
                 <td>${branchName}</td>
                 <td>${bankCell}</td>
+                <td>${receiptCell}</td>
                  <td class="fw-bold text-danger">-TZS ${parseFloat(e.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${e.id})">
@@ -283,14 +293,16 @@
     document.getElementById('expenseForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const id = document.getElementById('expenseId').value;
-        const data = {
-            category: document.getElementById('expenseCategory').value,
-            branch: document.getElementById('expenseBranch').value,
-            bank: document.getElementById('expenseBank').value || null,
-            amount: document.getElementById('expenseAmount').value,
-            date_incurred: document.getElementById('expenseDate').value,
-            description: document.getElementById('expenseDescription').value,
-        };
+        const fd = new FormData();
+        fd.append('category', document.getElementById('expenseCategory').value);
+        fd.append('branch', document.getElementById('expenseBranch').value);
+        const bankVal = document.getElementById('expenseBank').value;
+        if (bankVal) fd.append('bank', bankVal);
+        fd.append('amount', document.getElementById('expenseAmount').value);
+        fd.append('date_incurred', document.getElementById('expenseDate').value);
+        fd.append('description', document.getElementById('expenseDescription').value);
+        const receiptFile = document.getElementById('expenseReceipt').files[0];
+        if (receiptFile) fd.append('receipt_image', receiptFile);
 
         const method = id ? 'PUT' : 'POST';
         const url = id ? `/api/expenses/${id}/` : '/api/expenses/';
@@ -298,8 +310,8 @@
         try {
             const res = await fetch(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify(data)
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },  // no Content-Type: browser sets multipart boundary
+                body: fd
             });
 
             if (res.ok) {

@@ -103,6 +103,7 @@
                         <th>Description</th>
                         <th>Branch</th>
                         <th>Bank</th>
+                        <th>Receipt</th>
                         <th class="text-end pe-4">Amount</th>
                     </tr>
                 </thead>
@@ -120,16 +121,25 @@
                             <span class="text-muted small">— cash —</span>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if e.receipt_image %}
+                            <a href="{{ e.receipt_image.url }}" target="_blank" rel="noopener" title="View receipt">
+                                <img src="{{ e.receipt_image.url }}" alt="receipt" style="height:32px;width:32px;object-fit:cover;border-radius:5px;border:1px solid #e5e7eb;">
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
                         <td class="text-end pe-4 fw-bold text-danger">-TZS {{ e.amount|floatformat:2|intcomma }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="text-center py-4 text-muted">No expenses match these filters.</td></tr>
+                    <tr><td colspan="7" class="text-center py-4 text-muted">No expenses match these filters.</td></tr>
                     {% endfor %}
                 </tbody>
                 {% if expenses %}
                 <tfoot class="bg-light">
                     <tr>
-                        <th colspan="5" class="text-end">TOTAL</th>
+                        <th colspan="6" class="text-end">TOTAL</th>
                         <th class="text-end pe-4 text-danger">-TZS {{ total|floatformat:2|intcomma }}</th>
                     </tr>
                 </tfoot>
