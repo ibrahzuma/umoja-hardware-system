@@ -281,7 +281,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             'code': getattr(it.product, 'sku', '') or '',
             'description': it.product.name,
             'qty': it.quantity,
-            'uom': 'PCS',
+            'uom': it.get_unit_display(),
             'price': it.unit_cost,
             'total': it.total_cost,
         } for it in po.items.all()]

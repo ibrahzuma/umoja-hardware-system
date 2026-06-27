@@ -30,7 +30,7 @@
             <div class="card-header bg-light fw-bold">Order Items</div>
             <div class="card-body">
                 <form id="itemForm" class="row g-2 align-items-end mb-3">
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                         <label class="form-label">Product</label>
                         <select class="form-select" id="poProduct" required onchange="updateUnitCost()"></select>
                     </div>
@@ -38,7 +38,27 @@
                         <label class="form-label">Qty</label>
                         <input type="number" class="form-control" id="poQty" required min="1">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
+                        <label class="form-label">Unit</label>
+                        <select class="form-select" id="poUnit">
+                            <option value="pcs">Pcs</option>
+                            <option value="item">Item</option>
+                            <option value="bundle">Bundle</option>
+                            <option value="box">Box</option>
+                            <option value="carton">Carton</option>
+                            <option value="dozen">Dozen</option>
+                            <option value="bag">Bag</option>
+                            <option value="roll">Roll</option>
+                            <option value="kg">Kg</option>
+                            <option value="ton">Ton</option>
+                            <option value="meter">Meter</option>
+                            <option value="litre">Litre</option>
+                            <option value="set">Set</option>
+                            <option value="pair">Pair</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
                         <label class="form-label">Unit Cost</label>
                         <input type="number" class="form-control" id="poCost" required step="0.01" min="0">
                     </div>
@@ -53,17 +73,18 @@
                             <tr>
                                 <th>Product</th>
                                 <th class="text-end">Qty</th>
+                                <th>Unit</th>
                                 <th class="text-end">Unit Cost</th>
                                 <th class="text-end">Total</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody id="poItemsBody">
-                            <tr><td colspan="5" class="text-center text-muted py-3">Add one or more products to the order…</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted py-3">Add one or more products to the order…</td></tr>
                         </tbody>
                         <tfoot>
                             <tr class="fw-bold bg-light">
-                                <td colspan="3" class="text-end">Grand Total:</td>
+                                <td colspan="4" class="text-end">Grand Total:</td>
                                 <td class="text-end" id="poTotal">TZS 0.00</td>
                                 <td></td>
                             </tr>
@@ -129,12 +150,15 @@
         const productId = sel.value;
         const productName = sel.options[sel.selectedIndex].text;
         const quantity = parseInt(document.getElementById('poQty').value, 10);
+        const unitSel = document.getElementById('poUnit');
+        const unit = unitSel.value;
+        const unitLabel = unitSel.options[unitSel.selectedIndex].text;
         const unitCost = parseFloat(document.getElementById('poCost').value);
         if (!productId || !(quantity > 0) || !(unitCost >= 0)) {
             Swal.fire('Missing info', 'Select a product and enter quantity & unit cost.', 'warning');
             return;
         }
-        lineItems.push({ product: productId, product_name: productName, quantity, unit_cost: unitCost });
+        lineItems.push({ product: productId, product_name: productName, quantity, unit, unit_label: unitLabel, unit_cost: unitCost });
         renderItems();
         document.getElementById('itemForm').reset();
         document.getElementById('poProduct').focus();
@@ -163,6 +187,7 @@
             tr.innerHTML = `
                 <td>${it.product_name}</td>
                 <td class="text-end">${it.quantity}</td>
+                <td>${it.unit_label || it.unit}</td>
                 <td class="text-end">${fmt(it.unit_cost)}</td>
                 <td class="text-end fw-semibold">${fmt(lineTotal)}</td>
                 <td class="text-center">
@@ -184,7 +209,7 @@
 
         const payload = {
             supplier, branch, status: 'draft',
-            items_input: lineItems.map(i => ({ product: i.product, quantity: i.quantity, unit_cost: i.unit_cost })),
+            items_input: lineItems.map(i => ({ product: i.product, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
         };
         try {
             const res = await fetch('/api/purchase-orders/', {

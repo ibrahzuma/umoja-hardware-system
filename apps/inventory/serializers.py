@@ -115,7 +115,8 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             cost = Decimal(str(it.get('unit_cost') or 0))
             if pid and qty > 0:
                 PurchaseOrderItem.objects.create(
-                    purchase_order=po, product_id=pid, quantity=qty, unit_cost=cost
+                    purchase_order=po, product_id=pid, quantity=qty, unit_cost=cost,
+                    unit=(it.get('unit') or 'pcs')
                 )
         po.total_amount = sum((i.total_cost for i in po.items.all()), Decimal('0'))
         po.save()

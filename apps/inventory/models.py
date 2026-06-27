@@ -119,9 +119,16 @@ class PurchaseOrder(models.Model):
         return f"PO #{self.id} - {self.supplier}"
 
 class PurchaseOrderItem(models.Model):
+    UNIT_CHOICES = [
+        ('pcs', 'Pcs'), ('item', 'Item'), ('bundle', 'Bundle'), ('box', 'Box'),
+        ('carton', 'Carton'), ('dozen', 'Dozen'), ('bag', 'Bag'), ('roll', 'Roll'),
+        ('kg', 'Kg'), ('ton', 'Ton'), ('meter', 'Meter'), ('litre', 'Litre'),
+        ('set', 'Set'), ('pair', 'Pair'), ('other', 'Other'),
+    ]
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='pcs')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
     total_cost = models.DecimalField(max_digits=12, decimal_places=2)
 
