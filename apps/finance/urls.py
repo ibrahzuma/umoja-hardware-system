@@ -22,6 +22,7 @@ urlpatterns = [
     path('taxes/', views.TaxPaymentListView.as_view(), name='tax_payment_list'),
     path('debtors/', views.DebtorListView.as_view(), name='debtors_list'),
     path('receipts/', views.PaymentReceiptListView.as_view(), name='payment_receipt_list'),
+    path('banks/', views.BankListView.as_view(), name='bank_list'),
     
     path('api/', include(router.urls)),
 ]

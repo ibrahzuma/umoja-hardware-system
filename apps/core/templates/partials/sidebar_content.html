@@ -144,6 +144,9 @@
             {% if user.is_superuser or perms.finance.view_paymentreceipt %}
             <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
             {% endif %}
+            {% if user.is_superuser or perms.finance.view_bankaccount %}
+            <li><a href="{% url 'finance:bank_list' %}"><i class="bi bi-bank"></i> Banks</a></li>
+            {% endif %}
         </ul>
     </li>
     {% endif %}
@@ -217,6 +220,7 @@
         </a>
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
+            <li><a href="{% url 'finance:bank_list' %}"><i class="bi bi-bank"></i> Banks</a></li>
             <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes & Govt</a></li>
             <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payments</a></li>

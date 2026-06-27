@@ -45,6 +45,9 @@ class BankAccountViewSet(viewsets.ModelViewSet):
     serializer_class = BankAccountSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+class BankListView(LoginRequiredMixin, TemplateView):
+    template_name = 'finance/bank_list.html'
+
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.select_related('category', 'bank', 'branch').order_by('-date_incurred')
     serializer_class = ExpenseSerializer

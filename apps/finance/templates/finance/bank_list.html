@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block title %}Banks{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-bank me-2"></i>Banks</h2>
+        <p class="text-muted mb-0 small">Company bank accounts used when recording expenses and payments.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openBankModal()">
+        <i class="bi bi-plus-lg"></i> Add Bank
+    </button>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Bank Account</th>
+                        <th>Account Number</th>
+                        <th>Branch</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="bankTableBody">
+                    <tr><td colspan="5" class="text-center py-4">Loading banks…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Bank Modal (add / edit) -->
+<div class="modal fade" id="bankModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="bankModalTitle">Add Bank</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="bankForm">
+                    <input type="hidden" id="bankId">
+                    <div class="mb-3">
+                        <label class="form-label">Account Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="bankName" placeholder="e.g. CRDB - Main Account" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Number</label>
+                        <input type="text" class="form-control" id="bankAccount" placeholder="Optional">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <input type="text" class="form-control" id="bankBranch" placeholder="Optional">
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="bankActive" checked>
+                        <label class="form-check-label" for="bankActive">Active (selectable when recording expenses)</label>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Bank</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let banks = [];
+    const bankModal = new bootstrap.Modal(document.getElementById('bankModal'));
+
+    document.addEventListener('DOMContentLoaded', loadBanks);
+    document.getElementById('bankForm').addEventListener('submit', handleSubmit);
+
+    async function loadBanks() {
+        try {
+            const res = await fetch('/api/bank-accounts/');
+            if (!res.ok) throw new Error('failed');
+            banks = await res.json();
+            renderBanks();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('bankTableBody').innerHTML =
+                '<tr><td colspan="5" class="text-center py-4 text-danger">Could not load banks.</td></tr>';
+        }
+    }
+
+    function renderBanks() {
+        const tbody = document.getElementById('bankTableBody');
+        tbody.innerHTML = '';
+        if (!banks.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No bank accounts yet. Click “Add Bank”.</td></tr>';
+            return;
+        }
+        banks.forEach(b => {
+            const status = b.is_active
+                ? '<span class="badge bg-success-subtle text-success">Active</span>'
+                : '<span class="badge bg-secondary-subtle text-secondary">Inactive</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 fw-medium"><i class="bi bi-bank2 me-2 text-primary"></i>${b.name}</td>
+                <td>${b.account_number || '<span class="text-muted">—</span>'}</td>
+                <td>${b.branch || '<span class="text-muted">—</span>'}</td>
+                <td>${status}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="editBank(${b.id})" title="Edit">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteBank(${b.id})" title="Delete">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openBankModal() {
+        document.getElementById('bankForm').reset();
+        document.getElementById('bankId').value = '';
+        document.getElementById('bankActive').checked = true;
+        document.getElementById('bankModalTitle').innerText = 'Add Bank';
+        bankModal.show();
+    }
+
+    function editBank(id) {
+        const b = banks.find(x => x.id === id);
+        if (!b) return;
+        document.getElementById('bankId').value = b.id;
+        document.getElementById('bankName').value = b.name;
+        document.getElementById('bankAccount').value = b.account_number || '';
+        document.getElementById('bankBranch').value = b.branch || '';
+        document.getElementById('bankActive').checked = b.is_active;
+        document.getElementById('bankModalTitle').innerText = 'Edit Bank';
+        bankModal.show();
+    }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        const id = document.getElementById('bankId').value;
+        const payload = {
+            name: document.getElementById('bankName').value.trim(),
+            account_number: document.getElementById('bankAccount').value.trim(),
+            branch: document.getElementById('bankBranch').value.trim(),
+            is_active: document.getElementById('bankActive').checked,
+        };
+        const url = id ? `/api/bank-accounts/${id}/` : '/api/bank-accounts/';
+        const method = id ? 'PUT' : 'POST';
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                bankModal.hide();
+                await loadBanks();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: id ? 'Bank updated' : 'Bank added', timer: 1800, showConfirmButton: false });
+            } else {
+                Swal.fire('Error', 'Failed to save the bank account.', 'error');
+            }
+        } catch (err) { console.error(err); }
+    }
+
+    async function deleteBank(id) {
+        const b = banks.find(x => x.id === id);
+        const result = await Swal.fire({
+            icon: 'warning',
+            title: 'Delete bank account?',
+            html: `<strong>${b ? b.name : ''}</strong><br>Expenses already linked to it keep their record but lose the bank reference.`,
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Delete'
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch(`/api/bank-accounts/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) {
+                banks = banks.filter(x => x.id !== id);
+                renderBanks();
+            } else {
+                Swal.fire('Error', 'Failed to delete the bank account.', 'error');
+            }
+        } catch (e) { console.error(e); }
+    }
+</script>
+{% endblock %}
