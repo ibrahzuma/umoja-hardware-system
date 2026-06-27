@@ -2,219 +2,120 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="text-primary fw-bold">Purchase Management</h2>
-    <button class="btn btn-primary" onclick="openModal()">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Purchase Management</h2>
+        <p class="text-muted mb-0 small">Each purchase is one order. Stock is added only when you confirm the goods arrived.</p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'inventory:purchase_create' %}">
         <i class="bi bi-cart-plus"></i> Record Purchase
-    </button>
+    </a>
 </div>
 
-<!-- Purchases Table -->
 <div class="card shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" id="purchaseTable">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="bg-light">
                     <tr>
                         <th class="ps-4">Date</th>
+                        <th>Order #</th>
                         <th>Supplier</th>
                         <th>Branch</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>Total Cost</th>
+                        <th>Items</th>
+                        <th class="text-end">Total</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="purchaseTableBody">
-                    <tr>
-                        <td colspan="6" class="text-center py-4">Loading purchases...</td>
-                    </tr>
+                <tbody id="poTableBody">
+                    <tr><td colspan="8" class="text-center py-4">Loading orders…</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-
-<!-- Add Modal -->
-<div class="modal fade" id="purchaseModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold">Record Purchase</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="purchaseForm">
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Supplier</label>
-                            <select class="form-select" id="purchaseSupplier" required></select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Branch</label>
-                            <select class="form-select" id="purchaseBranch" required></select>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Product</label>
-                            <select class="form-select" id="purchaseProduct" required
-                                onchange="updateUnitCost()"></select>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label">Quantity</label>
-                            <input type="number" class="form-control" id="purchaseQty" required min="1"
-                                onchange="calculateTotal()">
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label">Unit Cost</label>
-                            <input type="number" class="form-control" id="purchaseCost" required step="0.01"
-                                onchange="calculateTotal()">
-                        </div>
-                    </div>
-                    <div class="mb-3 text-end">
-                        <h5 class="fw-bold">Total: <span id="purchaseTotal">TZS 0.00</span></h5>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">Save Purchase</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    let purchases = [];
-    let products = [];
-    let suppliers = [];
-    let branches = [];
-    let modal;
+    let orders = [];
 
-    document.addEventListener('DOMContentLoaded', function () {
-        modal = new bootstrap.Modal(document.getElementById('purchaseModal'));
-        fetchData();
-        document.getElementById('purchaseForm').addEventListener('submit', handleFormSubmit);
-    });
+    document.addEventListener('DOMContentLoaded', loadOrders);
 
-    async function fetchData() {
+    async function loadOrders() {
         try {
-            const [purRes, prodRes, supRes, branchRes] = await Promise.all([
-                fetch('/api/purchases/'),
-                fetch('/api/products/'),
-                fetch('/api/suppliers/'),
-                fetch('/api/branches/')
-            ]);
-
-            purchases = await purRes.json();
-            products = await prodRes.json();
-            suppliers = await supRes.json();
-            branches = await branchRes.json();
-
-            renderTable(purchases);
-            populateSelects();
-        } catch (error) {
-            console.error(error);
+            const res = await fetch('/api/purchase-orders/');
+            if (!res.ok) throw new Error('failed');
+            orders = await res.json();
+            renderOrders();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('poTableBody').innerHTML =
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load orders.</td></tr>';
         }
     }
 
-    function renderTable(data) {
-        const tbody = document.getElementById('purchaseTableBody');
-        tbody.innerHTML = '';
+    function statusBadge(s) {
+        const map = { draft: 'secondary', sent: 'primary', received: 'success', cancelled: 'danger' };
+        return `<span class="badge bg-${map[s] || 'secondary'}">${(s || '').toUpperCase()}</span>`;
+    }
 
-        if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No purchases found</td></tr>';
+    function renderOrders() {
+        const tbody = document.getElementById('poTableBody');
+        tbody.innerHTML = '';
+        if (!orders.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No purchase orders yet. Click “Record Purchase”.</td></tr>';
             return;
         }
-
-        data.forEach(p => {
-            const supName = suppliers.find(s => s.id === p.supplier)?.name || '-';
-            const branchName = branches.find(b => b.id === p.branch)?.name || '-';
-            const prodName = products.find(prod => prod.id === p.product)?.name || '-';
-
+        orders.forEach(o => {
+            const itemCount = (o.items || []).length;
+            const received = o.status === 'received';
+            const confirmBtn = received
+                ? '<span class="badge bg-success-subtle text-success"><i class="bi bi-check2-circle"></i> Received</span>'
+                : `<button class="btn btn-sm btn-success" onclick="confirmReceived(${o.id})" title="Confirm goods arrived (adds to stock)"><i class="bi bi-box-arrow-in-down"></i> Confirm Received</button>`;
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td class="ps-4 text-muted">${new Date(p.date_purchased).toLocaleDateString()}</td>
-                <td class="fw-medium">${supName}</td>
-                <td><span class="badge bg-light text-dark border">${branchName}</span></td>
-                <td>${prodName}</td>
-                <td>${p.quantity}</td>
-                <td class="fw-bold">TZS ${parseFloat(p.total_cost).toLocaleString()}</td>
-            `;
+                <td class="ps-4 text-muted">${o.order_date ? new Date(o.order_date).toLocaleDateString() : '-'}</td>
+                <td class="fw-bold">PO-${String(o.id).padStart(5, '0')}</td>
+                <td class="fw-medium">${o.supplier_name || '-'}</td>
+                <td><span class="badge bg-light text-dark border">${o.branch_name || '-'}</span></td>
+                <td>${itemCount}</td>
+                <td class="text-end fw-bold">TZS ${parseFloat(o.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td>${statusBadge(o.status)}</td>
+                <td class="text-end pe-4">
+                    <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${o.id}/pdf/" target="_blank" rel="noopener" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                    ${confirmBtn}
+                </td>`;
             tbody.appendChild(tr);
         });
     }
 
-    function populateSelects() {
-        populateSelect('purchaseSupplier', suppliers);
-        populateSelect('purchaseBranch', branches);
-
-        const prodSelect = document.getElementById('purchaseProduct');
-        prodSelect.innerHTML = '<option value="">Select Product...</option>';
-        products.forEach(item => {
-            prodSelect.innerHTML += `<option value="${item.id}" data-cost="${item.cost}">${item.name}</option>`;
+    async function confirmReceived(id) {
+        const result = await Swal.fire({
+            icon: 'question',
+            title: 'Confirm goods received?',
+            text: 'This will add all items on this order to stock. It can only be done once.',
+            showCancelButton: true,
+            confirmButtonColor: '#198754',
+            confirmButtonText: 'Yes, goods arrived'
         });
-    }
-
-    function populateSelect(id, items) {
-        const select = document.getElementById(id);
-        select.innerHTML = '<option value="">Select...</option>';
-        items.forEach(item => {
-            select.innerHTML += `<option value="${item.id}">${item.name}</option>`;
-        });
-    }
-
-    function updateUnitCost() {
-        const select = document.getElementById('purchaseProduct');
-        const cost = select.options[select.selectedIndex].dataset.cost;
-        if (cost) {
-            document.getElementById('purchaseCost').value = cost;
-            calculateTotal();
-        }
-    }
-
-    function calculateTotal() {
-        const qty = parseFloat(document.getElementById('purchaseQty').value) || 0;
-        const cost = parseFloat(document.getElementById('purchaseCost').value) || 0;
-        document.getElementById('purchaseTotal').innerText = 'TZS ' + (qty * cost).toLocaleString(undefined, { minimumFractionDigits: 2 });
-    }
-
-    function openModal() {
-        document.getElementById('purchaseForm').reset();
-        modal.show();
-    }
-
-    async function handleFormSubmit(e) {
-        e.preventDefault();
-        const data = {
-            supplier: document.getElementById('purchaseSupplier').value,
-            branch: document.getElementById('purchaseBranch').value,
-            product: document.getElementById('purchaseProduct').value,
-            quantity: document.getElementById('purchaseQty').value,
-            unit_cost: document.getElementById('purchaseCost').value
-        };
-
+        if (!result.isConfirmed) return;
         try {
-            const response = await fetch('/api/purchases/', {
+            const res = await fetch(`/api/purchase-orders/${id}/receive/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token }}'
-                },
-                body: JSON.stringify(data)
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' }
             });
-
-            if (response.ok) {
-                modal.hide();
-                Swal.fire('Success', 'Purchase recorded', 'success');
-                fetchData();
+            const data = await res.json();
+            if (res.ok) {
+                Swal.fire({ icon: 'success', title: 'Goods Received', text: data.detail || 'Stock updated.', timer: 1900, showConfirmButton: false });
+                loadOrders();
             } else {
-                Swal.fire('Error', 'Failed to save', 'error');
+                Swal.fire('Error', data.detail || 'Failed to confirm receipt.', 'error');
             }
-        } catch (error) {
-            console.error(error);
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Network error.', 'error');
         }
     }
 </script>

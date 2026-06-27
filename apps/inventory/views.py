@@ -241,6 +241,26 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @action(detail=True, methods=['POST'])
+    def receive(self, request, pk=None):
+        """Confirm goods have arrived: increase stock for every line item and
+        mark the order Received. Idempotent — stock is only added once."""
+        po = self.get_object()
+        if po.status == 'received':
+            return Response({'detail': 'This order is already marked as received.', 'status': po.status},
+                            status=status.HTTP_200_OK)
+        with transaction.atomic():
+            for it in po.items.all():
+                stock, _ = Stock.objects.get_or_create(
+                    product=it.product, branch=po.branch, defaults={'quantity': 0}
+                )
+                stock.quantity += it.quantity
+                stock.save()
+            po.status = 'received'
+            po.save()
+        return Response({'detail': 'Goods received — stock updated.', 'status': po.status},
+                        status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['GET'])
     def pdf(self, request, pk=None):
         po = self.get_object()

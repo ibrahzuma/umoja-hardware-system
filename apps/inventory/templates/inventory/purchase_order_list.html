@@ -37,6 +37,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         fetchData();
@@ -79,10 +80,30 @@
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${po.id})"><i class="bi bi-eye"></i></button>
                     <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${po.id}/pdf/" target="_blank" rel="noopener" title="Download PO PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                    ${po.status === 'received'
+                        ? '<span class="badge bg-success-subtle text-success ms-1"><i class="bi bi-check2-circle"></i> Received</span>'
+                        : `<button class="btn btn-sm btn-success ms-1" onclick="confirmReceived(${po.id})" title="Confirm goods arrived (adds to stock)"><i class="bi bi-box-arrow-in-down"></i> Confirm Received</button>`}
                 </td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    async function confirmReceived(id) {
+        const result = await Swal.fire({
+            icon: 'question', title: 'Confirm goods received?',
+            text: 'This adds all items on this order to stock. It can only be done once.',
+            showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Yes, goods arrived'
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch(`/api/purchase-orders/${id}/receive/`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' }
+            });
+            const data = await res.json();
+            if (res.ok) { Swal.fire({ icon: 'success', title: 'Goods Received', text: data.detail, timer: 1800, showConfirmButton: false }); fetchData(); }
+            else { Swal.fire('Error', data.detail || 'Failed.', 'error'); }
+        } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
     function viewDetails(id) {
