@@ -60,6 +60,8 @@ class Command(BaseCommand):
                 'finance.view_expense', 'finance.add_expense', 'finance.change_expense',
                 'finance.view_taxpayment', 'finance.add_taxpayment',
                 'finance.view_paymentreceipt', 'finance.add_paymentreceipt', 'finance.change_paymentreceipt',
+                'finance.view_bankaccount', 'finance.add_bankaccount', 'finance.change_bankaccount', 'finance.delete_bankaccount',
+                'finance.view_expensecategory', 'finance.add_expensecategory', 'finance.change_expensecategory', 'finance.delete_expensecategory',
                 'sales.view_transaction',
             ],
             'Store Keeper': [

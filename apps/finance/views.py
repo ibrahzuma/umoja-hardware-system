@@ -11,8 +11,8 @@ from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .forms import ExpenseForm
-from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt
-from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer, TaxPaymentSerializer, PaymentReceiptSerializer
+from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt, BankAccount
+from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer, TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/expense_list.html'
@@ -40,8 +40,13 @@ class ExpenseCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ExpenseCategorySerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+class BankAccountViewSet(viewsets.ModelViewSet):
+    queryset = BankAccount.objects.all().order_by('name')
+    serializer_class = BankAccountSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
+
 class ExpenseViewSet(viewsets.ModelViewSet):
-    queryset = Expense.objects.all().order_by('-date_incurred')
+    queryset = Expense.objects.select_related('category', 'bank', 'branch').order_by('-date_incurred')
     serializer_class = ExpenseSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 

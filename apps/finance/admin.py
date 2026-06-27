@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import PaymentReceipt
+from .models import PaymentReceipt, BankAccount
+
+
+@admin.register(BankAccount)
+class BankAccountAdmin(admin.ModelAdmin):
+    list_display = ('name', 'account_number', 'branch', 'is_active', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'account_number', 'branch')
 
 
 @admin.register(PaymentReceipt)

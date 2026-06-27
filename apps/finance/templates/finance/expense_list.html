@@ -7,6 +7,9 @@
         <button class="btn btn-outline-primary me-2" onclick="openCategoryModal()">
             <i class="bi bi-tags"></i> Categories
         </button>
+        <button class="btn btn-outline-primary me-2" onclick="openBankModal()">
+            <i class="bi bi-bank"></i> Banks
+        </button>
         <button class="btn btn-danger" onclick="openExpenseModal()">
             <i class="bi bi-plus-lg"></i> Record Expense
         </button>
@@ -36,13 +39,14 @@
                         <th>Category</th>
                         <th>Description</th>
                         <th>Branch</th>
+                        <th>Bank</th>
                         <th>Amount</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="expenseTableBody">
                     <tr>
-                        <td colspan="6" class="text-center py-4">Loading expenses...</td>
+                        <td colspan="7" class="text-center py-4">Loading expenses...</td>
                     </tr>
                 </tbody>
             </table>
@@ -70,6 +74,12 @@
                     <div class="mb-3">
                         <label class="form-label">Branch</label>
                         <select class="form-select" id="expenseBranch" required>
+                            <!-- Populated via JS -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Paid From (Bank) <span class="text-muted small">— optional</span></label>
+                        <select class="form-select" id="expenseBank">
                             <!-- Populated via JS -->
                         </select>
                     </div>
@@ -116,6 +126,39 @@
     </div>
 </div>
 
+<!-- Bank Modal -->
+<div class="modal fade" id="bankModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Manage Bank Accounts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="bankForm" class="mb-4">
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <input type="text" class="form-control" id="newBankName" placeholder="Account name (e.g. CRDB - Main)" required>
+                        </div>
+                        <div class="col-7">
+                            <input type="text" class="form-control" id="newBankAccount" placeholder="Account number (optional)">
+                        </div>
+                        <div class="col-5">
+                            <input type="text" class="form-control" id="newBankBranch" placeholder="Branch (optional)">
+                        </div>
+                        <div class="col-12 d-grid">
+                            <button type="submit" class="btn btn-primary">Add Bank</button>
+                        </div>
+                    </div>
+                </form>
+                <ul class="list-group" id="bankList">
+                    <!-- Populated via JS -->
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -124,8 +167,10 @@
     let expenses = [];
     let categories = [];
     let branches = [];
+    let banks = [];
     const expenseModal = new bootstrap.Modal(document.getElementById('expenseModal'));
     const categoryModal = new bootstrap.Modal(document.getElementById('categoryModal'));
+    const bankModal = new bootstrap.Modal(document.getElementById('bankModal'));
 
     // Set default date to today
     document.getElementById('expenseDate').valueAsDate = new Date();
@@ -134,19 +179,22 @@
 
     async function fetchInitialData() {
         try {
-            const [expRes, catRes, branchRes] = await Promise.all([
+            const [expRes, catRes, branchRes, bankRes] = await Promise.all([
                 fetch('/api/expenses/'),
                 fetch('/api/expense-categories/'),
-                fetch('/api/branches/')
+                fetch('/api/branches/'),
+                fetch('/api/bank-accounts/')
             ]);
 
             expenses = await expRes.json();
             categories = await catRes.json();
             branches = await branchRes.json();
+            banks = await bankRes.json();
 
             populateDropdowns();
             renderExpenses(expenses);
             renderCategoryList();
+            renderBankList();
             updateStats();
         } catch (e) {
             console.error(e);
@@ -166,6 +214,12 @@
         branches.forEach(b => {
             branchSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
         });
+
+        const bankSelect = document.getElementById('expenseBank');
+        bankSelect.innerHTML = '<option value="">— No bank / cash —</option>';
+        banks.filter(b => b.is_active).forEach(b => {
+            bankSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
+        });
     }
 
     function renderExpenses(data) {
@@ -173,7 +227,7 @@
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No expenses recorded</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No expenses recorded</td></tr>';
             return;
         }
 
@@ -183,6 +237,10 @@
         data.forEach(e => {
             const catName = categories.find(c => c.id === e.category)?.name || 'Uncategorized';
             const branchName = branches.find(b => b.id === e.branch)?.name || '-';
+            const bankName = e.bank_name || banks.find(b => b.id === e.bank)?.name || '';
+            const bankCell = bankName
+                ? `<span class="badge bg-info-subtle text-info"><i class="bi bi-bank me-1"></i>${bankName}</span>`
+                : '<span class="text-muted small">— cash —</span>';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -190,6 +248,7 @@
                 <td><span class="badge bg-secondary">${catName}</span></td>
                 <td>${e.description}</td>
                 <td>${branchName}</td>
+                <td>${bankCell}</td>
                  <td class="fw-bold text-danger">-TZS ${parseFloat(e.amount).toFixed(2)}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${e.id})">
@@ -227,6 +286,7 @@
         const data = {
             category: document.getElementById('expenseCategory').value,
             branch: document.getElementById('expenseBranch').value,
+            bank: document.getElementById('expenseBank').value || null,
             amount: document.getElementById('expenseAmount').value,
             date_incurred: document.getElementById('expenseDate').value,
             description: document.getElementById('expenseDescription').value,
@@ -320,6 +380,73 @@
             categories = categories.filter(c => c.id !== id);
             renderCategoryList();
             populateDropdowns();
+        } catch (e) { console.error(e); }
+    }
+
+    // --- Bank Management ---
+    function openBankModal() {
+        renderBankList();
+        bankModal.show();
+    }
+
+    function renderBankList() {
+        const list = document.getElementById('bankList');
+        list.innerHTML = '';
+        if (!banks.length) {
+            list.innerHTML = '<li class="list-group-item text-muted text-center small">No bank accounts yet. Add one above.</li>';
+            return;
+        }
+        banks.forEach(b => {
+            const meta = [b.account_number, b.branch].filter(Boolean).join(' · ');
+            list.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-medium">${b.name}</div>
+                        ${meta ? `<small class="text-muted">${meta}</small>` : ''}
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger border-0" onclick="deleteBank(${b.id})">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </li>`;
+        });
+    }
+
+    document.getElementById('bankForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            name: document.getElementById('newBankName').value,
+            account_number: document.getElementById('newBankAccount').value,
+            branch: document.getElementById('newBankBranch').value,
+        };
+        try {
+            const res = await fetch('/api/bank-accounts/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                const newBank = await res.json();
+                banks.push(newBank);
+                document.getElementById('bankForm').reset();
+                renderBankList();
+                populateDropdowns();
+            } else {
+                Swal.fire('Error', 'Failed to add bank account', 'error');
+            }
+        } catch (e) { console.error(e); }
+    });
+
+    async function deleteBank(id) {
+        if (!confirm('Delete this bank account? Expenses already linked to it will keep their record but lose the bank reference.')) return;
+        try {
+            const res = await fetch(`/api/bank-accounts/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) {
+                banks = banks.filter(b => b.id !== id);
+                renderBankList();
+                populateDropdowns();
+            } else {
+                Swal.fire('Error', 'Failed to delete bank account', 'error');
+            }
         } catch (e) { console.error(e); }
     }
 </script>

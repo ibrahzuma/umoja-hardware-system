@@ -10,9 +10,24 @@ class ExpenseCategory(models.Model):
     def __str__(self):
         return self.name
 
+class BankAccount(models.Model):
+    """A company bank account expenses can be paid from."""
+    name = models.CharField(max_length=120, help_text="e.g. CRDB - Main Account")
+    account_number = models.CharField(max_length=50, blank=True)
+    branch = models.CharField(max_length=120, blank=True, help_text="Bank branch")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 class Expense(models.Model):
     branch = models.ForeignKey('inventory.Branch', on_delete=models.CASCADE, related_name='expenses')
     category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True)
+    bank = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name='expenses', help_text="Bank account the money was taken from")
     description = models.TextField()
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     date_incurred = models.DateField()

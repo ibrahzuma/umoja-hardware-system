@@ -1,7 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from django.db.models import Sum
-from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt
+from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt, BankAccount
 from apps.sales.models import Sale
 
 class ExpenseCategorySerializer(serializers.ModelSerializer):
@@ -9,9 +9,16 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
         model = ExpenseCategory
         fields = '__all__'
 
+class BankAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BankAccount
+        fields = '__all__'
+
 class ExpenseSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
-    
+    bank_name = serializers.CharField(source='bank.name', read_only=True, default='')
+    branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+
     class Meta:
         model = Expense
         fields = '__all__'

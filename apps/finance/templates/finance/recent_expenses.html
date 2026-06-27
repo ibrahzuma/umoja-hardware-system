@@ -18,12 +18,13 @@
                         <th>Description</th>
                         <th>Category</th>
                         <th>Branch</th>
+                        <th>Bank</th>
                         <th class="text-end pe-4">Amount</th>
                     </tr>
                 </thead>
                 <tbody id="expenseTableBody">
                     <tr>
-                        <td colspan="5" class="text-center py-4">Loading...</td>
+                        <td colspan="6" class="text-center py-4">Loading...</td>
                     </tr>
                 </tbody>
             </table>
@@ -47,17 +48,21 @@
             tbody.innerHTML = '';
 
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No expenses found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No expenses found</td></tr>';
                 return;
             }
 
             data.forEach(e => {
+                const bankCell = e.bank_name
+                    ? `<span class="badge bg-info-subtle text-info"><i class="bi bi-bank me-1"></i>${e.bank_name}</span>`
+                    : '<span class="text-muted small">— cash —</span>';
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="ps-4 text-muted">${new Date(e.date_incurred).toLocaleDateString()}</td>
                     <td class="fw-bold">${e.description}</td>
                     <td><span class="badge bg-light text-dark border">${e.category_name || '-'}</span></td>
                     <td>${e.branch_name || '-'}</td>
+                    <td>${bankCell}</td>
                     <td class="text-end pe-4 fw-bold text-danger">TZS ${parseFloat(e.amount).toFixed(2)}</td>
                 `;
                 tbody.appendChild(tr);
