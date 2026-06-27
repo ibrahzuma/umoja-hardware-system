@@ -65,7 +65,7 @@ class Command(BaseCommand):
                 'sales.view_sale',
             ],
             'HR Officer': [
-                'hr.view_employee', 'hr.add_employee', 'hr.change_employee',
+                'hr.view_employee', 'hr.add_employee', 'hr.change_employee', 'hr.delete_employee',
                 'hr.view_department', 'hr.view_jobposition',
                 'hr.view_leaverequest', 'hr.add_leaverequest', 'hr.change_leaverequest',
                 'hr.view_attendancerecord', 'hr.add_attendancerecord', 'hr.change_attendancerecord',

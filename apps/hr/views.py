@@ -1,8 +1,10 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import ProtectedError
 from django.utils import timezone
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .models import (
@@ -72,6 +74,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             qs = qs.filter(employee_number__icontains=search) | qs.filter(
                 first_name__icontains=search) | qs.filter(last_name__icontains=search)
         return qs
+
+    def perform_destroy(self, instance):
+        """Delete the employee, surfacing the Payslip PROTECT constraint as a
+        clear 400 instead of a silent 500.
+
+        Payslip.employee is on_delete=PROTECT, so an employee with payroll
+        history cannot be hard-deleted. Without this, the ProtectedError
+        bubbles up as an unhandled 500 — a silent, confusing failure for HR.
+        """
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError(
+                "This employee has payslips or other protected records and "
+                "cannot be deleted. Set their status to 'terminated' instead, "
+                "or remove the linked payroll records first."
+            )
 
 
 class LeaveTypeViewSet(viewsets.ModelViewSet):

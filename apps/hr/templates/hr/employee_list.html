@@ -53,13 +53,37 @@
                     <th>Hire date</th>
                     <th class="text-end pe-4">Gross salary</th>
                     <th>Status</th>
-                    {% if user.is_superuser or user.is_admin_role %}<th class="text-end pe-4">Actions</th>{% endif %}
+                    <th>Account / Role</th>
+                    {% if perms.hr.delete_employee %}<th class="text-end pe-4">Actions</th>{% endif %}
                 </tr>
             </thead>
             <tbody id="empBody">
-                <tr><td colspan="8" class="text-center text-muted py-4">Loading…</td></tr>
+                <tr><td colspan="10" class="text-center text-muted py-4">Loading…</td></tr>
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- Link system account modal -->
+<div class="modal fade" id="linkModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Link system account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">Connect <strong id="link-emp-name"></strong> to a login account.
+                    The account's role determines what the employee can access in the system.</p>
+                <label class="form-label">User account &amp; role</label>
+                <select class="form-select" id="link-user-sel"></select>
+                <div id="link-msg" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancel</button>
+                <button class="btn btn-primary" id="link-save" type="button"><i class="bi bi-link-45deg"></i> Save link</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -69,8 +93,9 @@
 async function jget(url) { const r = await fetch(url); return r.json(); }
 async function results(url) { const d = await jget(url); return Array.isArray(d) ? d : (d.results || []); }
 
-const IS_ADMIN = {% if user.is_superuser or user.is_admin_role %}true{% else %}false{% endif %};
-let allEmps = [], allDepts = [];
+const CAN_DELETE = {% if perms.hr.delete_employee %}true{% else %}false{% endif %};
+let allEmps = [], allDepts = [], allUsers = [];
+let linkModal = null, linkTargetId = null;
 
 function fmtTzs(n) { return 'TZS ' + Number(n || 0).toLocaleString(); }
 function badgeFor(s) {
@@ -90,11 +115,15 @@ function render() {
         return true;
     });
     if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No employees match.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No employees match.</td></tr>';
         return;
     }
     list.forEach(e => {
         const tr = document.createElement('tr');
+        const account = e.user
+            ? `<span class="badge bg-light text-dark border me-1"><i class="bi bi-person-check"></i> ${e.user_username}</span>`
+              + (e.user_role ? `<span class="badge bg-info-subtle text-info-emphasis">${e.user_role}</span>` : '')
+            : '<span class="text-muted small">No account</span>';
         tr.innerHTML = `
             <td class="ps-4 fw-semibold">${e.employee_number}</td>
             <td>${e.full_name}</td>
@@ -104,7 +133,10 @@ function render() {
             <td>${e.hire_date || '—'}</td>
             <td class="text-end pe-4">${fmtTzs(e.gross_salary)}</td>
             <td><span class="badge bg-${badgeFor(e.status)}">${e.status.replace('_', ' ')}</span></td>
-            ${IS_ADMIN ? `<td class="text-end pe-4">
+            <td>${account}
+                <button class="btn btn-sm btn-link p-0 ms-1 align-baseline" title="Link / change system account"
+                    onclick="openLink(${e.id})"><i class="bi bi-link-45deg"></i></button></td>
+            ${CAN_DELETE ? `<td class="text-end pe-4">
                 <button class="btn btn-sm btn-outline-danger" onclick="removeEmployee(${e.id}, '${e.full_name.replace(/'/g, "\\'")}')">
                     <i class="bi bi-trash"></i></button></td>` : ''}
         `;
@@ -123,14 +155,69 @@ async function removeEmployee(id, name) {
     } else if (r.status === 403) {
         alert('You do not have permission to delete employees.');
     } else {
-        // PROTECT on Payslip.employee blocks deletion of employees with payslips
-        alert('Could not delete this employee. They may have payslips or other records that must be removed first.');
+        // Surface the backend's reason (e.g. payslip PROTECT) instead of failing silently
+        let msg = 'Could not delete this employee.';
+        const err = await r.json().catch(() => null);
+        if (err) {
+            if (Array.isArray(err)) msg = err.join(' ');
+            else if (typeof err === 'object') msg = Object.values(err).flat().join(' ') || msg;
+        }
+        alert(msg);
+    }
+}
+
+// --- Link an employee to a system user account + role -----------------------
+function openLink(empId) {
+    linkTargetId = empId;
+    const emp = allEmps.find(e => e.id === empId);
+    const sel = document.getElementById('link-user-sel');
+    // Users already linked to *another* employee are excluded to keep the 1:1 link clean.
+    const takenByOthers = new Set(
+        allEmps.filter(e => e.user && e.id !== empId).map(e => e.user));
+    sel.innerHTML = '<option value="">— No account —</option>';
+    allUsers.forEach(u => {
+        if (takenByOthers.has(u.id)) return;
+        const o = document.createElement('option');
+        o.value = u.id;
+        o.text = `${u.username}${u.role_name ? ' — ' + u.role_name : (u.role ? ' — ' + u.role : '')}`;
+        if (emp && emp.user === u.id) o.selected = true;
+        sel.appendChild(o);
+    });
+    document.getElementById('link-emp-name').textContent = emp ? emp.full_name : '';
+    document.getElementById('link-msg').innerHTML = '';
+    linkModal.show();
+}
+
+async function saveLink() {
+    const sel = document.getElementById('link-user-sel');
+    const userId = sel.value ? Number(sel.value) : null;
+    const r = await fetch(`/api/employees/${linkTargetId}/`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+        body: JSON.stringify({user: userId}),
+    });
+    if (r.ok) {
+        const updated = await r.json();
+        const idx = allEmps.findIndex(e => e.id === linkTargetId);
+        if (idx >= 0) allEmps[idx] = updated;
+        render();
+        linkModal.hide();
+    } else if (r.status === 403) {
+        document.getElementById('link-msg').innerHTML =
+            '<div class="alert alert-danger mb-0">You do not have permission to change employees.</div>';
+    } else {
+        const err = await r.json().catch(() => ({}));
+        document.getElementById('link-msg').innerHTML =
+            '<div class="alert alert-danger mb-0">Could not link account: '
+            + (err.user ? err.user.join(' ') : 'please try again.') + '</div>';
     }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    [allEmps, allDepts] = await Promise.all([
-        results('/api/employees/'), results('/api/departments/'),
+    linkModal = new bootstrap.Modal(document.getElementById('linkModal'));
+    document.getElementById('link-save').addEventListener('click', saveLink);
+    [allEmps, allDepts, allUsers] = await Promise.all([
+        results('/api/employees/'), results('/api/departments/'), results('/api/users/'),
     ]);
     const ds = document.getElementById('filter-dept');
     allDepts.forEach(d => {

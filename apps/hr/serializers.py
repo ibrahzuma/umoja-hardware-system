@@ -29,6 +29,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source='department.name', read_only=True, default='')
     position_title = serializers.CharField(source='position.title', read_only=True, default='')
     branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+    # Linked system account + its role (read-only display; the `user` FK itself
+    # stays writable so HR can link/unlink an account).
+    user_username = serializers.CharField(source='user.username', read_only=True, default='')
+    user_role = serializers.CharField(source='user.get_role_display', read_only=True, default='')
 
     class Meta:
         model = Employee
