@@ -7,9 +7,32 @@
     <div>
         <div class="eyebrow">Overview</div>
         <h2>Welcome back, {{ user.get_full_name|default:user.username }}</h2>
+        {% if is_accountant_dashboard %}
+        <p class="subtitle">Your expenses overview for {{ exp_year_label }}.</p>
+        {% else %}
         <p class="subtitle">Here's what's happening across your branches today.</p>
+        {% endif %}
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        {% if is_accountant_dashboard %}
+        <button class="btn btn-secondary" onclick="location.reload()" type="button">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge-fill"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{% url 'finance:expense_create' %}"><i class="bi bi-receipt me-2 text-muted"></i>Record expense</a></li>
+                <li><a class="dropdown-item" href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff me-2 text-muted"></i>Payment receipt</a></li>
+                <li><a class="dropdown-item" href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph me-2 text-muted"></i>Expense report</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack me-2 text-muted"></i>Supplier payment</a></li>
+                <li><a class="dropdown-item" href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank me-2 text-muted"></i>Taxes &amp; govt</a></li>
+                <li><a class="dropdown-item" href="{% url 'finance:bank_list' %}"><i class="bi bi-bank2 me-2 text-muted"></i>Manage banks</a></li>
+            </ul>
+        </div>
+        {% else %}
         <button class="btn btn-secondary" onclick="loadStats()" type="button">
             <i class="bi bi-arrow-clockwise"></i> Refresh
         </button>
@@ -26,6 +49,7 @@
                 {% endif %}
             </ul>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
