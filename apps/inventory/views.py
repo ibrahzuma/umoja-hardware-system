@@ -246,7 +246,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         po = self.get_object()
         # Reuse the shared branded PDF document (same layout as invoice/quotation)
         from apps.sales.utils import render_to_pdf
-        from apps.sales.views import _company_ctx, _money_breakdown, _person
+        from apps.sales.views import _company_ctx, _money_breakdown, _person, _amount_in_words
         company, currency, tax_rate = _company_ctx()
         items = [{
             'code': getattr(it.product, 'sku', '') or '',
@@ -268,7 +268,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 'contact': _person(po.created_by),
                 'authorized_by': _person(po.created_by),
                 'status': None, 'payment_term': 'As agreed',
-                'delivery_label': '',
+                'delivery_label': '', 'authorised_block': True,
             },
             'company': company,
             'customer': {
@@ -280,6 +280,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             'items': items, 'currency': currency,
             'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
             'tax_amount': tax_amount, 'total': total,
+            'amount_words': _amount_in_words(total, currency),
         }
         return render_to_pdf('sales/pdf_document.html', ctx)
 

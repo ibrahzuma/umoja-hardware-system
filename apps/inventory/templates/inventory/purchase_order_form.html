@@ -194,8 +194,19 @@
             });
             if (res.ok) {
                 const po = await res.json();
-                Swal.fire({ icon: 'success', title: 'Purchase Order created', text: `PO #${po.id} with ${lineItems.length} item(s).`, timer: 1800, showConfirmButton: false })
-                    .then(() => { window.location.href = "{% url 'inventory:purchase_order_list' %}"; });
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Purchase Order created',
+                    html: `PO #${po.id} with ${lineItems.length} product(s) created as one order.`,
+                    confirmButtonText: 'Open PO PDF for printing',
+                    showCancelButton: true,
+                    cancelButtonText: 'Back to list'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.open(`/api/purchase-orders/${po.id}/pdf/`, '_blank');
+                    }
+                    window.location.href = "{% url 'inventory:purchase_order_list' %}";
+                });
             } else {
                 let msg = 'Failed to create the purchase order.';
                 try { const err = await res.json(); msg = err.detail || JSON.stringify(err); } catch (_) {}

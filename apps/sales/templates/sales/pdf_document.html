@@ -60,6 +60,21 @@
     .payterm { margin-top: 14px; font-size: 9pt; }
     .payterm-label { border-left: 4px solid #C8932B; padding-left: 6px; font-weight: bold; color: #1f2a37; }
 
+    .amt-words { margin-top: 8px; font-size: 9pt; color: #1f2a37; }
+    .amt-words .lbl { color: #6b7280; }
+
+    /* Authorised-personnel signing block (purchase orders) */
+    .authblock { width: 100%; margin-top: 10px; }
+    .authblock td { vertical-align: top; }
+    .auth-title { font-weight: bold; color: #1f2a37; font-size: 10pt;
+                  border-left: 4px solid #C8932B; padding-left: 6px; }
+    .auth-note { font-size: 8pt; color: #6b7280; margin: 3px 0 4px 0; }
+    .auth-lines { width: 92%; }
+    .auth-lines td { padding: 7px 6px 2px 0; font-size: 8.5pt; color: #6b7280; }
+    .auth-lines .ln2 { border-bottom: 1px solid #9aa1ab; }
+    .stampbox { border: 1px dashed #9aa1ab; color: #9aa1ab; font-size: 8.5pt;
+                text-align: center; padding: 24px 8px; margin-top: 10px; }
+
     /* Footer signatures */
     .sign { width: 100%; margin-top: 22px; }
     .sign td { font-size: 8.5pt; color: #6b7280; vertical-align: bottom; padding-top: 22px; }
@@ -182,12 +197,36 @@
         <span class="payterm-label">Payment Term</span> &nbsp; {{ doc.payment_term|default:"Cash Basis" }}
     </div>
 
+    {% if amount_words %}
+    <div class="amt-words"><span class="lbl">Amount in words:</span> <strong>{{ amount_words }}</strong></div>
+    {% endif %}
+
     {% if doc.status == 'approved' or doc.status == 'dispatched' %}
     <div class="stamp">
         <span class="approved-badge">APPROVED &nbsp;&middot;&nbsp; {{ doc.date|date:'d M Y'|upper }}</span>
     </div>
     {% endif %}
 
+    {% if doc.authorised_block %}
+    <!-- AUTHORISED PERSONNEL (printed for signing) -->
+    <table class="authblock">
+        <tr>
+            <td width="62%">
+                <div class="auth-title">For Authorised Personnel</div>
+                <div class="auth-note">To be printed, signed and stamped before submission to the supplier.</div>
+                <table class="auth-lines">
+                    <tr><td width="22%">Prepared By</td><td class="ln2">{{ doc.contact }}</td></tr>
+                    <tr><td>Authorised By</td><td class="ln2">&nbsp;</td></tr>
+                    <tr><td>Signature</td><td class="ln2">&nbsp;</td></tr>
+                    <tr><td>Date</td><td class="ln2">&nbsp;</td></tr>
+                </table>
+            </td>
+            <td width="38%">
+                <div class="stampbox">Company Stamp</div>
+            </td>
+        </tr>
+    </table>
+    {% else %}
     <!-- SIGNATURES -->
     <table class="sign">
         <tr>
@@ -196,6 +235,7 @@
             <td width="25%">Date<div class="ln">{{ doc.date|date:'d.m.Y' }}</div></td>
         </tr>
     </table>
+    {% endif %}
 
     {% if company.branches %}
     <div class="branches">We are also at : {{ company.branches }}</div>

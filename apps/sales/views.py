@@ -57,6 +57,49 @@ def _person(user):
         return ''
     return user.get_full_name() or user.username
 
+
+def _amount_in_words(amount, currency='TZS'):
+    """Render a money amount as words, e.g. 'Three Hundred Fifty-Three
+    Million Tanzanian Shillings Only'. Handles up to billions."""
+    amount = Decimal(str(amount or 0))
+    whole = int(amount)
+    cents = int(round((amount - whole) * 100))
+    ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight',
+            'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen',
+            'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+    tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+    def three(n):
+        s = ''
+        h, r = n // 100, n % 100
+        if h:
+            s += ones[h] + ' Hundred'
+        if r:
+            if s:
+                s += ' '
+            if r < 20:
+                s += ones[r]
+            else:
+                s += tens[r // 10] + ('-' + ones[r % 10] if r % 10 else '')
+        return s
+
+    if whole == 0:
+        words = 'Zero'
+    else:
+        parts, n = [], whole
+        for val, name in [(10**9, 'Billion'), (10**6, 'Million'), (10**3, 'Thousand'), (1, '')]:
+            if n >= val:
+                seg = three(n // val)
+                n = n % val
+                parts.append(seg + (' ' + name if name else ''))
+        words = ' '.join(p for p in parts if p).strip()
+
+    cur = 'Tanzanian Shillings' if (currency or 'TZS').upper() == 'TZS' else currency
+    result = '%s %s' % (words, cur)
+    if cents:
+        result += ' and %02d/100' % cents
+    return result + ' Only'
+
 class SaleViewSet(viewsets.ModelViewSet):
     queryset = Sale.objects.all().order_by('-created_at')
     serializer_class = SaleSerializer
@@ -227,7 +270,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                 'contact': _person(sale.user),
                 'authorized_by': _person(sale.approved_by),
                 'status': sale.status, 'payment_term': 'Cash Basis',
-                'delivery_label': '',
+                'delivery_label': '', 'authorised_block': False,
             },
             'company': company,
             'customer': {
@@ -239,6 +282,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             'items': items, 'currency': currency,
             'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
             'tax_amount': tax_amount, 'total': total,
+            'amount_words': _amount_in_words(total, currency),
         }
         return render_to_pdf('sales/pdf_document.html', ctx)
 
@@ -394,7 +438,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
                 'contact': _person(quote.created_by),
                 'authorized_by': _person(quote.created_by),
                 'status': None, 'payment_term': 'Valid as quoted',
-                'delivery_label': '',
+                'delivery_label': '', 'authorised_block': False,
             },
             'company': company,
             'customer': {
@@ -406,6 +450,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
             'items': items, 'currency': currency,
             'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
             'tax_amount': tax_amount, 'total': total,
+            'amount_words': _amount_in_words(total, currency),
         }
         return render_to_pdf('sales/pdf_document.html', ctx)
 
