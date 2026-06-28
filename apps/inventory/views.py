@@ -9,10 +9,12 @@ from .serializers import (
 import io
 import csv
 import openpyxl
+from datetime import date
+from decimal import Decimal
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
-from django.db.models import Q
+from django.db.models import Q, Sum
 from rest_framework.decorators import action
 from django.http import HttpResponse
 from django.views.generic import TemplateView
@@ -650,3 +652,241 @@ class DriverListView(LoginRequiredMixin, TemplateView):
 
 class TruckMaintenanceView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/truck_maintenance.html'
+
+
+# ----------------------------------------------------------------------------
+# Purchases Report (filterable) + Excel / PDF export
+# Built for the purchases manager (Afisa Ugavi); mirrors the finance
+# expense report so the look-and-feel stays consistent.
+# ----------------------------------------------------------------------------
+
+def _filter_purchases(params):
+    """Filter the Purchase queryset from request GET params.
+
+    Supported filters (all optional): date_from, date_to, supplier, branch,
+    q (product name search).
+    """
+    qs = (Purchase.objects.select_related('supplier', 'branch', 'product')
+          .order_by('-date_purchased'))
+    date_from = (params.get('date_from') or '').strip()
+    date_to = (params.get('date_to') or '').strip()
+    supplier = (params.get('supplier') or '').strip()
+    branch = (params.get('branch') or '').strip()
+    q = (params.get('q') or '').strip()
+
+    if date_from:
+        qs = qs.filter(date_purchased__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date_purchased__date__lte=date_to)
+    if supplier:
+        qs = qs.filter(supplier_id=supplier)
+    if branch:
+        qs = qs.filter(branch_id=branch)
+    if q:
+        qs = qs.filter(product__name__icontains=q)
+    return qs
+
+
+def _active_purchase_filter_labels(params):
+    """Human-readable summary of the applied filters, for report headers."""
+    labels = []
+    if params.get('date_from') or params.get('date_to'):
+        labels.append("Period: %s to %s" % (params.get('date_from') or 'start', params.get('date_to') or 'today'))
+    if params.get('supplier'):
+        s = Supplier.objects.filter(id=params.get('supplier')).first()
+        if s:
+            labels.append("Supplier: %s" % s.name)
+    if params.get('branch'):
+        br = Branch.objects.filter(id=params.get('branch')).first()
+        if br:
+            labels.append("Branch: %s" % br.name)
+    if params.get('q'):
+        labels.append('Product: "%s"' % params.get('q'))
+    return labels or ["All purchases (no filters)"]
+
+
+def _purchase_company_name():
+    try:
+        from apps.core.models import SystemSettings
+        s = SystemSettings.objects.first()
+        if s and getattr(s, 'company_name', None):
+            return s.company_name
+    except Exception:
+        pass
+    return "Umoja Hardware"
+
+
+def _purchase_rows(qs):
+    """Common row data for both exporters."""
+    for p in qs:
+        yield [
+            p.date_purchased.strftime('%Y-%m-%d') if p.date_purchased else '',
+            p.supplier.name if p.supplier else 'Unknown',
+            p.product.name if p.product else '',
+            p.branch.name if p.branch else '',
+            int(p.quantity or 0),
+            float(p.unit_cost or 0),
+            float(p.total_cost or 0),
+        ]
+
+
+class PurchaseReportView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/purchase_report.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        params = self.request.GET
+        qs = _filter_purchases(params)
+        totals = qs.aggregate(amount=Sum('total_cost'), qty=Sum('quantity'))
+
+        from urllib.parse import urlencode
+        clean = {k: v for k, v in params.items() if k != 'format' and v}
+
+        ctx.update({
+            'purchases': qs,
+            'total': totals['amount'] or Decimal('0'),
+            'total_qty': totals['qty'] or 0,
+            'count': qs.count(),
+            'suppliers': Supplier.objects.all().order_by('name'),
+            'branches': Branch.objects.all().order_by('name'),
+            'filter_querystring': urlencode(clean),
+            'f': params,  # echo back selected filter values into the form
+        })
+        return ctx
+
+
+def _export_purchases_excel(qs, params):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Purchases Report"
+
+    headers = ['Date', 'Supplier', 'Product', 'Branch', 'Qty', 'Unit Cost (TZS)', 'Total (TZS)']
+    bold = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style='thin', color='DDDDDD')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws['A1'] = _purchase_company_name()
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A2'] = "Purchases Report"
+    ws['A2'].font = Font(bold=True, size=12, color="555555")
+    row = 3
+    for line in _active_purchase_filter_labels(params):
+        ws.cell(row=row, column=1, value=line).font = Font(italic=True, color="666666")
+        row += 1
+    row += 1
+
+    header_row = row
+    for col, h in enumerate(headers, start=1):
+        c = ws.cell(row=header_row, column=col, value=h)
+        c.fill = header_fill
+        c.font = header_font
+        c.border = border
+        c.alignment = Alignment(horizontal='center')
+
+    total = Decimal('0')
+    total_qty = 0
+    r = header_row + 1
+    for data in _purchase_rows(qs):
+        for col, val in enumerate(data, start=1):
+            c = ws.cell(row=r, column=col, value=val)
+            c.border = border
+            if col in (5, 6, 7):
+                c.alignment = Alignment(horizontal='right')
+                if col in (6, 7):
+                    c.number_format = '#,##0.00'
+        total += Decimal(str(data[6]))
+        total_qty += int(data[4])
+        r += 1
+
+    ws.cell(row=r, column=4, value="TOTAL").font = bold
+    qc = ws.cell(row=r, column=5, value=total_qty)
+    qc.font = bold
+    qc.alignment = Alignment(horizontal='right')
+    tc = ws.cell(row=r, column=7, value=float(total))
+    tc.font = bold
+    tc.number_format = '#,##0.00'
+    tc.alignment = Alignment(horizontal='right')
+
+    widths = [14, 26, 34, 18, 10, 18, 18]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="purchases_report_%s.xlsx"' % date.today().isoformat()
+    wb.save(resp)
+    return resp
+
+
+def _export_purchases_pdf(qs, params):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=14 * mm, rightMargin=14 * mm,
+                            topMargin=14 * mm, bottomMargin=14 * mm,
+                            title="Purchases Report")
+    styles = getSampleStyleSheet()
+    cell = ParagraphStyle('cell', parent=styles['Normal'], fontSize=8, leading=10)
+    elements = []
+    elements.append(Paragraph(_purchase_company_name(), styles['Title']))
+    elements.append(Paragraph("Purchases Report", styles['Heading2']))
+    for line in _active_purchase_filter_labels(params):
+        elements.append(Paragraph(line, styles['Italic']))
+    elements.append(Spacer(1, 8))
+
+    data = [['Date', 'Supplier', 'Product', 'Branch', 'Qty', 'Unit Cost', 'Total (TZS)']]
+    total = Decimal('0')
+    total_qty = 0
+    for r in _purchase_rows(qs):
+        data.append([
+            r[0],
+            Paragraph(str(r[1])[:120], cell),
+            Paragraph(str(r[2])[:160], cell),
+            r[3],
+            str(r[4]),
+            '{:,.2f}'.format(r[5]),
+            '{:,.2f}'.format(r[6]),
+        ])
+        total += Decimal(str(r[6]))
+        total_qty += int(r[4])
+    data.append(['', '', '', 'TOTAL', str(total_qty), '', '{:,.2f}'.format(total)])
+
+    table = Table(data, repeatRows=1, colWidths=[22 * mm, 50 * mm, 70 * mm, 30 * mm, 16 * mm, 28 * mm, 30 * mm])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E78')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#DDDDDD')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F5F7FA')]),
+        ('FONTNAME', (3, -1), (-1, -1), 'Helvetica-Bold'),
+        ('LINEABOVE', (0, -1), (-1, -1), 0.6, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+
+    resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    resp['Content-Disposition'] = 'attachment; filename="purchases_report_%s.pdf"' % date.today().isoformat()
+    return resp
+
+
+class PurchaseReportExportView(LoginRequiredMixin, TemplateView):
+    """GET ?format=excel|pdf plus the same filter params as the report page."""
+
+    def get(self, request, *args, **kwargs):
+        qs = _filter_purchases(request.GET)
+        fmt = (request.GET.get('format') or 'excel').lower()
+        if fmt == 'pdf':
+            return _export_purchases_pdf(qs, request.GET)
+        return _export_purchases_excel(qs, request.GET)

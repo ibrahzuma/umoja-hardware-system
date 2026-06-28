@@ -8,7 +8,7 @@ from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYea
 from django.utils import timezone
 
 from apps.sales.models import Sale, Vehicle
-from apps.inventory.models import Stock
+from apps.inventory.models import Stock, Purchase, PurchaseOrder
 from apps.finance.models import Expense
 
 
@@ -25,6 +25,13 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         if is_accountant and not is_privileged:
             context['is_accountant_dashboard'] = True
             self._add_expense_dashboard(context)
+            return context
+
+        # Purchases manager (Afisa Ugavi) gets a procurement-only dashboard.
+        is_procurement = getattr(user, 'is_procurement_officer', False)
+        if is_procurement and not is_privileged:
+            context['is_procurement_dashboard'] = True
+            self._add_procurement_dashboard(context)
             return context
 
         if user.is_superuser or user.role == 'manager' or user.is_admin_role:
@@ -106,6 +113,68 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context['exp_by_category_json'] = json.dumps(cat)
         context['exp_by_bank_json'] = json.dumps(bank)
         context['exp_year_label'] = str(today.year)
+
+    def _add_procurement_dashboard(self, context):
+        """Build a purchases-only dashboard for the purchases manager
+        (Afisa Ugavi): spend by period, the purchase-order pipeline, top
+        suppliers and the items that need re-ordering. Deliberately excludes
+        sales revenue, dispatch and other figures outside their remit."""
+        today = timezone.now().date()
+        purchases = Purchase.objects.all()
+
+        def total(qs):
+            return float(qs.aggregate(t=Sum('total_cost'))['t'] or 0)
+
+        week_start = today - timedelta(days=today.weekday())          # Monday
+        month_start = today.replace(day=1)
+        year_start = today.replace(month=1, day=1)
+
+        context['pur_today'] = total(purchases.filter(date_purchased__date=today))
+        context['pur_week'] = total(purchases.filter(date_purchased__date__gte=week_start))
+        context['pur_month'] = total(purchases.filter(date_purchased__date__gte=month_start))
+        context['pur_year'] = total(purchases.filter(date_purchased__date__gte=year_start))
+
+        # Purchase-order pipeline
+        context['po_draft'] = PurchaseOrder.objects.filter(status='draft').count()
+        context['po_sent'] = PurchaseOrder.objects.filter(status='sent').count()
+        context['po_received'] = PurchaseOrder.objects.filter(status='received').count()
+        context['recent_orders'] = (PurchaseOrder.objects
+                                     .select_related('supplier', 'branch')
+                                     .order_by('-created_at')[:6])
+
+        # Spend over time, with granularity toggle (same shape as accountant)
+        def series(trunc, since, fmt):
+            rows = (purchases.filter(date_purchased__date__gte=since)
+                    .annotate(p=trunc('date_purchased'))
+                    .values('p').annotate(t=Sum('total_cost')).order_by('p'))
+            return {
+                'labels': [r['p'].strftime(fmt) for r in rows if r['p']],
+                'data': [float(r['t']) for r in rows if r['p']],
+            }
+
+        time_series = {
+            'day': series(TruncDay, today - timedelta(days=13), '%d %b'),       # last 14 days
+            'week': series(TruncWeek, today - timedelta(weeks=11), '%d %b'),    # last 12 weeks
+            'month': series(TruncMonth, date(today.year - 1, today.month, 1), '%b %Y'),  # ~12 months
+            'year': series(TruncYear, date(today.year - 4, 1, 1), '%Y'),       # last 5 years
+        }
+        context['pur_time_series'] = json.dumps(time_series)
+
+        # Top suppliers by spend (this year)
+        ytd = purchases.filter(date_purchased__date__gte=year_start)
+        sup_rows = (ytd.values('supplier__name')
+                    .annotate(t=Sum('total_cost')).order_by('-t')[:8])
+        sup = [{'name': r['supplier__name'] or 'Unknown supplier', 'total': float(r['t'])}
+               for r in sup_rows]
+        context['pur_by_supplier'] = sup
+        context['pur_by_supplier_json'] = json.dumps(sup)
+
+        # Items at/below their re-order threshold
+        context['reorder_items'] = (Stock.objects
+                                     .select_related('product', 'branch')
+                                     .filter(quantity__lte=F('low_stock_threshold'))
+                                     .order_by('quantity')[:10])
+        context['pur_year_label'] = str(today.year)
 
 class GenericListView(LoginRequiredMixin, TemplateView):
     template_name = "list_page.html"

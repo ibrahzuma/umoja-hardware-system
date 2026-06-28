@@ -49,6 +49,9 @@ urlpatterns = [
     path('purchases/create/', views.PurchaseCreateView.as_view(), name='purchase_create'),
     path('purchases/recent/', views.RecentPurchaseListView.as_view(), name='recent_purchases'),
     
+    path('purchases/report/', views.PurchaseReportView.as_view(), name='purchase_report'),
+    path('purchases/report/export/', views.PurchaseReportExportView.as_view(), name='purchase_report_export'),
+
     path('purchase-orders/', views.PurchaseOrderListView.as_view(), name='purchase_order_list'),
     path('purchase-orders/create/', views.PurchaseOrderCreateView.as_view(), name='purchase_order_create'),
 

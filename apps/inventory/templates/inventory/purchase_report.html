@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Purchases Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-file-earmark-bar-graph me-2"></i>Purchases Report</h2>
+        <p class="text-muted mb-0 small">Filter purchases and export to Excel or PDF.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-success" href="{% url 'inventory:purchase_report_export' %}?format=excel{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a class="btn btn-danger" href="{% url 'inventory:purchase_report_export' %}?format=pdf{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-pdf"></i> Export PDF
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ f.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ f.date_to }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Supplier</label>
+                <select name="supplier" class="form-select">
+                    <option value="">All</option>
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}" {% if f.supplier == s.id|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Branch</label>
+                <select name="branch" class="form-select">
+                    <option value="">All</option>
+                    {% for br in branches %}
+                    <option value="{{ br.id }}" {% if f.branch == br.id|stringformat:'s' %}selected{% endif %}>{{ br.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Search product</label>
+                <input type="text" name="q" class="form-control" placeholder="product name…" value="{{ f.q }}">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Apply Filters</button>
+                <a href="{% url 'inventory:purchase_report' %}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total Spend (filtered)</h6>
+                <h3 class="fw-bold mb-0 text-primary">TZS {{ total|floatformat:2|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-info border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total Quantity</h6>
+                <h3 class="fw-bold mb-0">{{ total_qty|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Records</h6>
+                <h3 class="fw-bold mb-0">{{ count }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Supplier</th>
+                        <th>Product</th>
+                        <th>Branch</th>
+                        <th class="text-end">Qty</th>
+                        <th class="text-end">Unit Cost</th>
+                        <th class="text-end pe-4">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in purchases %}
+                    <tr>
+                        <td class="ps-4">{{ p.date_purchased|date:'Y-m-d' }}</td>
+                        <td>{{ p.supplier.name|default:'Unknown' }}</td>
+                        <td>{{ p.product.name }}</td>
+                        <td>{{ p.branch.name|default:'-' }}</td>
+                        <td class="text-end">{{ p.quantity|intcomma }}</td>
+                        <td class="text-end">{{ p.unit_cost|floatformat:2|intcomma }}</td>
+                        <td class="text-end pe-4 fw-bold text-primary">TZS {{ p.total_cost|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center py-4 text-muted">No purchases match these filters.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if purchases %}
+                <tfoot class="bg-light">
+                    <tr>
+                        <th colspan="4" class="text-end">TOTAL</th>
+                        <th class="text-end">{{ total_qty|intcomma }}</th>
+                        <th></th>
+                        <th class="text-end pe-4 text-primary">TZS {{ total|floatformat:2|intcomma }}</th>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

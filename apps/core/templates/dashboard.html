@@ -9,6 +9,8 @@
         <h2>Welcome back, {{ user.get_full_name|default:user.username }}</h2>
         {% if is_accountant_dashboard %}
         <p class="subtitle">Your expenses overview for {{ exp_year_label }}.</p>
+        {% elif is_procurement_dashboard %}
+        <p class="subtitle">Your purchasing overview for {{ pur_year_label }}.</p>
         {% else %}
         <p class="subtitle">Here's what's happening across your branches today.</p>
         {% endif %}
@@ -30,6 +32,24 @@
                 <li><a class="dropdown-item" href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack me-2 text-muted"></i>Supplier payment</a></li>
                 <li><a class="dropdown-item" href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank me-2 text-muted"></i>Taxes &amp; govt</a></li>
                 <li><a class="dropdown-item" href="{% url 'finance:bank_list' %}"><i class="bi bi-bank2 me-2 text-muted"></i>Manage banks</a></li>
+            </ul>
+        </div>
+        {% elif is_procurement_dashboard %}
+        <button class="btn btn-secondary" onclick="location.reload()" type="button">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge-fill"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{% url 'inventory:purchase_order_create' %}"><i class="bi bi-file-earmark-plus me-2 text-muted"></i>New purchase order</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:purchase_create' %}"><i class="bi bi-bag-plus me-2 text-muted"></i>Record purchase</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:purchase_report' %}"><i class="bi bi-file-earmark-bar-graph me-2 text-muted"></i>Purchases report</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-shop me-2 text-muted"></i>Suppliers</a></li>
+                <li><a class="dropdown-item" href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-coin me-2 text-muted"></i>Supplier payments</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes me-2 text-muted"></i>Stock checking</a></li>
             </ul>
         </div>
         {% else %}
@@ -58,6 +78,8 @@
 
 {% if is_accountant_dashboard %}
 {% include 'partials/dashboard_accountant_expenses.html' %}
+{% elif is_procurement_dashboard %}
+{% include 'partials/dashboard_procurement.html' %}
 {% else %}
 
 {% include 'partials/dashboard_manager_operations.html' %}
@@ -170,6 +192,60 @@
                 document.querySelectorAll('#expRangeToggle [data-range]').forEach(b => { b.classList.remove('btn-primary', 'active'); b.classList.add('btn-outline-primary'); });
                 btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary', 'active');
                 renderTimeChart(btn.dataset.range);
+            });
+        });
+    });
+</script>
+{% elif is_procurement_dashboard %}
+<script>
+    const PUR_SERIES = {{ pur_time_series|default:"{}"|safe }};
+    const PUR_SUPPLIER = {{ pur_by_supplier_json|default:"[]"|safe }};
+    const PIE_COLORS = ['#4055e6', '#0096c7', '#2a9d8f', '#f4a261', '#7209b7', '#e9c46a', '#9d4edd', '#06d6a0', '#ef476f', '#118ab2', '#8d99ae', '#e63946'];
+    const fmtTZS = v => 'TZS ' + Number(v).toLocaleString();
+
+    let purTimeChart;
+
+    function renderPurTimeChart(range) {
+        const s = PUR_SERIES[range] || { labels: [], data: [] };
+        const canvas = document.getElementById('purTimeChart');
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 320);
+        grad.addColorStop(0, 'rgba(64, 85, 230, 0.25)');
+        grad.addColorStop(1, 'rgba(64, 85, 230, 0)');
+        if (purTimeChart) purTimeChart.destroy();
+        purTimeChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: s.labels, datasets: [{ label: 'Purchases', data: s.data, backgroundColor: grad, borderColor: '#4055e6', borderWidth: 1.5, borderRadius: 4, maxBarThickness: 48 }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTZS(c.raw) } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    x: { ticks: { color: '#6b7686' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    function renderPurPie(canvasId, rows) {
+        const canvas = document.getElementById(canvasId);
+        if (!rows.length) { canvas.parentElement.innerHTML = '<div class="text-muted text-center py-5">No data this year.</div>'; return; }
+        new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: rows.map(r => r.name), datasets: [{ data: rows.map(r => r.total), backgroundColor: PIE_COLORS, borderWidth: 1, borderColor: '#fff' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: c => c.label + ': ' + fmtTZS(c.raw) } } } }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderPurTimeChart('month');
+        renderPurPie('purSupplierChart', PUR_SUPPLIER);
+
+        document.querySelectorAll('#purRangeToggle [data-range]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#purRangeToggle [data-range]').forEach(b => { b.classList.remove('btn-primary', 'active'); b.classList.add('btn-outline-primary'); });
+                btn.classList.remove('btn-outline-primary'); btn.classList.add('btn-primary', 'active');
+                renderPurTimeChart(btn.dataset.range);
             });
         });
     });
