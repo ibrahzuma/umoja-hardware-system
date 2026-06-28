@@ -213,7 +213,7 @@
         <tr>
             <td width="62%">
                 <div class="auth-title">For Authorised Personnel</div>
-                <div class="auth-note">To be printed, signed and stamped before submission to the supplier.</div>
+                <div class="auth-note">{{ doc.auth_note|default:"To be printed, signed and stamped before submission to the supplier." }}</div>
                 <table class="auth-lines">
                     <tr><td width="22%">Prepared By</td><td class="ln2">{{ doc.contact }}</td></tr>
                     <tr><td>Authorised By</td><td class="ln2">&nbsp;</td></tr>

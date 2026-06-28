@@ -270,7 +270,8 @@ class SaleViewSet(viewsets.ModelViewSet):
                 'contact': _person(sale.user),
                 'authorized_by': _person(sale.approved_by),
                 'status': sale.status, 'payment_term': 'Cash Basis',
-                'delivery_label': '', 'authorised_block': False,
+                'delivery_label': '', 'authorised_block': True,
+                'auth_note': 'To be printed, signed and stamped before issuing to the customer.',
             },
             'company': company,
             'customer': {
