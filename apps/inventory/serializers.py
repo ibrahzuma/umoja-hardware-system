@@ -1,4 +1,4 @@
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckAllocation
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost
 from rest_framework import serializers
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -164,5 +164,16 @@ class TruckMaintenanceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TruckMaintenance
+        fields = '__all__'
+        read_only_fields = ('recorded_by',)
+
+class TruckCostSerializer(serializers.ModelSerializer):
+    truck_reg = serializers.CharField(source='truck.registration_number', read_only=True)
+    cost_type_display = serializers.CharField(source='get_cost_type_display', read_only=True)
+    recorded_by_name = serializers.CharField(source='recorded_by.username', read_only=True)
+    allocation_ref = serializers.CharField(source='allocation.__str__', read_only=True)
+
+    class Meta:
+        model = TruckCost
         fields = '__all__'
         read_only_fields = ('recorded_by',)

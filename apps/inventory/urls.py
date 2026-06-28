@@ -16,6 +16,7 @@ router.register(r'truck-allocations', views.TruckAllocationViewSet)
 router.register(r'grns', views.GoodsReceivedNoteViewSet)
 router.register(r'drivers', views.DriverViewSet)
 router.register(r'truck-maintenance', views.TruckMaintenanceViewSet)
+router.register(r'truck-costs', views.TruckCostViewSet)
 
 app_name = 'inventory'
 
@@ -62,6 +63,9 @@ urlpatterns = [
 
     path('drivers/', views.DriverListView.as_view(), name='driver_list'),
     path('trucks/maintenance/', views.TruckMaintenanceView.as_view(), name='truck_maintenance'),
+
+    path('transport/', views.TransportManagementView.as_view(), name='transport_management'),
+    path('transport/export/', views.TransportCostExportView.as_view(), name='transport_cost_export'),
 
     path('import/template/', views.download_product_template, name='download_product_template'),
     path('api/', include(router.urls)),

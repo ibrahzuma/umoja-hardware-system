@@ -1,13 +1,14 @@
 from rest_framework import viewsets, permissions
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, DriverIssue
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DriverIssue
 from .serializers import (
-    BranchSerializer, CategorySerializer, ProductSerializer, 
+    BranchSerializer, CategorySerializer, ProductSerializer,
     StockSerializer, PurchaseSerializer, SupplierSerializer, StockTransferSerializer,
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, TruckSerializer, TruckAllocationSerializer, StockAdjustmentSerializer,
-    GoodsReceivedNoteSerializer, GRNItemSerializer, DriverSerializer, TruckMaintenanceSerializer
+    GoodsReceivedNoteSerializer, GRNItemSerializer, DriverSerializer, TruckMaintenanceSerializer, TruckCostSerializer
 )
 import io
 import csv
+import json
 import openpyxl
 from datetime import date
 from decimal import Decimal
@@ -647,6 +648,15 @@ class TruckMaintenanceViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(recorded_by=self.request.user)
 
+class TruckCostViewSet(viewsets.ModelViewSet):
+    queryset = TruckCost.objects.select_related('truck', 'allocation', 'recorded_by').all()
+    serializer_class = TruckCostSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+    filterset_fields = ['truck', 'cost_type']
+
+    def perform_create(self, serializer):
+        serializer.save(recorded_by=self.request.user)
+
 class DriverListView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/driver_list.html'
 
@@ -890,3 +900,239 @@ class PurchaseReportExportView(LoginRequiredMixin, TemplateView):
         if fmt == 'pdf':
             return _export_purchases_pdf(qs, request.GET)
         return _export_purchases_excel(qs, request.GET)
+
+
+# ----------------------------------------------------------------------------
+# Transport Management — all costs related to running the trucks.
+# Built for the purchases manager (Afisa Ugavi).
+# ----------------------------------------------------------------------------
+
+def _filter_truck_costs(params):
+    """Filter the TruckCost queryset from request GET params.
+
+    Supported filters (all optional): date_from, date_to, truck, cost_type.
+    """
+    qs = TruckCost.objects.select_related('truck', 'allocation', 'recorded_by')
+    date_from = (params.get('date_from') or '').strip()
+    date_to = (params.get('date_to') or '').strip()
+    truck = (params.get('truck') or '').strip()
+    cost_type = (params.get('cost_type') or '').strip()
+
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    if truck:
+        qs = qs.filter(truck_id=truck)
+    if cost_type:
+        qs = qs.filter(cost_type=cost_type)
+    return qs
+
+
+def _active_truck_cost_filter_labels(params):
+    labels = []
+    if params.get('date_from') or params.get('date_to'):
+        labels.append("Period: %s to %s" % (params.get('date_from') or 'start', params.get('date_to') or 'today'))
+    if params.get('truck'):
+        t = Truck.objects.filter(id=params.get('truck')).first()
+        if t:
+            labels.append("Truck: %s" % t.registration_number)
+    if params.get('cost_type'):
+        labels.append("Type: %s" % dict(TruckCost.COST_TYPES).get(params.get('cost_type'), params.get('cost_type')))
+    return labels or ["All truck costs (no filters)"]
+
+
+def _truck_cost_company_name():
+    try:
+        from apps.core.models import SystemSettings
+        s = SystemSettings.objects.first()
+        if s and getattr(s, 'company_name', None):
+            return s.company_name
+    except Exception:
+        pass
+    return "Umoja Hardware"
+
+
+class TransportManagementView(LoginRequiredMixin, TemplateView):
+    template_name = 'inventory/transport_management.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        params = self.request.GET
+        qs = _filter_truck_costs(params)
+        today = date.today()
+
+        all_costs = TruckCost.objects.all()
+        month_total = (all_costs.filter(date__gte=today.replace(day=1))
+                       .aggregate(t=Sum('amount'))['t'] or Decimal('0'))
+        year_total = (all_costs.filter(date__gte=today.replace(month=1, day=1))
+                      .aggregate(t=Sum('amount'))['t'] or Decimal('0'))
+
+        # Breakdown by cost type (filtered set)
+        type_map = dict(TruckCost.COST_TYPES)
+        by_type = [
+            {'label': type_map.get(r['cost_type'], r['cost_type']), 'total': float(r['t'])}
+            for r in qs.values('cost_type').annotate(t=Sum('amount')).order_by('-t')
+        ]
+        # Breakdown by truck (filtered set)
+        by_truck = [
+            {'reg': r['truck__registration_number'] or '-', 'total': float(r['t'])}
+            for r in qs.values('truck__registration_number').annotate(t=Sum('amount')).order_by('-t')
+        ]
+
+        from urllib.parse import urlencode
+        clean = {k: v for k, v in params.items() if k != 'format' and v}
+
+        ctx.update({
+            'costs': qs.order_by('-date', '-created_at'),
+            'total': qs.aggregate(t=Sum('amount'))['t'] or Decimal('0'),
+            'count': qs.count(),
+            'month_total': month_total,
+            'year_total': year_total,
+            'by_type': by_type,
+            'by_type_json': json.dumps(by_type),
+            'by_truck': by_truck,
+            'trucks': Truck.objects.all().order_by('registration_number'),
+            'cost_types': TruckCost.COST_TYPES,
+            'filter_querystring': urlencode(clean),
+            'f': params,
+        })
+        return ctx
+
+
+def _truck_cost_rows(qs):
+    for c in qs:
+        yield [
+            c.date.strftime('%Y-%m-%d') if c.date else '',
+            c.truck.registration_number if c.truck else '',
+            c.get_cost_type_display(),
+            c.vendor or '',
+            c.reference or '',
+            c.description or '',
+            float(c.amount or 0),
+        ]
+
+
+def _export_truck_costs_excel(qs, params):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transport Costs"
+
+    headers = ['Date', 'Truck', 'Type', 'Vendor', 'Reference', 'Description', 'Amount (TZS)']
+    bold = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style='thin', color='DDDDDD')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws['A1'] = _truck_cost_company_name()
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A2'] = "Transport Cost Report"
+    ws['A2'].font = Font(bold=True, size=12, color="555555")
+    row = 3
+    for line in _active_truck_cost_filter_labels(params):
+        ws.cell(row=row, column=1, value=line).font = Font(italic=True, color="666666")
+        row += 1
+    row += 1
+
+    header_row = row
+    for col, h in enumerate(headers, start=1):
+        c = ws.cell(row=header_row, column=col, value=h)
+        c.fill = header_fill
+        c.font = header_font
+        c.border = border
+        c.alignment = Alignment(horizontal='center')
+
+    total = Decimal('0')
+    r = header_row + 1
+    for data in _truck_cost_rows(qs):
+        for col, val in enumerate(data, start=1):
+            c = ws.cell(row=r, column=col, value=val)
+            c.border = border
+            if col == 7:
+                c.number_format = '#,##0.00'
+                c.alignment = Alignment(horizontal='right')
+        total += Decimal(str(data[6]))
+        r += 1
+
+    ws.cell(row=r, column=6, value="TOTAL").font = bold
+    tc = ws.cell(row=r, column=7, value=float(total))
+    tc.font = bold
+    tc.number_format = '#,##0.00'
+    tc.alignment = Alignment(horizontal='right')
+
+    widths = [14, 18, 18, 22, 18, 40, 18]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    resp = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="transport_costs_%s.xlsx"' % date.today().isoformat()
+    wb.save(resp)
+    return resp
+
+
+def _export_truck_costs_pdf(qs, params):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                            leftMargin=14 * mm, rightMargin=14 * mm,
+                            topMargin=14 * mm, bottomMargin=14 * mm,
+                            title="Transport Cost Report")
+    styles = getSampleStyleSheet()
+    cell = ParagraphStyle('cell', parent=styles['Normal'], fontSize=8, leading=10)
+    elements = []
+    elements.append(Paragraph(_truck_cost_company_name(), styles['Title']))
+    elements.append(Paragraph("Transport Cost Report", styles['Heading2']))
+    for line in _active_truck_cost_filter_labels(params):
+        elements.append(Paragraph(line, styles['Italic']))
+    elements.append(Spacer(1, 8))
+
+    data = [['Date', 'Truck', 'Type', 'Vendor', 'Reference', 'Description', 'Amount (TZS)']]
+    total = Decimal('0')
+    for r in _truck_cost_rows(qs):
+        data.append([
+            r[0], r[1], r[2], r[3], r[4],
+            Paragraph(str(r[5])[:160], cell),
+            '{:,.2f}'.format(r[6]),
+        ])
+        total += Decimal(str(r[6]))
+    data.append(['', '', '', '', '', 'TOTAL', '{:,.2f}'.format(total)])
+
+    table = Table(data, repeatRows=1, colWidths=[22 * mm, 26 * mm, 28 * mm, 36 * mm, 28 * mm, 70 * mm, 30 * mm])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F4E78')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN', (6, 0), (6, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#DDDDDD')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F5F7FA')]),
+        ('FONTNAME', (5, -1), (-1, -1), 'Helvetica-Bold'),
+        ('LINEABOVE', (0, -1), (-1, -1), 0.6, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+    doc.build(elements)
+
+    resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    resp['Content-Disposition'] = 'attachment; filename="transport_costs_%s.pdf"' % date.today().isoformat()
+    return resp
+
+
+class TransportCostExportView(LoginRequiredMixin, TemplateView):
+    """GET ?format=excel|pdf plus the same filter params as the page."""
+
+    def get(self, request, *args, **kwargs):
+        qs = _filter_truck_costs(request.GET).order_by('-date', '-created_at')
+        fmt = (request.GET.get('format') or 'excel').lower()
+        if fmt == 'pdf':
+            return _export_truck_costs_pdf(qs, request.GET)
+        return _export_truck_costs_excel(qs, request.GET)

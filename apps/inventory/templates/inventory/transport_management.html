@@ -1,0 +1,283 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Transport Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-truck-front me-2"></i>Transport Management</h2>
+        <p class="text-muted mb-0 small">All costs of running the fleet — fuel, repairs, service, insurance, tolls, allowances and more.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#costModal">
+            <i class="bi bi-plus-lg"></i> Record Cost
+        </button>
+        <a class="btn btn-success" href="{% url 'inventory:transport_cost_export' %}?format=excel{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-excel"></i> Excel
+        </a>
+        <a class="btn btn-danger" href="{% url 'inventory:transport_cost_export' %}?format=pdf{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+            <i class="bi bi-file-earmark-pdf"></i> PDF
+        </a>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">This Month</h6>
+                <h4 class="fw-bold mb-0 text-primary">TZS {{ month_total|floatformat:0|intcomma }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">This Year</h6>
+                <h4 class="fw-bold mb-0">TZS {{ year_total|floatformat:0|intcomma }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total (filtered)</h6>
+                <h4 class="fw-bold mb-0">TZS {{ total|floatformat:0|intcomma }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Records</h6>
+                <h4 class="fw-bold mb-0">{{ count }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- By type breakdown -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart text-primary me-2"></i>Cost by Type <span class="text-muted small fw-normal">(filtered)</span></h5>
+                <div style="height: 220px;"><canvas id="costTypeChart"></canvas></div>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for t in by_type %}
+                            <tr>
+                                <td>{{ t.label }}</td>
+                                <td class="text-end fw-semibold text-primary">TZS {{ t.total|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td class="text-muted text-center py-3">No costs recorded.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Costs table -->
+    <div class="col-lg-8">
+        <!-- Filters -->
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">From</label>
+                        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ f.date_from }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">To</label>
+                        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ f.date_to }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Truck</label>
+                        <select name="truck" class="form-select form-select-sm">
+                            <option value="">All</option>
+                            {% for t in trucks %}
+                            <option value="{{ t.id }}" {% if f.truck == t.id|stringformat:'s' %}selected{% endif %}>{{ t.registration_number }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Type</label>
+                        <select name="cost_type" class="form-select form-select-sm">
+                            <option value="">All</option>
+                            {% for value, label in cost_types %}
+                            <option value="{{ value }}" {% if f.cost_type == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2 mt-2">
+                        <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filter</button>
+                        <a href="{% url 'inventory:transport_management' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">Date</th>
+                                <th>Truck</th>
+                                <th>Type</th>
+                                <th>Vendor / Ref</th>
+                                <th class="text-end pe-3">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in costs %}
+                            <tr>
+                                <td class="ps-3 text-muted">{{ c.date|date:'Y-m-d' }}</td>
+                                <td class="fw-semibold">{{ c.truck.registration_number }}</td>
+                                <td><span class="badge bg-secondary-subtle text-secondary">{{ c.get_cost_type_display }}</span></td>
+                                <td>
+                                    <small>{{ c.vendor|default:'—' }}</small>
+                                    {% if c.reference %}<br><span class="text-muted" style="font-size:0.78rem">Ref: {{ c.reference }}</span>{% endif %}
+                                    {% if c.description %}<br><span class="text-muted" style="font-size:0.78rem">{{ c.description|truncatechars:60 }}</span>{% endif %}
+                                </td>
+                                <td class="text-end pe-3 fw-bold text-primary">TZS {{ c.amount|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center py-4 text-muted">No truck costs match these filters. Click <strong>Record Cost</strong> to add one.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        {% if costs %}
+                        <tfoot class="bg-light">
+                            <tr>
+                                <th colspan="4" class="text-end">TOTAL</th>
+                                <th class="text-end pe-3 text-primary">TZS {{ total|floatformat:2|intcomma }}</th>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Record Cost modal -->
+<div class="modal fade" id="costModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="costForm" onsubmit="saveCost(event)">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-truck-front me-2"></i>Record Truck Cost</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Truck *</label>
+                            <select class="form-select" id="c_truck" required>
+                                <option value="">Select truck…</option>
+                                {% for t in trucks %}
+                                <option value="{{ t.id }}">{{ t.registration_number }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Cost type *</label>
+                            <select class="form-select" id="c_type" required>
+                                {% for value, label in cost_types %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Date *</label>
+                            <input type="date" class="form-control" id="c_date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Amount (TZS) *</label>
+                            <input type="number" class="form-control" id="c_amount" step="0.01" min="0" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Vendor</label>
+                            <input type="text" class="form-control" id="c_vendor" placeholder="e.g. Total Station, TRA">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Reference</label>
+                            <input type="text" class="form-control" id="c_reference" placeholder="Receipt / invoice no.">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" id="c_description" rows="2" placeholder="e.g. 80 litres diesel"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Cost</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const BY_TYPE = {{ by_type_json|default:"[]"|safe }};
+    const PIE_COLORS = ['#4055e6', '#0096c7', '#2a9d8f', '#f4a261', '#7209b7', '#e9c46a', '#9d4edd', '#06d6a0', '#ef476f', '#118ab2', '#8d99ae'];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const d = document.getElementById('c_date');
+        if (d) d.valueAsDate = new Date();
+
+        const canvas = document.getElementById('costTypeChart');
+        if (BY_TYPE.length) {
+            new Chart(canvas.getContext('2d'), {
+                type: 'doughnut',
+                data: { labels: BY_TYPE.map(r => r.label), datasets: [{ data: BY_TYPE.map(r => r.total), backgroundColor: PIE_COLORS, borderWidth: 1, borderColor: '#fff' }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: c => c.label + ': TZS ' + Number(c.raw).toLocaleString() } } } }
+            });
+        } else {
+            canvas.parentElement.innerHTML = '<div class="text-muted text-center py-5">No data to chart.</div>';
+        }
+    });
+
+    async function saveCost(e) {
+        e.preventDefault();
+        const payload = {
+            truck: document.getElementById('c_truck').value,
+            cost_type: document.getElementById('c_type').value,
+            date: document.getElementById('c_date').value,
+            amount: document.getElementById('c_amount').value,
+            vendor: document.getElementById('c_vendor').value,
+            reference: document.getElementById('c_reference').value,
+            description: document.getElementById('c_description').value,
+        };
+        try {
+            const resp = await fetch('/api/truck-costs/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload),
+            });
+            if (resp.ok) {
+                Swal.fire({ icon: 'success', title: 'Saved', timer: 1200, showConfirmButton: false })
+                    .then(() => location.reload());
+            } else {
+                const err = await resp.json().catch(() => ({}));
+                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save cost.', 'error');
+            }
+        } catch (err) {
+            Swal.fire('Error', 'Network error while saving.', 'error');
+        }
+    }
+</script>
+{% endblock %}

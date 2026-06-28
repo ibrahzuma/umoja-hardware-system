@@ -232,6 +232,44 @@ class TruckAllocation(models.Model):
         return f"Allocation: {self.truck} to {self.destination}"
 
 
+class TruckCost(models.Model):
+    """All costs related to running the trucks, recorded by Afisa Ugavi under
+    Transport Management: fuel, spare parts, repairs, service, insurance,
+    licensing, tolls, parking, fines, driver allowances, etc."""
+    COST_TYPES = (
+        ('fuel', 'Fuel'),
+        ('spare_parts', 'Spare Parts'),
+        ('repair', 'Repair'),
+        ('service', 'Service'),
+        ('insurance', 'Insurance'),
+        ('license', 'License / Permit'),
+        ('toll', 'Toll / Weighbridge'),
+        ('parking', 'Parking'),
+        ('fine', 'Fine / Penalty'),
+        ('driver_allowance', 'Driver Allowance'),
+        ('other', 'Other'),
+    )
+    truck = models.ForeignKey(Truck, on_delete=models.CASCADE, related_name='costs')
+    allocation = models.ForeignKey(
+        TruckAllocation, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='costs', help_text="Optional: link this cost to a specific trip/allocation.",
+    )
+    cost_type = models.CharField(max_length=20, choices=COST_TYPES, default='fuel')
+    date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    vendor = models.CharField(max_length=120, blank=True, help_text="Station, garage, authority, etc.")
+    reference = models.CharField(max_length=80, blank=True, help_text="Receipt / invoice number")
+    description = models.TextField(blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"{self.truck} - {self.get_cost_type_display()} ({self.amount})"
+
+
 class StockTransfer(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     from_branch = models.ForeignKey(Branch, related_name='transfers_out', on_delete=models.CASCADE)
