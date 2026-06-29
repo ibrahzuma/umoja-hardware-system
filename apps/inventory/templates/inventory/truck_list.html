@@ -275,9 +275,23 @@
                 document.getElementById('truckForm').reset();
                 document.getElementById('allocForm').reset();
             } else {
-                Swal.fire('Error', 'Operation failed', 'error');
+                let detail = 'Operation failed';
+                if (res.status === 403) {
+                    detail = "You don't have permission to do this.";
+                } else {
+                    try {
+                        const err = await res.json();
+                        // Surface the first field/non-field error from DRF.
+                        const first = err.detail || Object.values(err)[0];
+                        detail = Array.isArray(first) ? first[0] : (first || detail);
+                    } catch (_) { /* keep default */ }
+                }
+                Swal.fire('Error', detail, 'error');
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Network error — please try again.', 'error');
+        }
     }
 </script>
 {% endblock %}

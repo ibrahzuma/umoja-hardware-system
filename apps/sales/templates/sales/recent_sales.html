@@ -65,7 +65,7 @@
                     <td class="fw-bold">${s.invoice_number}</td>
                     <td>${s.customer_name}</td>
                     <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
-                    <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
+                    <td class="fw-bold">TZS ${Math.round(Number(s.total_amount)).toLocaleString()}</td>
                     <td>${statusBadge}</td>
                 `;
                 tbody.appendChild(tr);

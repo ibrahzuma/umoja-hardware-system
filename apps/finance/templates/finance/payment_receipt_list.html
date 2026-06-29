@@ -150,7 +150,7 @@
     });
 
     function fmt(n) {
-        return 'TZS ' + parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        return 'TZS ' + Math.round(Number(n || 0)).toLocaleString();
     }
 
     async function loadData() {

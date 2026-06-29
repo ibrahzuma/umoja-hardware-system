@@ -76,7 +76,7 @@
                 <td class="fw-medium">${po.supplier_name || '-'}</td>
                 <td><span class="badge bg-light text-dark border">${po.branch_name || '-'}</span></td>
                 <td><span class="badge bg-${statusBadge}">${po.status.toUpperCase()}</span></td>
-                <td class="fw-bold">TZS ${parseFloat(po.total_amount).toLocaleString()}</td>
+                <td class="fw-bold">TZS ${Math.round(Number(po.total_amount)).toLocaleString()}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${po.id})"><i class="bi bi-eye"></i></button>
                     <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${po.id}/pdf/" target="_blank" rel="noopener" title="Download PO PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>

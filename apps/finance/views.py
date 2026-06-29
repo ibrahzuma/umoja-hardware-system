@@ -288,7 +288,7 @@ def _export_excel(qs, params):
             c = ws.cell(row=r, column=col, value=val)
             c.border = border
             if col == 6:
-                c.number_format = '#,##0.00'
+                c.number_format = '#,##0'
                 c.alignment = Alignment(horizontal='right')
         total += Decimal(str(data[5]))
         r += 1
@@ -296,7 +296,7 @@ def _export_excel(qs, params):
     ws.cell(row=r, column=5, value="TOTAL").font = bold
     tc = ws.cell(row=r, column=6, value=float(total))
     tc.font = bold
-    tc.number_format = '#,##0.00'
+    tc.number_format = '#,##0'
     tc.alignment = Alignment(horizontal='right')
 
     widths = [14, 20, 40, 18, 22, 16]
@@ -341,10 +341,10 @@ def _export_pdf(qs, params):
             r[0], r[1],
             Paragraph(str(r[2])[:200], cell),
             r[3], r[4],
-            '{:,.2f}'.format(r[5]),
+            '{:,.0f}'.format(r[5]),
         ])
         total += Decimal(str(r[5]))
-    data.append(['', '', '', '', 'TOTAL', '{:,.2f}'.format(total)])
+    data.append(['', '', '', '', 'TOTAL', '{:,.0f}'.format(total)])
 
     table = Table(data, repeatRows=1, colWidths=[22 * mm, 30 * mm, 90 * mm, 30 * mm, 35 * mm, 30 * mm])
     table.setStyle(TableStyle([

@@ -73,7 +73,7 @@ async function results(url) { const d = await jget(url); return Array.isArray(d)
 const CAN_DELETE = {% if perms.hr.delete_employee %}true{% else %}false{% endif %};
 let allEmps = [], allDepts = [];
 
-function fmtTzs(n) { return 'TZS ' + Number(n || 0).toLocaleString(); }
+function fmtTzs(n) { return 'TZS ' + Math.round(Number(n || 0)).toLocaleString(); }
 function badgeFor(s) {
     return ({active:'success', on_leave:'warning', suspended:'secondary', terminated:'danger'})[s] || 'secondary';
 }

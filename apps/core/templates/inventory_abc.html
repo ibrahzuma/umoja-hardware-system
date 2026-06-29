@@ -21,7 +21,7 @@
                     {% for item in abc_data %}
                     <tr>
                         <td>{{ item.product_name }}</td>
-                        <td>TZS {{ item.revenue|floatformat:2|intcomma }}</td>
+                        <td>TZS {{ item.revenue|floatformat:0|intcomma }}</td>
                         <td><span class="badge bg-{{ item.label }}">{{ item.class }}</span></td>
                     </tr>
                     {% empty %}

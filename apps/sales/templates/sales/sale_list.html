@@ -105,7 +105,7 @@
                 <td>${s.customer_name}</td>
                 <td><span class="badge bg-light text-dark border">Branch ${s.branch}</span></td>
                 <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
-                <td class="fw-bold">TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
+                <td class="fw-bold">TZS ${Math.round(Number(s.total_amount)).toLocaleString()}</td>
                 <td>
                     ${paymentBadge}
                     <div class="mt-1">${deliveryBadge}</div>
@@ -160,22 +160,22 @@
                         <tr>
                             <td>${item.product_name}</td>
                             <td class="text-center">${item.quantity}</td>
-                            <td class="text-end">TZS ${item.subtotal}</td>
+                            <td class="text-end">TZS ${Math.round(Number(item.subtotal)).toLocaleString()}</td>
                         </tr>
                     `).join('') : '<tr><td colspan="3" class="text-center">Items info not populated</td></tr>'}
                 </tbody>
                 <tfoot class="border-top">
                     <tr>
                         <th colspan="2">Total</th>
-                        <th class="text-end">TZS ${parseFloat(sale.total_amount).toFixed(2)}</th>
+                        <th class="text-end">TZS ${Math.round(Number(sale.total_amount)).toLocaleString()}</th>
                     </tr>
                     <tr>
                         <th colspan="2">Paid</th>
-                        <th class="text-end">TZS ${parseFloat(sale.amount_paid || 0).toFixed(2)}</th>
+                        <th class="text-end">TZS ${Math.round(Number(sale.amount_paid || 0)).toLocaleString()}</th>
                     </tr>
                     <tr>
                         <th colspan="2">Balance</th>
-                        <th class="text-end text-danger">TZS ${parseFloat(sale.balance || 0).toFixed(2)}</th>
+                        <th class="text-end text-danger">TZS ${Math.round(Number(sale.balance || 0)).toLocaleString()}</th>
                     </tr>
                 </tfoot>
             </table>

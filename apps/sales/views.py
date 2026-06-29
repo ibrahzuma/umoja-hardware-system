@@ -62,8 +62,7 @@ def _amount_in_words(amount, currency='TZS'):
     """Render a money amount as words, e.g. 'Three Hundred Fifty-Three
     Million Tanzanian Shillings Only'. Handles up to billions."""
     amount = Decimal(str(amount or 0))
-    whole = int(amount)
-    cents = int(round((amount - whole) * 100))
+    whole = int(amount.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight',
             'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen',
             'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
@@ -96,8 +95,6 @@ def _amount_in_words(amount, currency='TZS'):
 
     cur = 'Tanzanian Shillings' if (currency or 'TZS').upper() == 'TZS' else currency
     result = '%s %s' % (words, cur)
-    if cents:
-        result += ' and %02d/100' % cents
     return result + ' Only'
 
 class SaleViewSet(viewsets.ModelViewSet):

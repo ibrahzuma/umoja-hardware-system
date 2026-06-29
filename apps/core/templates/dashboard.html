@@ -218,7 +218,7 @@
     const EXP_CATEGORY = {{ exp_by_category_json|default:"[]"|safe }};
     const EXP_BANK = {{ exp_by_bank_json|default:"[]"|safe }};
     const PIE_COLORS = ['#4055e6', '#e63946', '#f4a261', '#2a9d8f', '#7209b7', '#0096c7', '#e9c46a', '#9d4edd', '#06d6a0', '#ef476f', '#118ab2', '#8d99ae'];
-    const fmtTZS = v => 'TZS ' + Number(v).toLocaleString();
+    const fmtTZS = v => 'TZS ' + Math.round(Number(v)).toLocaleString();
 
     let expTimeChart;
 
@@ -237,7 +237,7 @@
                 responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTZS(c.raw) } } },
                 scales: {
-                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + Math.round(v).toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
                     x: { ticks: { color: '#6b7686' }, grid: { display: false } }
                 }
             }
@@ -273,7 +273,7 @@
     const PUR_SERIES = {{ pur_time_series|default:"{}"|safe }};
     const PUR_SUPPLIER = {{ pur_by_supplier_json|default:"[]"|safe }};
     const PIE_COLORS = ['#4055e6', '#0096c7', '#2a9d8f', '#f4a261', '#7209b7', '#e9c46a', '#9d4edd', '#06d6a0', '#ef476f', '#118ab2', '#8d99ae', '#e63946'];
-    const fmtTZS = v => 'TZS ' + Number(v).toLocaleString();
+    const fmtTZS = v => 'TZS ' + Math.round(Number(v)).toLocaleString();
 
     let purTimeChart;
 
@@ -292,7 +292,7 @@
                 responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtTZS(c.raw) } } },
                 scales: {
-                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + Math.round(v).toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
                     x: { ticks: { color: '#6b7686' }, grid: { display: false } }
                 }
             }
@@ -338,9 +338,9 @@
             data: { labels: REP_LABELS, datasets: [{ label: 'My sales', data: REP_DATA, borderColor: '#198754', backgroundColor: grad, fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#198754' }] },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'TZS ' + Number(c.raw).toLocaleString() } } },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'TZS ' + Math.round(Number(c.raw)).toLocaleString() } } },
                 scales: {
-                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + Math.round(v).toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
                     x: { ticks: { color: '#6b7686' }, grid: { display: false } }
                 }
             }
@@ -434,7 +434,7 @@
                     y: {
                         beginAtZero: true,
                         grid: { color: 'rgba(225, 230, 238, 0.5)' },
-                        ticks: { color: '#6b7686', callback: value => 'TZS ' + value.toLocaleString() }
+                        ticks: { color: '#6b7686', callback: value => 'TZS ' + Math.round(value).toLocaleString() }
                     },
                     x: {
                         grid: { display: false },
@@ -466,7 +466,7 @@
                 return acc;
             }, 0);
 
-            setText('monthly-revenue', 'TZS ' + monthlyTotal.toLocaleString());
+            setText('monthly-revenue', 'TZS ' + Math.round(monthlyTotal).toLocaleString());
             setText('total-sales-count', sales.length.toLocaleString());
 
             let totalStockVal = 0;
@@ -477,7 +477,7 @@
                 if (s.quantity <= s.low_stock_threshold) lowStockCount++;
             });
 
-            setText('stock-value', 'TZS ' + totalStockVal.toLocaleString());
+            setText('stock-value', 'TZS ' + Math.round(totalStockVal).toLocaleString());
             setText('low-stock-count', lowStockCount);
         } catch (error) {
             console.error("Failed to load dashboard data", error);

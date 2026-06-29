@@ -30,7 +30,7 @@ def sale_activity(sender, instance, created, **kwargs):
         from .models import SystemActivity
         # Check if we already logged this sale to avoid duplicates on status updates
         if not SystemActivity.objects.filter(activity_type='sale', description__contains=instance.invoice_number).exists():
-            desc = f"New Sale #{instance.invoice_number} - TZS {instance.total_amount:,.2f}"
+            desc = f"New Sale #{instance.invoice_number} - TZS {instance.total_amount:,.0f}"
             activity = SystemActivity.objects.create(
                 user=instance.user,
                 activity_type='sale',
@@ -68,7 +68,7 @@ def stock_transfer_activity(sender, instance, created, **kwargs):
 def expense_activity(sender, instance, created, **kwargs):
     if created:
         from .models import SystemActivity
-        desc = f"New Expense: {instance.category.name if instance.category else 'General'} - TZS {instance.amount:,.2f}"
+        desc = f"New Expense: {instance.category.name if instance.category else 'General'} - TZS {instance.amount:,.0f}"
         activity = SystemActivity.objects.create(
             user=instance.created_by,
             activity_type='expense',

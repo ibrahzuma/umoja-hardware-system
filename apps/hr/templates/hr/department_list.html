@@ -112,7 +112,7 @@ async function refresh() {
     poss.forEach(p => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${p.title}</td><td>${p.department_name || '—'}</td>` +
-                       `<td class="text-end pe-3">TZS ${Number(p.min_salary).toLocaleString()} – ${Number(p.max_salary).toLocaleString()}</td>`;
+                       `<td class="text-end pe-3">TZS ${Math.round(Number(p.min_salary)).toLocaleString()} – ${Math.round(Number(p.max_salary)).toLocaleString()}</td>`;
         pBody.appendChild(tr);
     });
     const sel = document.getElementById('posDept');

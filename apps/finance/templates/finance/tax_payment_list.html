@@ -12,13 +12,13 @@
     <div class="col-md-3">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
             <h6 class="text-muted">Total VAT Paid</h6>
-            <h4 class="fw-bold text-primary" id="vatTotal">0.00</h4>
+            <h4 class="fw-bold text-primary" id="vatTotal">0</h4>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
             <h6 class="text-muted">Total PAYE Paid</h6>
-            <h4 class="fw-bold text-success" id="payeTotal">0.00</h4>
+            <h4 class="fw-bold text-success" id="payeTotal">0</h4>
         </div>
     </div>
 </div>
@@ -128,7 +128,7 @@
                 <td class="ps-3 text-muted">${new Date(d.payment_date).toLocaleDateString()}</td>
                 <td><span class="badge bg-secondary">${d.tax_type_display}</span></td>
                 <td>${d.period}</td>
-                <td class="fw-bold">${parseFloat(d.amount).toLocaleString()}</td>
+                <td class="fw-bold">${Math.round(Number(d.amount)).toLocaleString()}</td>
                 <td>${d.reference || '-'}</td>
                 <td><small>${d.description || ''}</small></td>
             `;
@@ -142,8 +142,8 @@
             if (d.tax_type === 'vat') vat += parseFloat(d.amount);
             if (d.tax_type === 'paye') paye += parseFloat(d.amount);
         });
-        document.getElementById('vatTotal').innerText = vat.toLocaleString();
-        document.getElementById('payeTotal').innerText = paye.toLocaleString();
+        document.getElementById('vatTotal').innerText = Math.round(Number(vat)).toLocaleString();
+        document.getElementById('payeTotal').innerText = Math.round(Number(paye)).toLocaleString();
     }
 
     function openTaxModal() {

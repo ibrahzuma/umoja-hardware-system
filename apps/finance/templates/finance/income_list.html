@@ -105,7 +105,7 @@
                 tr.innerHTML = `
                     <td class="ps-4">${new Date(inc.date_received).toLocaleDateString()}</td>
                     <td class="fw-bold">${inc.source}</td>
-                    <td class="text-success fw-bold">TZS ${parseFloat(inc.amount).toLocaleString()}</td>
+                    <td class="text-success fw-bold">TZS ${Math.round(Number(inc.amount)).toLocaleString()}</td>
                     <td>Branch ID: ${inc.branch}</td>
                     <td class="text-muted small">${inc.description || '-'}</td>
                     <td class="text-end pe-4">

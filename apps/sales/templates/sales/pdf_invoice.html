@@ -249,8 +249,8 @@
             <tr>
                 <td>{{ item.quantity|floatformat:2 }}</td>
                 <td>{{ item.product.name }}</td>
-                <td style="text-align: right;">{{ item.price_at_sale|floatformat:2|intcomma }}</td>
-                <td style="text-align: right;">{{ item.subtotal|floatformat:2|intcomma }}</td>
+                <td style="text-align: right;">{{ item.price_at_sale|floatformat:0|intcomma }}</td>
+                <td style="text-align: right;">{{ item.subtotal|floatformat:0|intcomma }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -261,11 +261,11 @@
         <table class="summary-table">
             <tr>
                 <td class="summary-label">Subtotal</td>
-                <td class="summary-value">TZS {{ sale.total_amount|floatformat:2|intcomma }}</td>
+                <td class="summary-value">TZS {{ sale.total_amount|floatformat:0|intcomma }}</td>
             </tr>
             <tr>
                 <td class="summary-label">Sales Tax (0%)</td>
-                <td class="summary-value">0.00</td>
+                <td class="summary-value">0</td>
             </tr>
             <tr>
                 <td class="summary-label">Total Weight</td>
@@ -273,7 +273,7 @@
             </tr>
             <tr class="total-row">
                 <td class="summary-label total-label">Total (TZS)</td>
-                <td class="summary-value total-value">TZS {{ sale.total_amount|floatformat:2|intcomma }}</td>
+                <td class="summary-value total-value">TZS {{ sale.total_amount|floatformat:0|intcomma }}</td>
             </tr>
         </table>
     </div>

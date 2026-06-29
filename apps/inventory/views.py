@@ -21,7 +21,7 @@ from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
-from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi
+from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet
 
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
@@ -342,12 +342,12 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 class TruckViewSet(viewsets.ModelViewSet):
     queryset = Truck.objects.all()
     serializer_class = TruckSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+    permission_classes = [permissions.IsAuthenticated, CanManageFleet]
 
 class TruckAllocationViewSet(viewsets.ModelViewSet):
     queryset = TruckAllocation.objects.all()
     serializer_class = TruckAllocationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+    permission_classes = [permissions.IsAuthenticated, CanManageFleet]
 
 class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
     queryset = GoodsReceivedNote.objects.all()
@@ -808,7 +808,7 @@ def _export_purchases_excel(qs, params):
             if col in (5, 6, 7):
                 c.alignment = Alignment(horizontal='right')
                 if col in (6, 7):
-                    c.number_format = '#,##0.00'
+                    c.number_format = '#,##0'
         total += Decimal(str(data[6]))
         total_qty += int(data[4])
         r += 1
@@ -819,7 +819,7 @@ def _export_purchases_excel(qs, params):
     qc.alignment = Alignment(horizontal='right')
     tc = ws.cell(row=r, column=7, value=float(total))
     tc.font = bold
-    tc.number_format = '#,##0.00'
+    tc.number_format = '#,##0'
     tc.alignment = Alignment(horizontal='right')
 
     widths = [14, 26, 34, 18, 10, 18, 18]
@@ -863,12 +863,12 @@ def _export_purchases_pdf(qs, params):
             Paragraph(str(r[2])[:160], cell),
             r[3],
             str(r[4]),
-            '{:,.2f}'.format(r[5]),
-            '{:,.2f}'.format(r[6]),
+            '{:,.0f}'.format(r[5]),
+            '{:,.0f}'.format(r[6]),
         ])
         total += Decimal(str(r[6]))
         total_qty += int(r[4])
-    data.append(['', '', '', 'TOTAL', str(total_qty), '', '{:,.2f}'.format(total)])
+    data.append(['', '', '', 'TOTAL', str(total_qty), '', '{:,.0f}'.format(total)])
 
     table = Table(data, repeatRows=1, colWidths=[22 * mm, 50 * mm, 70 * mm, 30 * mm, 16 * mm, 28 * mm, 30 * mm])
     table.setStyle(TableStyle([
@@ -1053,7 +1053,7 @@ def _export_truck_costs_excel(qs, params):
             c = ws.cell(row=r, column=col, value=val)
             c.border = border
             if col == 7:
-                c.number_format = '#,##0.00'
+                c.number_format = '#,##0'
                 c.alignment = Alignment(horizontal='right')
         total += Decimal(str(data[6]))
         r += 1
@@ -1061,7 +1061,7 @@ def _export_truck_costs_excel(qs, params):
     ws.cell(row=r, column=6, value="TOTAL").font = bold
     tc = ws.cell(row=r, column=7, value=float(total))
     tc.font = bold
-    tc.number_format = '#,##0.00'
+    tc.number_format = '#,##0'
     tc.alignment = Alignment(horizontal='right')
 
     widths = [14, 18, 18, 22, 18, 40, 18]
@@ -1101,10 +1101,10 @@ def _export_truck_costs_pdf(qs, params):
         data.append([
             r[0], r[1], r[2], r[3], r[4],
             Paragraph(str(r[5])[:160], cell),
-            '{:,.2f}'.format(r[6]),
+            '{:,.0f}'.format(r[6]),
         ])
         total += Decimal(str(r[6]))
-    data.append(['', '', '', '', '', 'TOTAL', '{:,.2f}'.format(total)])
+    data.append(['', '', '', '', '', 'TOTAL', '{:,.0f}'.format(total)])
 
     table = Table(data, repeatRows=1, colWidths=[22 * mm, 26 * mm, 28 * mm, 36 * mm, 28 * mm, 70 * mm, 30 * mm])
     table.setStyle(TableStyle([

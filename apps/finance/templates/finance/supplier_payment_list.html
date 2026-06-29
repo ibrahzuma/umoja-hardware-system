@@ -125,7 +125,7 @@
                 <td class="fw-medium">${p.supplier_name}</td>
                 <td>${p.method.replace('_', ' ').toUpperCase()}</td>
                 <td>${p.reference || '-'}</td>
-                <td class="fw-bold">TZS ${parseFloat(p.amount).toLocaleString()}</td>
+                <td class="fw-bold">TZS ${Math.round(Number(p.amount)).toLocaleString()}</td>
                 <td><small class="text-muted">${p.created_by_name || '-'}</small></td>
             `;
             tbody.appendChild(tr);

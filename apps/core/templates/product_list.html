@@ -93,11 +93,11 @@
                         </div>
                         <div class="col-md-6">
                             <label for="productCost" class="form-label">Cost Price</label>
-                            <input type="number" step="0.01" class="form-control" id="productCost" required>
+                            <input type="number" step="1" min="0" class="form-control" id="productCost" required>
                         </div>
                         <div class="col-md-6">
                             <label for="productPrice" class="form-label">Selling Price</label>
-                            <input type="number" step="0.01" class="form-control" id="productPrice" required>
+                            <input type="number" step="1" min="0" class="form-control" id="productPrice" required>
                         </div>
                         <div class="col-md-6">
                             <label for="openingStock" class="form-label">Opening Stock</label>
@@ -289,8 +289,8 @@
                 <td class="fw-medium">${p.name}</td>
                 <td><span class="badge bg-light text-dark border">${catName}</span></td>
                 <td><small class="text-uppercase">${p.product_type}</small></td>
-                <td class="text-end">TZS ${parseFloat(p.cost).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td class="text-end">TZS ${parseFloat(p.cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
                 <td class="text-end">${p.weight} kg</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct(${p.id})">

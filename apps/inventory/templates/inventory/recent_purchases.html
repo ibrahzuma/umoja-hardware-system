@@ -61,8 +61,8 @@
                     <td>${p.supplier_name || '-'}</td>
                     <td><span class="badge bg-light text-dark border">${p.branch || '-'}</span></td> <!-- Serializer might default to ID if name not expanded, but viewsets usually expand if configured -->
                     <td class="fw-bold">${p.quantity}</td>
-                    <td>$${parseFloat(p.unit_cost).toFixed(2)}</td>
-                    <td class="fw-bold text-primary">$${parseFloat(p.total_cost).toFixed(2)}</td>
+                    <td>TZS ${Math.round(Number(p.unit_cost)).toLocaleString()}</td>
+                    <td class="fw-bold text-primary">TZS ${Math.round(Number(p.total_cost)).toLocaleString()}</td>
                 `;
                 tbody.appendChild(tr);
             });

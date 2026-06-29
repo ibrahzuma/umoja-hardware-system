@@ -112,9 +112,9 @@
                 <td class="fw-bold">${s.customer_name}</td>
                 <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
                 <td><small class="text-muted">${s.invoice_number}</small></td>
-                <td>TZS ${parseFloat(s.total_amount).toFixed(2)}</td>
-                <td class="text-success">TZS ${parseFloat(s.amount_paid).toFixed(2)}</td>
-                <td class="fw-bold text-danger">TZS ${parseFloat(s.balance).toFixed(2)}</td>
+                <td>TZS ${Math.round(Number(s.total_amount)).toLocaleString()}</td>
+                <td class="text-success">TZS ${Math.round(Number(s.amount_paid)).toLocaleString()}</td>
+                <td class="fw-bold text-danger">TZS ${Math.round(Number(s.balance)).toLocaleString()}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-success btn-sm" onclick="openPaymentModal(${s.id})">
                         <i class="bi bi-wallet2"></i> Pay
@@ -131,8 +131,8 @@
 
         document.getElementById('saleId').value = sale.id;
         document.getElementById('payCustomer').value = sale.customer_name;
-        document.getElementById('payBalance').value = parseFloat(sale.balance).toFixed(2);
-        document.getElementById('payAmount').value = parseFloat(sale.balance).toFixed(2); // Default to full balance
+        document.getElementById('payBalance').value = Math.round(Number(sale.balance)).toLocaleString();
+        document.getElementById('payAmount').value = Math.round(Number(sale.balance)); // Default to full balance (numeric for input)
         document.getElementById('payAmount').max = sale.balance; // Prevent overpayment? Optional.
 
         paymentModal.show();

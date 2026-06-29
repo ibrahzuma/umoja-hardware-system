@@ -81,7 +81,7 @@
                 <td class="fw-medium">${o.supplier_name || '-'}</td>
                 <td><span class="badge bg-light text-dark border">${o.branch_name || '-'}</span></td>
                 <td>${itemCount}</td>
-                <td class="text-end fw-bold">TZS ${parseFloat(o.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                <td class="text-end fw-bold">TZS ${Math.round(Number(o.total_amount || 0)).toLocaleString()}</td>
                 <td>${statusBadge(o.status)}</td>
                 <td class="text-end pe-4">
                     <a class="btn btn-sm btn-outline-secondary" href="/api/purchase-orders/${o.id}/pdf/" target="_blank" rel="noopener" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>

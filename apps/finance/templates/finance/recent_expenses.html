@@ -68,7 +68,7 @@
                     <td>${e.branch_name || '-'}</td>
                     <td>${bankCell}</td>
                     <td>${receiptCell}</td>
-                    <td class="text-end pe-4 fw-bold text-danger">TZS ${parseFloat(e.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="text-end pe-4 fw-bold text-danger">TZS ${Math.round(Number(e.amount)).toLocaleString()}</td>
                 `;
                 tbody.appendChild(tr);
             });

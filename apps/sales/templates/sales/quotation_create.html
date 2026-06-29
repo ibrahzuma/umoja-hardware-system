@@ -59,7 +59,7 @@
         <div class="card shadow-sm h-100">
             <div class="card-header bg-light fw-bold d-flex justify-content-between">
                 <span>Items</span>
-                <span id="totalBadge" class="badge bg-success fs-6">Total: 0.00</span>
+                <span id="totalBadge" class="badge bg-success fs-6">Total: 0</span>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
@@ -161,14 +161,14 @@
             tr.innerHTML = `
                 <td>${item.product_name}</td>
                 <td>${item.quantity}</td>
-                <td>${item.unit_price.toFixed(2)}</td>
-                <td class="fw-bold">${item.total_price.toFixed(2)}</td>
+                <td>${Math.round(Number(item.unit_price)).toLocaleString()}</td>
+                <td class="fw-bold">${Math.round(Number(item.total_price)).toLocaleString()}</td>
                 <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${index})"><i class="bi bi-trash"></i></button></td>
             `;
             tbody.appendChild(tr);
         });
 
-        document.getElementById('totalBadge').innerText = 'Total: ' + grandTotal.toLocaleString();
+        document.getElementById('totalBadge').innerText = 'Total: ' + Math.round(Number(grandTotal)).toLocaleString();
     }
 
     function removeItem(index) {

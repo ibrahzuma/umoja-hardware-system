@@ -129,7 +129,7 @@
                 <td class="fw-bold">${log.truck_reg || '-'}</td>
                 <td><span class="badge bg-${badge}">${log.maintenance_type.toUpperCase()}</span></td>
                 <td><small>${log.description}</small><br><span class="text-muted" style="font-size:0.8rem">By: ${log.performed_by || '-'}</span></td>
-                <td class="fw-bold">${parseFloat(log.cost).toLocaleString()}</td>
+                <td class="fw-bold">TZS ${Math.round(Number(log.cost)).toLocaleString()}</td>
             `;
             tbody.appendChild(tr);
         });

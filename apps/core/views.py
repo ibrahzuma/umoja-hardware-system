@@ -345,7 +345,7 @@ class SettingsView(LoginRequiredMixin, TemplateView):
         settings, _ = SystemSettings.objects.get_or_create(id=1)
         
         settings.company_name = request.POST.get('company_name', settings.company_name)
-        settings.currency = request.POST.get('currency', settings.currency)
+        settings.currency = 'TZS'  # Currency is fixed to Tanzanian Shilling.
         settings.tax_rate = request.POST.get('tax_rate', settings.tax_rate)
         settings.phone = request.POST.get('phone', settings.phone)
         settings.email = request.POST.get('email', settings.email)

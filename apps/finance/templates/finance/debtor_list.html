@@ -10,7 +10,7 @@
     <div class="col-md-4">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
             <h6 class="text-muted">Total Outstanding</h6>
-            <h3 class="fw-bold text-danger" id="totalOutstanding">0.00</h3>
+            <h3 class="fw-bold text-danger" id="totalOutstanding">0</h3>
         </div>
     </div>
 </div>
@@ -93,7 +93,7 @@
                 <td class="ps-3 text-muted">${new Date(s.created_at).toLocaleDateString()}</td>
                 <td class="fw-bold">${s.invoice_number}</td>
                 <td>${s.customer_name || 'Walk-in'}</td>
-                <td class="fw-bold text-danger">${parseFloat(s.total_amount).toLocaleString()}</td>
+                <td class="fw-bold text-danger">${Math.round(Number(s.total_amount)).toLocaleString()}</td>
                 <td><span class="badge bg-warning text-dark">${s.status}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewInvoice(${s.id})">View</button>
@@ -103,7 +103,7 @@
             tbody.appendChild(tr);
         });
 
-        document.getElementById('totalOutstanding').innerText = total.toLocaleString();
+        document.getElementById('totalOutstanding').innerText = Math.round(Number(total)).toLocaleString();
     }
 
     function viewInvoice(id) {

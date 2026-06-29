@@ -41,9 +41,9 @@
             tbody.innerHTML += `
                 <tr>
                     <td class="fw-bold">${p.name}</td>
-                    <td>TZS ${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td>TZS ${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                    <td class="text-success fw-bold">TZS ${margin.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td>TZS ${cost.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                    <td>TZS ${price.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
+                    <td class="text-success fw-bold">TZS ${margin.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
                     <td>${markup}%</td>
                 </tr>`;
         });

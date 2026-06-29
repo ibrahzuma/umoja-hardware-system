@@ -85,7 +85,7 @@
                         <tfoot>
                             <tr class="fw-bold bg-light">
                                 <td colspan="4" class="text-end">Grand Total:</td>
-                                <td class="text-end" id="poTotal">TZS 0.00</td>
+                                <td class="text-end" id="poTotal">TZS 0</td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -169,14 +169,14 @@
         renderItems();
     }
 
-    function fmt(n) { return parseFloat(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    function fmt(n) { return Math.round(Number(n)).toLocaleString(); }
 
     function renderItems() {
         const tbody = document.getElementById('poItemsBody');
         tbody.innerHTML = '';
         if (!lineItems.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Add one or more products to the order…</td></tr>';
-            document.getElementById('poTotal').innerText = 'TZS 0.00';
+            document.getElementById('poTotal').innerText = 'TZS 0';
             return;
         }
         let total = 0;

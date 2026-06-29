@@ -147,7 +147,7 @@
                                     {% if c.reference %}<br><span class="text-muted" style="font-size:0.78rem">Ref: {{ c.reference }}</span>{% endif %}
                                     {% if c.description %}<br><span class="text-muted" style="font-size:0.78rem">{{ c.description|truncatechars:60 }}</span>{% endif %}
                                 </td>
-                                <td class="text-end pe-3 fw-bold text-primary">TZS {{ c.amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end pe-3 fw-bold text-primary">TZS {{ c.amount|floatformat:0|intcomma }}</td>
                             </tr>
                             {% empty %}
                             <tr><td colspan="5" class="text-center py-4 text-muted">No truck costs match these filters. Click <strong>Record Cost</strong> to add one.</td></tr>
@@ -157,7 +157,7 @@
                         <tfoot class="bg-light">
                             <tr>
                                 <th colspan="4" class="text-end">TOTAL</th>
-                                <th class="text-end pe-3 text-primary">TZS {{ total|floatformat:2|intcomma }}</th>
+                                <th class="text-end pe-3 text-primary">TZS {{ total|floatformat:0|intcomma }}</th>
                             </tr>
                         </tfoot>
                         {% endif %}
@@ -244,7 +244,7 @@
             new Chart(canvas.getContext('2d'), {
                 type: 'doughnut',
                 data: { labels: BY_TYPE.map(r => r.label), datasets: [{ data: BY_TYPE.map(r => r.total), backgroundColor: PIE_COLORS, borderWidth: 1, borderColor: '#fff' }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: c => c.label + ': TZS ' + Number(c.raw).toLocaleString() } } } }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: c => c.label + ': TZS ' + Math.round(Number(c.raw)).toLocaleString() } } } }
             });
         } else {
             canvas.parentElement.innerHTML = '<div class="text-muted text-center py-5">No data to chart.</div>';

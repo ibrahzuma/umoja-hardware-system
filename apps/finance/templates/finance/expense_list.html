@@ -22,7 +22,7 @@
         <div class="card shadow-sm border-0 border-start border-danger border-4">
             <div class="card-body">
                 <h6 class="text-muted text-uppercase mb-2">Total Expenses (This Month)</h6>
-                <h3 class="fw-bold mb-0 text-danger" id="totalExpenses">TZS 0.00</h3>
+                <h3 class="fw-bold mb-0 text-danger" id="totalExpenses">TZS 0</h3>
             </div>
         </div>
     </div>
@@ -259,7 +259,7 @@
                 <td>${branchName}</td>
                 <td>${bankCell}</td>
                 <td>${receiptCell}</td>
-                 <td class="fw-bold text-danger">-TZS ${parseFloat(e.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                 <td class="fw-bold text-danger">-TZS ${Math.round(Number(e.amount)).toLocaleString()}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense(${e.id})">
                         <i class="bi bi-trash"></i>
@@ -273,7 +273,7 @@
     function updateStats() {
         // Simple total for now, logic can be improved to filter by month
         const total = expenses.reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-        document.getElementById('totalExpenses').innerText = 'TZS ' + total.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        document.getElementById('totalExpenses').innerText = 'TZS ' + Math.round(Number(total)).toLocaleString();
     }
 
     // --- Actions ---
