@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum
 from django.http import HttpResponse, Http404
-from apps.users.permissions import IsAccountant
+from apps.users.permissions import IsAccountant, CanRecordSupplierPayment
 from apps.sales.models import Sale
 from apps.inventory.models import Branch
 from .models import Expense, ExpenseCategory
@@ -68,7 +68,7 @@ class IncomeViewSet(viewsets.ModelViewSet):
 class SupplierPaymentViewSet(viewsets.ModelViewSet):
     queryset = SupplierPayment.objects.all().order_by('-payment_date')
     serializer_class = SupplierPaymentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAccountant]
+    permission_classes = [permissions.IsAuthenticated, CanRecordSupplierPayment]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)

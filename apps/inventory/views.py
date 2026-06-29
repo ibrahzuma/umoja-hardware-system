@@ -21,7 +21,7 @@ from django.http import HttpResponse
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 
-from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet
+from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet, CanHandleGRN, CanManagePurchaseOrders
 
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
@@ -239,7 +239,7 @@ class StockTransferViewSet(viewsets.ModelViewSet):
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAfisaUgavi]
+    permission_classes = [permissions.IsAuthenticated, CanManagePurchaseOrders]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -352,8 +352,8 @@ class TruckAllocationViewSet(viewsets.ModelViewSet):
 class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
     queryset = GoodsReceivedNote.objects.all()
     serializer_class = GoodsReceivedNoteSerializer
-    # Stock Controller creates GRN (as per original requirements). Store Keeper verifies in UI.
-    permission_classes = [permissions.IsAuthenticated, IsStockController]
+    # Stock Controller creates GRN; Store Keeper verifies it in the UI — both need access.
+    permission_classes = [permissions.IsAuthenticated, CanHandleGRN]
 
     def perform_create(self, serializer):
         grn = serializer.save(created_by=self.request.user)

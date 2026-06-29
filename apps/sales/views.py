@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from rest_framework import viewsets, permissions
-from apps.users.permissions import IsSales
+from apps.users.permissions import IsSales, CanManageVehicles
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
@@ -333,7 +333,7 @@ class SaleItemViewSet(viewsets.ModelViewSet):
 class VehicleViewSet(viewsets.ModelViewSet):
     queryset = Vehicle.objects.all().order_by('registration_number')
     serializer_class = VehicleSerializer
-    permission_classes = [permissions.IsAuthenticated, IsSales] # Sales Reps need to see vehicles for dispatch? Logic says yes.
+    permission_classes = [permissions.IsAuthenticated, CanManageVehicles]
 
     @action(detail=True, methods=['post'])
     def return_vehicle(self, request, pk=None):
