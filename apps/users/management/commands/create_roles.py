@@ -27,9 +27,7 @@ class Command(BaseCommand):
             'Manager': [
                 'users.view_user', 'users.add_user', 'users.change_user',
                 'inventory.view_product', 'inventory.add_product', 'inventory.change_product',
-                'inventory.view_param_report',
                 'sales.view_sale', 'sales.change_sale', 'sales.delete_sale',
-                'sales.view_report',
                 'finance.view_paymentreceipt',
             ],
             'Afisa Ugavi': [
@@ -41,6 +39,7 @@ class Command(BaseCommand):
             'Stock Controller': [
                 'inventory.view_goodsreceivednote', 'inventory.add_goodsreceivednote', 'inventory.change_goodsreceivednote',
                 'inventory.view_stock', 'inventory.change_stock',
+                'inventory.view_stocktransfer', 'inventory.add_stocktransfer',
                 'inventory.view_product',
             ],
             'Sales Representative': [
@@ -54,7 +53,8 @@ class Command(BaseCommand):
                 'inventory.view_driver', 'inventory.add_driver', 'inventory.change_driver',
                 'inventory.view_truckmaintenance', 'inventory.add_truckmaintenance',
                 'inventory.view_stocktransfer', 'inventory.add_stocktransfer',
-                'sales.dispatch_order',
+                # Dispatching approved orders is gated on the manager role
+                # (see SaleViewSet.dispatch_order), not a Django permission.
             ],
             'Accountant': [
                 'finance.view_expense', 'finance.add_expense', 'finance.change_expense',
