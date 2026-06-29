@@ -3,14 +3,18 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.http import FileResponse, Http404
+from django.shortcuts import redirect
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import F, Sum
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, TruncYear
 from django.utils import timezone
 
-from apps.sales.models import Sale, Vehicle
-from apps.inventory.models import Stock, Purchase, PurchaseOrder
+from apps.sales.models import Sale, Vehicle, Quotation, Customer
+from apps.inventory.models import (
+    Stock, Purchase, PurchaseOrder, Product,
+    GoodsReceivedNote, StockAdjustment,
+)
 from apps.finance.models import Expense
 
 
@@ -35,32 +39,69 @@ def download_app(request):
 class DashboardView(LoginRequiredMixin, TemplateView):
     template_name = "dashboard.html"
 
+    @staticmethod
+    def _is_privileged(user):
+        """Admins/managers see the full cross-branch operations dashboard;
+        everyone else gets a dashboard scoped to their own remit."""
+        return user.is_superuser or user.role == 'manager' or getattr(user, 'is_admin_role', False)
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        # HR-only staff get the dedicated HR dashboard rather than the
+        # operations one — it's already complete and on-scope for them.
+        if (getattr(user, 'is_hr', False) and not self._is_privileged(user)
+                and not getattr(user, 'is_accountant', False)):
+            return redirect('hr:dashboard')
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        is_privileged = self._is_privileged(user)
 
-        # Accountant role gets an expenses-only dashboard.
-        is_accountant = getattr(user, 'is_accountant', False)
-        is_privileged = user.is_superuser or user.role == 'manager' or getattr(user, 'is_admin_role', False)
-        if is_accountant and not is_privileged:
-            context['is_accountant_dashboard'] = True
-            self._add_expense_dashboard(context)
-            return context
+        # --- Role-scoped dashboards. Each is self-contained: it renders only
+        #     what's within that role's remit and returns early. ---
+        if not is_privileged:
+            # Accountant — expenses-only.
+            if getattr(user, 'is_accountant', False):
+                context['is_accountant_dashboard'] = True
+                self._add_expense_dashboard(context)
+                return context
 
-        # Purchases manager (Afisa Ugavi) gets a procurement-only dashboard.
-        is_procurement = getattr(user, 'is_procurement_officer', False)
-        if is_procurement and not is_privileged:
-            context['is_procurement_dashboard'] = True
-            self._add_procurement_dashboard(context)
-            return context
+            # Purchases manager (Afisa Ugavi) — procurement-only.
+            if getattr(user, 'is_procurement_officer', False):
+                context['is_procurement_dashboard'] = True
+                self._add_procurement_dashboard(context)
+                return context
 
-        if user.is_superuser or user.role == 'manager' or user.is_admin_role:
+            # Sales representative — their own sales, quotations, customers.
+            if getattr(user, 'is_sales_rep', False):
+                context['is_sales_rep_dashboard'] = True
+                self._add_sales_rep_dashboard(context)
+                return context
+
+            # Stock controller — goods received, stock balances, adjustments.
+            if getattr(user, 'is_stock_controller', False):
+                context['is_stock_controller_dashboard'] = True
+                self._add_stock_controller_dashboard(context)
+                return context
+
+            # Store keeper — physical stock, GRN verification, loading/dispatch.
+            if getattr(user, 'is_store_keeper', False):
+                context['is_store_keeper_dashboard'] = True
+                self._add_store_keeper_dashboard(context)
+                return context
+
+        # --- Operations dashboard (admin / manager / store manager) ---
+        # Store managers (is_manager, not the privileged "manager" role) own
+        # dispatch and the fleet, so they get the operations-center figures too.
+        if is_privileged or user.is_manager or user.is_store_manager:
             context['ready_to_dispatch'] = Sale.objects.filter(status='approved').count()
             context['active_vehicles'] = Vehicle.objects.filter(status='active').count()
             context['low_stock_alert'] = Stock.objects.filter(quantity__lte=F('low_stock_threshold')).count()
             context['recent_approved'] = Sale.objects.filter(status='approved').order_by('-approved_at')[:5]
 
-        if user.is_superuser or getattr(user, 'is_sales_manager', False):
+        if is_privileged or getattr(user, 'is_sales_manager', False):
             context['pending_approvals'] = Sale.objects.filter(status='pending').count()
             context['todays_sales_count'] = Sale.objects.filter(created_at__date=timezone.now().date()).count()
             context['todays_revenue'] = Sale.objects.filter(created_at__date=timezone.now().date()).aggregate(
@@ -195,6 +236,87 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                                      .filter(quantity__lte=F('low_stock_threshold'))
                                      .order_by('quantity')[:10])
         context['pur_year_label'] = str(today.year)
+
+    def _add_sales_rep_dashboard(self, context):
+        """Sales-rep dashboard: scoped to this rep's own sales and quotations
+        plus the shared customer book. Deliberately excludes revenue totals,
+        inventory value, expenses and dispatch — outside a rep's remit."""
+        user = self.request.user
+        today = timezone.now().date()
+
+        my_sales = Sale.objects.filter(user=user)
+        my_quotes = Quotation.objects.filter(created_by=user)
+
+        todays = my_sales.filter(created_at__date=today)
+        context['rep_today_count'] = todays.count()
+        context['rep_today_value'] = float(todays.aggregate(t=Sum('total_amount'))['t'] or 0)
+        context['rep_pending'] = my_sales.filter(status='pending').count()
+        context['rep_quotes_open'] = my_quotes.filter(status__in=['draft', 'sent']).count()
+        context['rep_customers'] = Customer.objects.count()
+
+        context['rep_recent_sales'] = (my_sales.select_related('customer')
+                                       .order_by('-created_at')[:6])
+        context['rep_recent_quotes'] = (my_quotes.select_related('customer')
+                                        .order_by('-created_at')[:6])
+
+        # My sales over the last 14 days (value per day)
+        since = today - timedelta(days=13)
+        rows = (my_sales.filter(created_at__date__gte=since)
+                .annotate(p=TruncDay('created_at'))
+                .values('p').annotate(t=Sum('total_amount')).order_by('p'))
+        context['rep_chart_labels'] = json.dumps(
+            [r['p'].strftime('%d %b') for r in rows if r['p']])
+        context['rep_chart_data'] = json.dumps(
+            [float(r['t']) for r in rows if r['p']])
+
+    def _add_stock_controller_dashboard(self, context):
+        """Stock-controller dashboard: goods received, stock health and recent
+        adjustments. No revenue, sales or finance figures."""
+        stocks = Stock.objects.all()
+        low_qs = stocks.filter(quantity__lte=F('low_stock_threshold'))
+
+        context['sc_total_skus'] = Product.objects.filter(product_type='product').count()
+        context['sc_low_stock'] = low_qs.count()
+        context['sc_out_of_stock'] = stocks.filter(quantity__lte=0).count()
+        context['sc_grns_total'] = GoodsReceivedNote.objects.count()
+
+        # Stock-health doughnut: healthy vs low vs out
+        out = context['sc_out_of_stock']
+        low = max(context['sc_low_stock'] - out, 0)          # low but not fully out
+        healthy = max(stocks.count() - context['sc_low_stock'], 0)
+        context['sc_health_json'] = json.dumps(
+            [{'name': 'Healthy', 'total': healthy},
+             {'name': 'Low', 'total': low},
+             {'name': 'Out of stock', 'total': out}])
+
+        context['sc_reorder_items'] = (low_qs.select_related('product', 'branch')
+                                       .order_by('quantity')[:10])
+        context['sc_recent_grns'] = (GoodsReceivedNote.objects
+                                     .select_related('branch', 'created_by')
+                                     .order_by('-received_date')[:6])
+        context['sc_recent_adjustments'] = (StockAdjustment.objects
+                                            .select_related('product', 'branch')
+                                            .order_by('-created_at')[:6])
+
+    def _add_store_keeper_dashboard(self, context):
+        """Store-keeper dashboard: physical stock to verify, goods received and
+        the loading/offloading queue (approved orders awaiting dispatch)."""
+        stocks = Stock.objects.all()
+
+        context['sk_total_items'] = stocks.count()
+        context['sk_low_stock'] = stocks.filter(quantity__lte=F('low_stock_threshold')).count()
+        context['sk_to_dispatch'] = Sale.objects.filter(status='approved').count()
+        context['sk_grns_total'] = GoodsReceivedNote.objects.count()
+
+        context['sk_recent_grns'] = (GoodsReceivedNote.objects
+                                     .select_related('branch', 'created_by')
+                                     .order_by('-received_date')[:6])
+        context['sk_dispatch_queue'] = (Sale.objects.filter(status='approved')
+                                        .select_related('customer', 'branch')
+                                        .order_by('-approved_at')[:8])
+        context['sk_low_items'] = (stocks.filter(quantity__lte=F('low_stock_threshold'))
+                                   .select_related('product', 'branch')
+                                   .order_by('quantity')[:8])
 
 class GenericListView(LoginRequiredMixin, TemplateView):
     template_name = "list_page.html"

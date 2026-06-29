@@ -11,6 +11,12 @@
         <p class="subtitle">Your expenses overview for {{ exp_year_label }}.</p>
         {% elif is_procurement_dashboard %}
         <p class="subtitle">Your purchasing overview for {{ pur_year_label }}.</p>
+        {% elif is_sales_rep_dashboard %}
+        <p class="subtitle">Your sales, quotations and customers at a glance.</p>
+        {% elif is_stock_controller_dashboard %}
+        <p class="subtitle">Goods received, stock health and recent adjustments.</p>
+        {% elif is_store_keeper_dashboard %}
+        <p class="subtitle">Stock to verify and today's loading queue.</p>
         {% else %}
         <p class="subtitle">Here's what's happening across your branches today.</p>
         {% endif %}
@@ -52,6 +58,54 @@
                 <li><a class="dropdown-item" href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes me-2 text-muted"></i>Stock checking</a></li>
             </ul>
         </div>
+        {% elif is_sales_rep_dashboard %}
+        <button class="btn btn-secondary" onclick="location.reload()" type="button">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge-fill"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{% url 'sales:pos' %}"><i class="bi bi-cart-plus me-2 text-muted"></i>New sale</a></li>
+                <li><a class="dropdown-item" href="{% url 'sales:quotation_create' %}"><i class="bi bi-file-earmark-plus me-2 text-muted"></i>New quotation</a></li>
+                <li><a class="dropdown-item" href="{% url 'sales:customer_create' %}"><i class="bi bi-person-plus me-2 text-muted"></i>Add customer</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{% url 'sales:sale_list' %}"><i class="bi bi-list-check me-2 text-muted"></i>My orders</a></li>
+                <li><a class="dropdown-item" href="{% url 'sales:quotation_list' %}"><i class="bi bi-file-earmark-text me-2 text-muted"></i>Quotations</a></li>
+            </ul>
+        </div>
+        {% elif is_stock_controller_dashboard %}
+        <button class="btn btn-secondary" onclick="location.reload()" type="button">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge-fill"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{% url 'inventory:grn_create' %}"><i class="bi bi-clipboard-plus me-2 text-muted"></i>Record GRN</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:stock_adjustment' %}"><i class="bi bi-sliders me-2 text-muted"></i>Stock adjustment</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes me-2 text-muted"></i>Stock balances</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:grn_list' %}"><i class="bi bi-clipboard-check me-2 text-muted"></i>Goods received</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:abc_analysis' %}"><i class="bi bi-bar-chart me-2 text-muted"></i>ABC analysis</a></li>
+            </ul>
+        </div>
+        {% elif is_store_keeper_dashboard %}
+        <button class="btn btn-secondary" onclick="location.reload()" type="button">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge-fill"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{% url 'inventory:grn_list' %}"><i class="bi bi-clipboard-check me-2 text-muted"></i>Verify GRN</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:inventory_list' %}"><i class="bi bi-boxes me-2 text-muted"></i>Physical stock</a></li>
+                <li><a class="dropdown-item" href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck me-2 text-muted"></i>Loading / offloading</a></li>
+            </ul>
+        </div>
         {% else %}
         <button class="btn btn-secondary" onclick="loadStats()" type="button">
             <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -61,10 +115,16 @@
                 <i class="bi bi-lightning-charge-fill"></i> Quick actions
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
+                {% if user.is_superuser or perms.sales.add_sale %}
                 <li><a class="dropdown-item" href="{% url 'sales:pos' %}"><i class="bi bi-cart-plus me-2 text-muted"></i>New sale</a></li>
+                {% endif %}
+                {% if user.is_superuser or perms.inventory.add_product %}
                 <li><a class="dropdown-item" href="{% url 'inventory:product_create' %}"><i class="bi bi-box-seam me-2 text-muted"></i>Add product</a></li>
+                {% endif %}
+                {% if user.is_superuser or perms.finance.add_expense %}
                 <li><a class="dropdown-item" href="{% url 'finance:expense_create' %}"><i class="bi bi-receipt me-2 text-muted"></i>Record expense</a></li>
-                {% if user.is_superuser or user.is_manager %}
+                {% endif %}
+                {% if user.is_superuser or user.is_manager or user.is_store_manager %}
                 <li><a class="dropdown-item" href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck me-2 text-muted"></i>Dispatch board</a></li>
                 {% endif %}
             </ul>
@@ -80,6 +140,12 @@
 {% include 'partials/dashboard_accountant_expenses.html' %}
 {% elif is_procurement_dashboard %}
 {% include 'partials/dashboard_procurement.html' %}
+{% elif is_sales_rep_dashboard %}
+{% include 'partials/dashboard_sales_rep.html' %}
+{% elif is_stock_controller_dashboard %}
+{% include 'partials/dashboard_stock_controller.html' %}
+{% elif is_store_keeper_dashboard %}
+{% include 'partials/dashboard_store_keeper.html' %}
 {% else %}
 
 {% include 'partials/dashboard_manager_operations.html' %}
@@ -94,6 +160,7 @@
 <div class="mt-4">
     <h6 class="fw-semibold text-uppercase text-muted mb-3" style="letter-spacing: 0.08em; font-size: 0.72rem;">Shortcuts</h6>
     <div class="row g-3">
+        {% if user.is_superuser or perms.sales.add_sale %}
         <div class="col-sm-6 col-lg-4">
             <a href="{% url 'sales:pos' %}" class="quick-action-card">
                 <div class="qa-icon"><i class="bi bi-pc-display"></i></div>
@@ -103,6 +170,8 @@
                 </div>
             </a>
         </div>
+        {% endif %}
+        {% if user.is_superuser or perms.inventory.view_stock or perms.inventory.view_product %}
         <div class="col-sm-6 col-lg-4">
             <a href="{% url 'inventory:inventory_list' %}" class="quick-action-card" style="background: linear-gradient(135deg, var(--info-500), var(--info-700));">
                 <div class="qa-icon"><i class="bi bi-clipboard-pulse"></i></div>
@@ -112,6 +181,8 @@
                 </div>
             </a>
         </div>
+        {% endif %}
+        {% if user.is_superuser or perms.finance.view_expense %}
         <div class="col-sm-6 col-lg-4">
             <a href="{% url 'finance:expenses_list' %}" class="quick-action-card" style="background: linear-gradient(135deg, #7209b7, #4a0d87);">
                 <div class="qa-icon"><i class="bi bi-wallet2"></i></div>
@@ -121,7 +192,8 @@
                 </div>
             </a>
         </div>
-        {% if user.is_superuser or user.is_manager %}
+        {% endif %}
+        {% if user.is_superuser or user.is_manager or user.is_store_manager %}
         <div class="col-sm-6 col-lg-4">
             <a href="{% url 'sales:dispatch_dashboard' %}" class="quick-action-card" style="background: linear-gradient(135deg, var(--warning-500), #b85c00);">
                 <div class="qa-icon"><i class="bi bi-truck"></i></div>
@@ -250,6 +322,47 @@
         });
     });
 </script>
+{% elif is_sales_rep_dashboard %}
+<script>
+    const REP_LABELS = {{ rep_chart_labels|default:"[]"|safe }};
+    const REP_DATA = {{ rep_chart_data|default:"[]"|safe }};
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('repSalesChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 300);
+        grad.addColorStop(0, 'rgba(25, 135, 84, 0.25)');
+        grad.addColorStop(1, 'rgba(25, 135, 84, 0)');
+        new Chart(ctx, {
+            type: 'line',
+            data: { labels: REP_LABELS, datasets: [{ label: 'My sales', data: REP_DATA, borderColor: '#198754', backgroundColor: grad, fill: true, tension: 0.4, borderWidth: 2.5, pointRadius: 3, pointBackgroundColor: '#198754' }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'TZS ' + Number(c.raw).toLocaleString() } } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#6b7686', callback: v => 'TZS ' + v.toLocaleString() }, grid: { color: 'rgba(225,230,238,0.5)' } },
+                    x: { ticks: { color: '#6b7686' }, grid: { display: false } }
+                }
+            }
+        });
+    });
+</script>
+{% elif is_stock_controller_dashboard %}
+<script>
+    const SC_HEALTH = {{ sc_health_json|default:"[]"|safe }};
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('scHealthChart');
+        if (!canvas) return;
+        const rows = SC_HEALTH.filter(r => r.total > 0);
+        if (!rows.length) { canvas.parentElement.innerHTML = '<div class="text-muted text-center py-5">No stock records yet.</div>'; return; }
+        new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: rows.map(r => r.name), datasets: [{ data: rows.map(r => r.total), backgroundColor: ['#198754', '#ffc107', '#dc3545'], borderWidth: 1, borderColor: '#fff' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+        });
+    });
+</script>
+{% elif is_store_keeper_dashboard %}
 {% else %}
 <script src="/static/js/api_service.js"></script>
 <script src="/static/js/socket_service.js"></script>

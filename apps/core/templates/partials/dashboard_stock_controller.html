@@ -1,0 +1,147 @@
+{% load humanize %}
+<!-- Stock controller dashboard: goods received, stock health, adjustments -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Stocked Products</h6>
+                <h4 class="fw-bold mb-0 text-primary">{{ sc_total_skus|intcomma }}</h4>
+                <small class="text-muted">Active SKUs</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Low Stock</h6>
+                <h4 class="fw-bold mb-0 text-warning">{{ sc_low_stock }}</h4>
+                <small class="text-muted">At/below threshold</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Out of Stock</h6>
+                <h4 class="fw-bold mb-0 text-danger">{{ sc_out_of_stock }}</h4>
+                <small class="text-muted">Need replenishing</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Goods Received</h6>
+                <h4 class="fw-bold mb-0">{{ sc_grns_total|intcomma }}</h4>
+                <small class="text-muted">GRNs on record</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Stock health -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-heart-pulse text-danger me-2"></i>Stock Health</h5>
+                <div style="height: 260px;"><canvas id="scHealthChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items to re-order -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Items to Re-order</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Product</th><th>Branch</th><th class="text-end">In stock</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for st in sc_reorder_items %}
+                            <tr>
+                                <td>{{ st.product.name }}</td>
+                                <td class="text-muted small">{{ st.branch.name }}</td>
+                                <td class="text-end"><span class="badge bg-danger-subtle text-danger">{{ st.quantity }}</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-muted text-center py-3">Nothing below re-order level. 🎉</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-0">
+    <!-- Recent GRNs -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-clipboard-check text-success me-2"></i>Recent Goods Received</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>GRN</th><th>Receipt #</th><th>Branch</th><th>Date</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for g in sc_recent_grns %}
+                            <tr>
+                                <td>#{{ g.id }}</td>
+                                <td class="text-muted small">{{ g.receipt_number }}</td>
+                                <td class="text-muted small">{{ g.branch.name }}</td>
+                                <td class="text-muted small">{{ g.received_date|date:"d M" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">No goods received yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent adjustments -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-sliders text-secondary me-2"></i>Recent Adjustments</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Product</th><th>Type</th><th class="text-end">Qty</th><th>Date</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for a in sc_recent_adjustments %}
+                            <tr>
+                                <td>{{ a.product.name }}</td>
+                                <td>
+                                    {% if a.adjustment_type == 'addition' %}<span class="badge bg-success-subtle text-success">+ Addition</span>
+                                    {% elif a.adjustment_type == 'deduction' %}<span class="badge bg-danger-subtle text-danger">− Deduction</span>
+                                    {% else %}<span class="badge bg-secondary-subtle text-secondary">= Set</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-semibold">{{ a.quantity|floatformat:"-2" }}</td>
+                                <td class="text-muted small">{{ a.created_at|date:"d M" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">No adjustments yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <a href="{% url 'inventory:grn_create' %}" class="btn btn-primary me-2"><i class="bi bi-clipboard-plus"></i> Record GRN</a>
+    <a href="{% url 'inventory:stock_management' %}" class="btn btn-outline-primary me-2"><i class="bi bi-boxes"></i> Stock Balances</a>
+    <a href="{% url 'inventory:stock_adjustment' %}" class="btn btn-outline-secondary"><i class="bi bi-sliders"></i> Stock Adjustment</a>
+</div>

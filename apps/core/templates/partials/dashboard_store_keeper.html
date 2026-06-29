@@ -1,0 +1,133 @@
+{% load humanize %}
+<!-- Store keeper dashboard: physical stock, GRN verification, dispatch queue -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Stock Lines</h6>
+                <h4 class="fw-bold mb-0 text-primary">{{ sk_total_items|intcomma }}</h4>
+                <small class="text-muted">Product/branch records</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Low Stock</h6>
+                <h4 class="fw-bold mb-0 text-warning">{{ sk_low_stock }}</h4>
+                <small class="text-muted">Flag for re-order</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">To Dispatch</h6>
+                <h4 class="fw-bold mb-0">{{ sk_to_dispatch }}</h4>
+                <small class="text-muted">Approved orders</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Goods Received</h6>
+                <h4 class="fw-bold mb-0">{{ sk_grns_total|intcomma }}</h4>
+                <small class="text-muted">GRNs on record</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Loading / offloading queue -->
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-truck text-info me-2"></i>Loading / Offloading Queue</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Invoice</th><th>Customer</th><th>Branch</th><th>Approved</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for s in sk_dispatch_queue %}
+                            <tr>
+                                <td>#{{ s.invoice_number }}</td>
+                                <td class="text-muted small">{{ s.customer.name|default:s.customer_name }}</td>
+                                <td class="text-muted small">{{ s.branch.name }}</td>
+                                <td class="text-muted small">{{ s.approved_at|date:"d M H:i"|default:"—" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">Nothing waiting to be dispatched. 🎉</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <a href="{% url 'sales:dispatch_dashboard' %}" class="btn btn-sm btn-outline-primary mt-3">
+                    <i class="bi bi-truck"></i> Open dispatch board
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Low stock to verify -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Low Stock to Check</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Product</th><th>Branch</th><th class="text-end">Qty</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for st in sk_low_items %}
+                            <tr>
+                                <td>{{ st.product.name }}</td>
+                                <td class="text-muted small">{{ st.branch.name }}</td>
+                                <td class="text-end"><span class="badge bg-warning-subtle text-warning">{{ st.quantity }}</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-muted text-center py-3">All stock above threshold.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent goods received -->
+<div class="card shadow-sm mt-4">
+    <div class="card-body">
+        <h5 class="fw-bold mb-3"><i class="bi bi-clipboard-check text-success me-2"></i>Recent Goods Received — Verify</h5>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr><th>GRN</th><th>Receipt #</th><th>Branch</th><th>Received by</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                    {% for g in sk_recent_grns %}
+                    <tr>
+                        <td>#{{ g.id }}</td>
+                        <td class="text-muted small">{{ g.receipt_number }}</td>
+                        <td class="text-muted small">{{ g.branch.name }}</td>
+                        <td class="text-muted small">{{ g.created_by.get_full_name|default:g.created_by.username|default:"—" }}</td>
+                        <td class="text-muted small">{{ g.received_date|date:"d M" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-muted text-center py-3">No goods received yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <a href="{% url 'inventory:grn_list' %}" class="btn btn-primary me-2"><i class="bi bi-clipboard-check"></i> Verify GRN</a>
+    <a href="{% url 'inventory:inventory_list' %}" class="btn btn-outline-primary me-2"><i class="bi bi-boxes"></i> Physical Stock</a>
+    <a href="{% url 'sales:dispatch_dashboard' %}" class="btn btn-outline-secondary"><i class="bi bi-truck"></i> Loading / Offloading</a>
+</div>

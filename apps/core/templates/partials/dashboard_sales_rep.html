@@ -1,0 +1,124 @@
+{% load humanize %}
+<!-- Sales representative dashboard: own sales, quotations and customers -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">My Sales Today</h6>
+                <h4 class="fw-bold mb-0 text-success">TZS {{ rep_today_value|floatformat:0|intcomma }}</h4>
+                <small class="text-muted">{{ rep_today_count }} order{{ rep_today_count|pluralize }} today</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">My Pending Orders</h6>
+                <h4 class="fw-bold mb-0">{{ rep_pending }}</h4>
+                <small class="text-muted">Awaiting approval</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Open Quotations</h6>
+                <h4 class="fw-bold mb-0">{{ rep_quotes_open }}</h4>
+                <small class="text-muted">Draft &amp; sent</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Customers</h6>
+                <h4 class="fw-bold mb-0">{{ rep_customers }}</h4>
+                <small class="text-muted">In the customer book</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- My sales over the last 14 days -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="fw-bold mb-3"><i class="bi bi-graph-up-arrow text-success me-2"></i>My Sales — Last 14 Days</h5>
+        <div style="height: 300px;">
+            <canvas id="repSalesChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Recent sales -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-receipt text-success me-2"></i>My Recent Sales</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Invoice</th><th>Customer</th><th>Status</th><th class="text-end">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for s in rep_recent_sales %}
+                            <tr>
+                                <td>#{{ s.invoice_number }}</td>
+                                <td class="text-muted small">{{ s.customer.name|default:s.customer_name }}</td>
+                                <td>
+                                    {% if s.status == 'approved' %}<span class="badge bg-success-subtle text-success">Approved</span>
+                                    {% elif s.status == 'dispatched' %}<span class="badge bg-primary-subtle text-primary">Dispatched</span>
+                                    {% elif s.status == 'cancelled' %}<span class="badge bg-secondary-subtle text-secondary">Cancelled</span>
+                                    {% else %}<span class="badge bg-warning-subtle text-warning">Pending</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-semibold">TZS {{ s.total_amount|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">No sales yet — record your first at the POS.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent quotations -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text text-primary me-2"></i>My Recent Quotations</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Quote</th><th>Customer</th><th>Status</th><th class="text-end">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for q in rep_recent_quotes %}
+                            <tr>
+                                <td>#{{ q.id }}</td>
+                                <td class="text-muted small">{{ q.customer.name|default:q.customer_name }}</td>
+                                <td>
+                                    {% if q.status == 'converted' %}<span class="badge bg-success-subtle text-success">Converted</span>
+                                    {% elif q.status == 'sent' %}<span class="badge bg-primary-subtle text-primary">Sent</span>
+                                    {% elif q.status == 'expired' %}<span class="badge bg-secondary-subtle text-secondary">Expired</span>
+                                    {% else %}<span class="badge bg-warning-subtle text-warning">Draft</span>{% endif %}
+                                </td>
+                                <td class="text-end fw-semibold">TZS {{ q.total_amount|floatformat:0|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-muted text-center py-3">No quotations yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <a href="{% url 'sales:pos' %}" class="btn btn-primary me-2"><i class="bi bi-cart-plus"></i> New Sale</a>
+    <a href="{% url 'sales:quotation_create' %}" class="btn btn-outline-primary me-2"><i class="bi bi-file-earmark-plus"></i> New Quotation</a>
+    <a href="{% url 'sales:customers_list' %}" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Customers</a>
+</div>
