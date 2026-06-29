@@ -1,6 +1,8 @@
 import json
 from datetime import date, timedelta
 
+from django.conf import settings
+from django.http import FileResponse, Http404
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import F, Sum
@@ -10,6 +12,24 @@ from django.utils import timezone
 from apps.sales.models import Sale, Vehicle
 from apps.inventory.models import Stock, Purchase, PurchaseOrder
 from apps.finance.models import Expense
+
+
+def download_app(request):
+    """Serve the Umoja Hardware Android app (APK) for download.
+
+    Public on purpose — it's linked from the login page so staff can install
+    the mobile app before signing in. The file lives at media/app/umoja-hardware.apk
+    (replace it to ship a new build).
+    """
+    apk_path = settings.MEDIA_ROOT / 'app' / 'umoja-hardware.apk'
+    if not apk_path.exists():
+        raise Http404("The app is not available for download yet.")
+    return FileResponse(
+        open(apk_path, 'rb'),
+        as_attachment=True,
+        filename='umoja-hardware.apk',
+        content_type='application/vnd.android.package-archive',
+    )
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):

@@ -141,6 +141,19 @@
         .btn-block { width: 100%; padding: 0.65rem 1rem; font-size: 0.95rem; font-weight: 600; }
 
         .help-text { text-align: center; color: var(--slate-500); font-size: 0.82rem; margin-top: 18px; }
+
+        .app-download {
+            margin-top: 22px;
+            padding-top: 20px;
+            border-top: 1px solid var(--slate-200);
+            text-align: center;
+        }
+        .app-download-text {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            font-size: 0.82rem; font-weight: 600; color: var(--slate-700); margin-bottom: 12px;
+        }
+        .app-download-text i { color: #3ddc84; font-size: 1.1rem; }
+        .app-download-hint { display: block; color: var(--slate-500); font-size: 0.74rem; margin-top: 8px; }
     </style>
 </head>
 
@@ -225,6 +238,17 @@
             </form>
 
             <p class="help-text">Trouble signing in? Contact your system administrator.</p>
+
+            <div class="app-download">
+                <div class="app-download-text">
+                    <i class="bi bi-android2"></i>
+                    <span>Get the Umoja Hardware app for Android</span>
+                </div>
+                <a href="{% url 'download_app' %}" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-download"></i> Download APK
+                </a>
+                <small class="app-download-hint">After downloading, open the file and allow installs from this source if prompted.</small>
+            </div>
         </div>
     </main>
 

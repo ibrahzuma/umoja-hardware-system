@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import DashboardView, GenericListView, SettingsView
+from .views import DashboardView, GenericListView, SettingsView, download_app
 from apps.inventory.views import download_product_template
 
 urlpatterns = [
@@ -15,4 +15,5 @@ urlpatterns = [
     path('settings/', SettingsView.as_view(), name='settings_list'),
     
     path('download-product-template/', download_product_template, name='download_product_template'),
+    path('download-app/', download_app, name='download_app'),
 ]
