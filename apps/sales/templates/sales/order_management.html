@@ -152,8 +152,11 @@
             <form id="approveForm">
                 <div class="modal-body p-4">
                     <input type="hidden" id="approveSaleId">
-                    <p class="mb-0">Are you sure you want to approve this order? It will be forwarded to <strong>Store
+                    <p class="mb-3">Are you sure you want to approve this order? It will be forwarded to <strong>Store
                             Managers</strong> for dispatch.</p>
+                    <a id="approveInvoiceLink" href="#" target="_blank" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-pdf"></i> Preview invoice before approving
+                    </a>
                 </div>
                 <div class="modal-footer border-0 p-4 pt-0">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
@@ -344,6 +347,9 @@
     function getActionButtons(o) {
         if (o.status === 'pending') {
             return `
+                <a href="/api/sales/${o.id}/receipt/" target="_blank" class="btn btn-sm btn-outline-primary me-1">
+                    <i class="bi bi-file-pdf"></i> View Invoice
+                </a>
                 <button class="btn btn-sm btn-success" onclick="approveOrder(${o.id})">
                     <i class="bi bi-check-lg"></i> Approve
                 </button>
@@ -388,6 +394,7 @@
 
     function approveOrder(id) {
         document.getElementById('approveSaleId').value = id;
+        document.getElementById('approveInvoiceLink').href = `/api/sales/${id}/receipt/`;
         approveModal.show();
     }
 
