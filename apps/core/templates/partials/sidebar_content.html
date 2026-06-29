@@ -153,7 +153,7 @@
     {% endif %}
 
     <!-- Role-specific workspaces -->
-    {% if user.is_superuser or user.is_procurement_officer or user.is_stock_controller or user.is_sales_rep or user.is_store_manager or user.is_accountant or user.is_store_keeper %}
+    {% if user.is_superuser or user.is_procurement_officer or user.is_stock_controller or user.is_sales_rep or user.is_store_manager or user.is_accountant or user.is_store_keeper or user.is_sales_manager %}
     <li class="section-title">Workspaces</li>
     {% endif %}
 
@@ -246,6 +246,21 @@
             <li><a href="{% url 'inventory:grn_list' %}"><i class="bi bi-check2-square"></i> Verify GRN</a></li>
             <li><a href="{% url 'inventory:inventory_list' %}"><i class="bi bi-boxes"></i> Physical Stock</a></li>
             <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Loading / Offloading</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_sales_manager %}
+    <li>
+        <a href="#salesCreditSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-cash-coin"></i> Sales &amp; Credit
+        </a>
+        <ul class="collapse list-unstyled" id="salesCreditSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'sales:order_management' %}"><i class="bi bi-check2-square"></i> Order Approvals</a></li>
+            <li><a href="{% url 'sales:payments_report' %}"><i class="bi bi-graph-up-arrow"></i> Payments Report</a></li>
+            <li><a href="{% url 'sales:credit_sales' %}"><i class="bi bi-credit-card"></i> Credit Follow-up</a></li>
+            <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
+            <li><a href="{% url 'sales:customers_list' %}"><i class="bi bi-people"></i> Customers</a></li>
         </ul>
     </li>
     {% endif %}

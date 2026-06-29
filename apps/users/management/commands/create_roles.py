@@ -19,6 +19,7 @@ class Command(BaseCommand):
             'store_manager': 'Store Manager',
             'accountant': 'Accountant',
             'store_keeper': 'Store Keeper',
+            'sales_credit_manager': 'Sales & Credit Manager',
         }
         # Define permissions for each role
         # Format: 'app_label.action_model'
@@ -67,6 +68,13 @@ class Command(BaseCommand):
             'Store Keeper': [
                 'inventory.view_stock',
                 'sales.view_sale',
+            ],
+            'Sales & Credit Manager': [
+                # Approves orders (gated by role, see CanApproveSales) and tracks
+                # collections: view sales, record customer payments, see customers.
+                'sales.view_sale', 'sales.change_sale',
+                'sales.view_customer',
+                'sales.view_transaction', 'sales.add_transaction',
             ],
             'HR Officer': [
                 'hr.view_employee', 'hr.add_employee', 'hr.change_employee', 'hr.delete_employee',

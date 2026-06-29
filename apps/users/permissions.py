@@ -103,3 +103,10 @@ class CanManageVehicles(_ReadAnyWriteRole):
     """Sales reps and managers manage the delivery fleet; store keepers and
     other dispatch staff need to read vehicles for loading/offloading."""
     allowed = ('is_sales_rep', 'is_manager', 'is_store_manager')
+
+
+class CanApproveSales(_RolePermission):
+    """Approving/declining pending sales orders is a supervisory action: the
+    Sales & Credit Manager (is_sales_manager) and general managers, plus
+    admins. Deliberately NOT sales reps, who raise the orders."""
+    allowed = ('is_sales_manager', 'is_manager')

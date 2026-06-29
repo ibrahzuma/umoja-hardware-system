@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from rest_framework import viewsets, permissions
-from apps.users.permissions import IsSales, CanManageVehicles
+from apps.users.permissions import IsSales, CanManageVehicles, CanApproveSales
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
@@ -128,7 +128,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                     pass # Should not happen, but safe to ignore if stock record gone
         
         instance.delete()
-    @action(detail=True, methods=['POST'])
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, CanApproveSales])
     def approve(self, request, pk=None):
         from rest_framework.response import Response
         from rest_framework import status
@@ -151,7 +151,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             "status": sale.status
         })
 
-    @action(detail=True, methods=['POST'])
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, CanApproveSales])
     def decline(self, request, pk=None):
         sale = self.get_object()
         if sale.status != 'pending':
@@ -332,6 +332,47 @@ class SaleListView(LoginRequiredMixin, TemplateView):
 class CreditSaleListView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/credit_sales.html'
 
+class PaymentsReportView(LoginRequiredMixin, TemplateView):
+    """Collections report: all sale payments grouped by method (cash, bank,
+    mobile, credit) over a date range, with totals and a transaction list.
+    Used by the Sales & Credit Manager to track money coming in."""
+    template_name = 'sales/payments_report.html'
+
+    def get_context_data(self, **kwargs):
+        from django.db.models import Sum, Count
+        from django.utils import timezone
+        ctx = super().get_context_data(**kwargs)
+        params = self.request.GET
+        today = timezone.now().date()
+        date_from = (params.get('date_from') or '').strip() or today.replace(day=1).isoformat()
+        date_to = (params.get('date_to') or '').strip() or today.isoformat()
+
+        qs = Transaction.objects.filter(
+            transaction_type='income',
+            created_at__date__gte=date_from,
+            created_at__date__lte=date_to,
+        )
+
+        METHODS = [('cash', 'Cash'), ('bank', 'Bank Transfer'),
+                   ('mobile', 'Mobile Money'), ('credit', 'Credit')]
+        buckets = {k: {'key': k, 'label': lbl, 'total': 0.0, 'count': 0} for k, lbl in METHODS}
+        for r in qs.values('payment_method').annotate(total=Sum('amount'), count=Count('id')):
+            key = r['payment_method']
+            b = buckets.get(key) or {'key': key, 'label': (key or 'Other').title(), 'total': 0.0, 'count': 0}
+            b['total'] = float(r['total'] or 0)
+            b['count'] = r['count']
+            buckets[key] = b
+
+        methods = list(buckets.values())
+        ctx['methods'] = methods
+        ctx['total_all'] = sum(m['total'] for m in methods)
+        ctx['count_all'] = sum(m['count'] for m in methods)
+        ctx['transactions'] = (qs.select_related('sale', 'sale__customer')
+                               .order_by('-created_at')[:200])
+        ctx['date_from'] = date_from
+        ctx['date_to'] = date_to
+        return ctx
+
 class RecentSaleListView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/recent_sales.html'
 
@@ -350,7 +391,9 @@ class OrderManagementView(LoginRequiredMixin, UserPassesTestMixin, TemplateView)
     template_name = 'sales/order_management.html'
 
     def test_func(self):
-        return self.request.user.is_superuser or self.request.user.is_admin_role
+        u = self.request.user
+        # Approvers: admins, general managers, and the Sales & Credit Manager.
+        return u.is_superuser or u.is_admin_role or u.is_manager or u.is_sales_manager
 
 class DispatchDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'sales/dispatch_dashboard.html'

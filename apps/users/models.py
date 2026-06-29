@@ -14,6 +14,7 @@ class User(AbstractUser):
         ('store_keeper', 'Store Keeper'),
         ('hr_officer', 'HR Officer'),
         ('hr_manager', 'HR Manager'),
+        ('sales_credit_manager', 'Sales & Credit Manager'),
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='staff')
     branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
@@ -28,7 +29,9 @@ class User(AbstractUser):
 
     @property
     def is_sales_manager(self):
-        return self.groups.filter(name__in=['Sales Manager', 'sales_manager']).exists()
+        return self.role == 'sales_credit_manager' or self.groups.filter(
+            name__in=['Sales Manager', 'sales_manager', 'Sales & Credit Manager']
+        ).exists()
 
     @property
     def is_procurement_officer(self):
