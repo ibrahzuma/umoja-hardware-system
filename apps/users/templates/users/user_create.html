@@ -24,10 +24,13 @@
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label class="form-label">Role (Group)</label>
-                            <select class="form-select" id="roleSelect">
-                                <option value="">Select Role...</option>
-                            </select>
+                            <label class="form-label d-flex justify-content-between align-items-center">
+                                <span>Roles</span>
+                                <span class="text-muted small fw-normal">select one or more</span>
+                            </label>
+                            <div id="roleCheckboxes" class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+                                <div class="text-muted small">Loading roles…</div>
+                            </div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Branch</label>
@@ -64,23 +67,31 @@
             const bSelect = document.getElementById('branchSelect');
             branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
 
-            const rSelect = document.getElementById('roleSelect');
-            roles.forEach(r => rSelect.add(new Option(r.name, r.id)));
+            const box = document.getElementById('roleCheckboxes');
+            box.innerHTML = '';
+            if (!roles.length) {
+                box.innerHTML = '<div class="text-muted small">No roles defined yet.</div>';
+            }
+            roles.forEach(r => {
+                box.insertAdjacentHTML('beforeend', `
+                    <div class="form-check">
+                        <input class="form-check-input role-check" type="checkbox" value="${r.id}" id="role-${r.id}">
+                        <label class="form-check-label" for="role-${r.id}">${r.name}</label>
+                    </div>`);
+            });
 
         } catch (e) { console.error(e); }
 
         document.getElementById('userForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const groups = Array.from(document.querySelectorAll('.role-check:checked')).map(c => c.value);
             const data = {
                 username: document.getElementById('username').value,
                 email: document.getElementById('email').value,
                 password: document.getElementById('password').value,
-                groups: [document.getElementById('roleSelect').value], // Send as list of IDs
+                groups: groups,
                 branch: document.getElementById('branchSelect').value || null
             };
-
-            // Filter out empty group if none selected
-            if (!data.groups[0]) data.groups = [];
 
             try {
                 const res = await fetch('/api/users/', {

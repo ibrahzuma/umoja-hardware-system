@@ -288,7 +288,40 @@ class SaleViewSet(viewsets.ModelViewSet):
     def delivery_note(self, request, pk=None):
         sale = self.get_object()
         from .utils import render_to_pdf
-        return render_to_pdf('sales/pdf_delivery_note.html', {'sale': sale})
+        from django.utils import timezone
+        company, currency, tax_rate = _company_ctx()
+        items = [{
+            'code': getattr(it.product, 'sku', '') or '',
+            'description': it.product.name,
+            'qty': it.quantity,
+            'uom': 'PCS',
+        } for it in sale.items.all()]
+        total_weight = sum(
+            (Decimal(str(getattr(it.product, 'weight', 0) or 0)) * it.quantity)
+            for it in sale.items.all()
+        )
+        ctx = {
+            'doc': {
+                'type': 'DELIVERY NOTE', 'number_label': 'Delivery No.',
+                'number': sale.invoice_number, 'invoice_ref': sale.invoice_number,
+                'date': timezone.now(), 'page': '1/1',
+                'branch': sale.branch.name if sale.branch else '',
+                'contact': _person(sale.user), 'status': sale.status,
+                'recipient_label': 'Ship To',
+                'lorry_info': sale.lorry_info,
+                'store_keeper': _person(sale.store_keeper),
+                'total_weight': total_weight,
+            },
+            'company': company,
+            'customer': {
+                'name': sale.customer.name if sale.customer else sale.customer_name,
+                'phone': sale.customer.phone if sale.customer else '',
+                'address': sale.customer.address if sale.customer else '',
+                'tin': '',
+            },
+            'items': items, 'currency': currency,
+        }
+        return render_to_pdf('sales/pdf_delivery_note.html', ctx)
 
 class POSView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/pos.html'

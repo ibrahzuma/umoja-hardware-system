@@ -27,7 +27,7 @@
                 </thead>
                 <tbody id="vehicleTableBody">
                     <tr>
-                        <td colspan="5" class="text-center py-5">Loading...</td>
+                        <td colspan="6" class="text-center py-5">Loading...</td>
                     </tr>
                 </tbody>
             </table>
@@ -73,6 +73,7 @@
                         <label class="form-label">Status</label>
                         <select class="form-select" id="status">
                             <option value="active">Active</option>
+                            <option value="busy">In Transit</option>
                             <option value="maintenance">Maintenance</option>
                             <option value="inactive">Inactive</option>
                         </select>
@@ -130,8 +131,9 @@
     }
 
     function getStatusBadge(status) {
-        const colors = { 'active': 'success', 'maintenance': 'warning', 'inactive': 'secondary' };
-        return `<span class="badge bg-${colors[status] || 'secondary'} text-capitalize">${status}</span>`;
+        const colors = { 'active': 'success', 'busy': 'info', 'maintenance': 'warning', 'inactive': 'secondary' };
+        const labels = { 'active': 'Active', 'busy': 'In Transit', 'maintenance': 'Maintenance', 'inactive': 'Inactive' };
+        return `<span class="badge bg-${colors[status] || 'secondary'}">${labels[status] || status}</span>`;
     }
 
     function openVehicleModal() {

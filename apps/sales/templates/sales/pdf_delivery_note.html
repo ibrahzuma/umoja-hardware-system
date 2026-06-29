@@ -1,184 +1,192 @@
-<!DOCTYPE html>
+{% load humanize static %}<!DOCTYPE html>
 <html>
-
 <head>
-    <style>
-        @page {
-            size: A4;
-            margin: 2cm;
-        }
+<style>
+    @page { size: A4; margin: 1.2cm 1.3cm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #2b3440; font-size: 9.5pt; }
 
-        body {
-            font-family: 'Helvetica', 'Arial', sans-serif;
-            color: #333;
-            line-height: 1.5;
-        }
+    .accent { color: #C8932B; }
+    table { border-collapse: collapse; }
 
-        .header {
-            text-align: center;
-            border-bottom: 2px solid #7209b7;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
+    /* Header */
+    .hdr { width: 100%; margin-bottom: 6px; }
+    .hdr td { vertical-align: top; }
+    .logo { height: 64px; }
+    .co-contact { font-size: 8.5pt; color: #444; line-height: 1.45; }
+    .co-name { font-size: 12pt; font-weight: bold; color: #1f2a37; }
 
-        .header h1 {
-            color: #7209b7;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
+    .rule { border-bottom: 2px solid #C8932B; height: 1px; font-size: 1px; margin: 4px 0 12px 0; }
 
-        .info-section {
-            width: 100%;
-            margin-bottom: 30px;
-        }
+    /* Title band */
+    .band { width: 100%; margin-bottom: 10px; }
+    .band td { vertical-align: top; }
+    .billto-label { color: #8a8f98; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; }
+    .cust-name { font-size: 12pt; font-weight: bold; color: #1f2a37; margin-top: 2px; }
+    .cust-line { font-size: 9pt; color: #555; }
 
-        .info-section td {
-            vertical-align: top;
-            width: 50%;
-        }
+    .doc-title { font-size: 22pt; font-weight: bold; color: #1f2a37; text-transform: uppercase;
+                 border-left: 5px solid #C8932B; padding-left: 8px; }
+    .orig { font-size: 8pt; color: #8a8f98; text-transform: uppercase; letter-spacing: 1px; text-align: right; }
 
-        .label {
-            font-weight: bold;
-            color: #666;
-            font-size: 0.9em;
-            text-transform: uppercase;
-        }
+    .meta { width: 100%; margin-top: 10px; }
+    .meta td { padding: 2px 0; font-size: 9pt; }
+    .meta .m-l { color: #6b7280; }
+    .meta .m-v { text-align: right; font-weight: bold; color: #1f2a37; }
 
-        .value {
-            font-size: 1.1em;
-            margin-bottom: 10px;
-        }
+    .tinband { width: 100%; margin-top: 8px; background-color: #f3f1ea; }
+    .tinband td { padding: 5px 8px; font-size: 8.5pt; font-weight: bold; color: #1f2a37; }
 
-        table.items {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-        }
+    /* Logistics strip */
+    .strip { width: 100%; margin-top: 6px; }
+    .strip td { font-size: 8.5pt; color: #8a8f98; padding-bottom: 3px; }
 
-        table.items th {
-            background-color: #f3e5f5;
-            border-bottom: 2px solid #dee2e6;
-            padding: 12px;
-            text-align: left;
-            color: #7209b7;
-        }
+    /* Items */
+    .items { width: 100%; margin-top: 2px; }
+    .items th { background-color: #1f2a37; color: #fff; font-size: 8.5pt; text-transform: uppercase;
+                padding: 7px 8px; text-align: left; }
+    .items td { padding: 7px 8px; font-size: 9pt; border-bottom: 1px solid #e7e4db; }
+    .r { text-align: right; }
+    .c { text-align: center; }
+    .fill { border-bottom: 1px solid #9aa1ab; }
 
-        table.items td {
-            padding: 12px;
-            border-bottom: 1px solid #eee;
-        }
+    /* Logistics box */
+    .logbox { width: 100%; margin-top: 12px; background-color: #f3f1ea; }
+    .logbox td { padding: 8px 10px; vertical-align: top; }
+    .log-label { color: #8a8f98; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1px; }
+    .log-val { font-size: 9.5pt; font-weight: bold; color: #1f2a37; margin-top: 2px; }
 
-        .logistics-box {
-            background-color: #f8f9fa;
-            border: 1px solid #eee;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-        }
+    /* Receipt confirmation */
+    .confirm { margin-top: 18px; font-size: 9pt; }
+    .confirm-label { border-left: 4px solid #C8932B; padding-left: 6px; font-weight: bold; color: #1f2a37; }
+    .confirm-note { font-size: 8.5pt; color: #6b7280; margin: 4px 0 0 0; }
 
-        .footer {
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            text-align: center;
-            font-size: 0.8em;
-            color: #999;
-            border-top: 1px solid #eee;
-            padding-top: 10px;
-        }
-    </style>
+    /* Footer signatures */
+    .sign { width: 100%; margin-top: 26px; }
+    .sign td { font-size: 8.5pt; color: #6b7280; vertical-align: bottom; padding-top: 26px; }
+    .sign .ln { border-top: 1px solid #9aa1ab; width: 80%; padding-top: 3px; }
+
+    .branches { margin-top: 14px; border-top: 1px solid #e7e4db; padding-top: 6px;
+                font-size: 8pt; color: #6b7280; text-align: center; }
+    .stamp { text-align: center; margin-top: 10px; }
+    .approved-badge { display: inline-block; border: 2px solid #15803d; color: #15803d;
+                      font-weight: bold; font-size: 12pt; letter-spacing: 2px;
+                      padding: 6px 18px; }
+</style>
 </head>
-
 <body>
-    <div class="header">
-        <h1>DELIVERY NOTE</h1>
-        <p>Umoja Hardware System Logistics</p>
-    </div>
 
-    <table class="info-section">
+    <!-- HEADER -->
+    <table class="hdr">
         <tr>
-            <td>
-                <div class="label">Ship To:</div>
-                <div class="value">
-                    <strong>{{ sale.customer_name }}</strong><br>
-                    {% if sale.customer %}
-                    {{ sale.customer.phone }}<br>
-                    {{ sale.customer.address }}
-                    {% endif %}
-                </div>
+            <td width="42%">
+                {% if company.logo_url %}
+                <img src="{{ company.logo_url }}" class="logo" alt="logo">
+                {% else %}
+                <div class="co-name">{{ company.name }}</div>
+                {% endif %}
             </td>
-            <td style="text-align: right;">
-                <div class="label">Invoice Ref:</div>
-                <div class="value">#{{ sale.invoice_number }}</div>
-                <div class="label">Dispatch Date:</div>
-                <div class="value">{% now "D, d M Y" %}</div>
+            <td width="58%" class="co-contact" style="text-align: right;">
+                <span class="co-name">{{ company.name }}</span><br>
+                {% if company.address %}{{ company.address|linebreaksbr }}<br>{% endif %}
+                {% if company.phone %}Tel: {{ company.phone }}<br>{% endif %}
+                {% if company.email %}{{ company.email }}{% if company.website %} &nbsp;|&nbsp; {% endif %}{% endif %}{% if company.website %}{{ company.website }}{% endif %}
+            </td>
+        </tr>
+    </table>
+    <div class="rule"></div>
+
+    <!-- TITLE BAND -->
+    <table class="band">
+        <tr>
+            <td width="50%">
+                <div class="billto-label">{{ doc.recipient_label|default:"Ship To" }}</div>
+                <div class="cust-name">{{ customer.name|default:"Walk-in Customer" }}</div>
+                {% if customer.phone %}<div class="cust-line">{{ customer.phone }}</div>{% endif %}
+                {% if customer.address %}<div class="cust-line">{{ customer.address }}</div>{% endif %}
+                <div class="cust-line">TANZANIA</div>
+            </td>
+            <td width="50%">
+                <div class="orig">Original</div>
+                <div class="doc-title">{{ doc.type }}</div>
+                <table class="meta">
+                    <tr><td class="m-l">{{ doc.number_label }}</td><td class="m-v">{{ doc.number }}</td></tr>
+                    {% if doc.invoice_ref %}<tr><td class="m-l">Invoice Ref</td><td class="m-v">{{ doc.invoice_ref }}</td></tr>{% endif %}
+                    <tr><td class="m-l">Dispatch Date</td><td class="m-v">{{ doc.date|date:'d.m.Y' }}</td></tr>
+                    <tr><td class="m-l">Page</td><td class="m-v">{{ doc.page }}</td></tr>
+                    <tr><td class="m-l">Branch</td><td class="m-v">{{ doc.branch }}</td></tr>
+                    <tr><td class="m-l">Our Contact</td><td class="m-v">{{ doc.contact }}</td></tr>
+                </table>
             </td>
         </tr>
     </table>
 
-    <div class="logistics-box">
-        <table style="width: 100%;">
-            <tr>
-                <td>
-                    <div class="label">Lorry/Vehicle Info:</div>
-                    <div class="value"><strong>{{ sale.lorry_info }}</strong></div>
-                </td>
-                <td>
-                    <div class="label">Assigned Store Keeper:</div>
-                    <div class="value"><strong>{{ sale.store_keeper.get_full_name|default:sale.store_keeper.username
-                            }}</strong></div>
-                </td>
-                <td>
-                    <div class="label">Total Load Weight:</div>
-                    <div class="value"><strong>{{ sale.total_weight|floatformat:2 }} kg</strong></div>
-                </td>
-            </tr>
-        </table>
-    </div>
+    <!-- LOGISTICS -->
+    <table class="logbox">
+        <tr>
+            <td width="38%">
+                <div class="log-label">Lorry / Vehicle Info</div>
+                <div class="log-val">{{ doc.lorry_info|default:"—" }}</div>
+            </td>
+            <td width="38%">
+                <div class="log-label">Assigned Store Keeper</div>
+                <div class="log-val">{{ doc.store_keeper|default:"—" }}</div>
+            </td>
+            <td width="24%">
+                <div class="log-label">Total Load Weight</div>
+                <div class="log-val">{{ doc.total_weight|floatformat:2 }} kg</div>
+            </td>
+        </tr>
+    </table>
 
-    <table class="items">
+    <!-- ITEMS -->
+    <table class="items" style="margin-top: 12px;">
         <thead>
             <tr>
-                <th>Product Description</th>
-                <th style="text-align: center;">Ordered Qty</th>
-                <th style="text-align: center;">Delivered Qty</th>
-                <th>Remarks</th>
+                <th width="14%">Code</th>
+                <th width="40%">Description</th>
+                <th width="14%" class="r">Ordered Qty</th>
+                <th width="16%" class="c">Delivered Qty</th>
+                <th width="16%">Remarks</th>
             </tr>
         </thead>
         <tbody>
-            {% for item in sale.items.all %}
+            {% for it in items %}
             <tr>
-                <td style="width: 50%;">{{ item.product.name }}</td>
-                <td style="text-align: center; width: 15%;">{{ item.quantity }}</td>
-                <td style="text-align: center; width: 15%; border-bottom: 1px solid #333;"></td>
-                <td></td>
+                <td>{{ it.code }}</td>
+                <td>{{ it.description }}</td>
+                <td class="r">{{ it.qty|floatformat:0|intcomma }}</td>
+                <td class="c fill">&nbsp;</td>
+                <td class="fill">&nbsp;</td>
             </tr>
+            {% empty %}
+            <tr><td colspan="5" style="text-align:center; color:#9aa1ab;">No items</td></tr>
             {% endfor %}
         </tbody>
     </table>
 
-    <div style="margin-top: 50px;">
-        <div class="label">Confirmation of Receipt:</div>
-        <p class="small">I hereby confirm that the goods listed above have been received in good condition.</p>
-        <table style="width: 100%; margin-top: 30px;">
-            <tr>
-                <td style="width: 50%;">
-                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 200px;"></div>
-                    <div class="small">Receiver's Name & Signature</div>
-                </td>
-                <td style="width: 50%; text-align: right;">
-                    <div style="border-top: 1px solid #333; margin-top: 20px; width: 200px; margin-left: auto;"></div>
-                    <div class="small">Date Received</div>
-                </td>
-            </tr>
-        </table>
+    {% if doc.status == 'approved' or doc.status == 'dispatched' %}
+    <div class="stamp">
+        <span class="approved-badge">DISPATCHED &nbsp;&middot;&nbsp; {{ doc.date|date:'d M Y'|upper }}</span>
+    </div>
+    {% endif %}
+
+    <!-- RECEIPT CONFIRMATION -->
+    <div class="confirm">
+        <span class="confirm-label">Confirmation of Receipt</span>
+        <p class="confirm-note">I hereby confirm that the goods listed above have been received in good condition.</p>
     </div>
 
-    <div class="footer">
-        Umoja Hardware System - Building the Future Together. <br>
-        For inquiries regarding this delivery, please contact our logistics department.
-    </div>
+    <table class="sign">
+        <tr>
+            <td width="40%">Delivered By<div class="ln">{{ doc.contact }}</div></td>
+            <td width="35%">Received By (Name &amp; Signature)<div class="ln">&nbsp;</div></td>
+            <td width="25%">Date Received<div class="ln">&nbsp;</div></td>
+        </tr>
+    </table>
+
+    {% if company.branches %}
+    <div class="branches">We are also at : {{ company.branches }}</div>
+    {% endif %}
+
 </body>
-
 </html>

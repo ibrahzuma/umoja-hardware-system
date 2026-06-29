@@ -120,15 +120,19 @@
 
         users.forEach(u => {
             const tr = document.createElement('tr');
-            // Role display: check if role_name exists (from serializer) or fallback to role field
-            // The filter uses the displayed text
-            const displayRole = u.role_name || u.role || 'No Role';
+            // A user can have several roles (groups). Render one badge each.
+            const roleList = (u.role_names && u.role_names.length)
+                ? u.role_names
+                : (u.role ? [u.role] : []);
+            const roleBadges = roleList.length
+                ? roleList.map(r => `<span class="badge bg-info text-dark me-1 mb-1">${r}</span>`).join('')
+                : '<span class="badge bg-light text-muted border">No Role</span>';
             const displayBranch = u.branch_name || 'All';
 
             tr.innerHTML = `
                 <td class="ps-4 fw-bold">${u.username}</td>
                 <td>${u.email || '-'}</td>
-                <td><span class="badge bg-info text-dark">${displayRole}</span></td>
+                <td>${roleBadges}</td>
                 <td>${displayBranch}</td>
                 <td><span class="badge bg-success">Active</span></td>
                 <td>
@@ -152,11 +156,12 @@
         const filtered = allUsers.filter(u => {
             const uName = (u.username || '').toLowerCase();
             const uEmail = (u.email || '').toLowerCase();
-            const uRole = (u.role_name || u.role || '').toLowerCase();
+            const uRoles = ((u.role_names && u.role_names.length ? u.role_names : [u.role || ''])
+                .join(' ')).toLowerCase();
             const uBranch = (u.branch_name || '').toLowerCase();
 
             const matchesTerm = uName.includes(term) || uEmail.includes(term);
-            const matchesRole = role ? uRole.includes(role) : true;
+            const matchesRole = role ? uRoles.includes(role) : true;
             const matchesBranch = branch ? uBranch.includes(branch) : true;
 
             return matchesTerm && matchesRole && matchesBranch;

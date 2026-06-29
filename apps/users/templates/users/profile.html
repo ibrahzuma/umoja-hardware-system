@@ -24,7 +24,11 @@
                         <div class="col-md-4 text-center mb-3">
                             <div class="display-1 text-secondary"><i class="bi bi-person-circle"></i></div>
                             <h5 class="mt-2">{{ user.username }}</h5>
+                            {% for g in user.groups.all %}
+                            <span class="badge bg-secondary mb-1">{{ g.name }}</span>
+                            {% empty %}
                             <span class="badge bg-secondary">{{ user.get_role_display }}</span>
+                            {% endfor %}
                         </div>
                         <div class="col-md-8">
                             <div class="mb-3">

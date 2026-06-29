@@ -57,11 +57,12 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add New Truck</h5>
+                <h5 class="modal-title" id="truckModalTitle">Add New Truck</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="truckForm">
+                    <input type="hidden" id="truckId">
                     <div class="mb-3">
                         <label class="form-label">Registration Number</label>
                         <input type="text" class="form-control" id="regNum" required placeholder="e.g. T 123 ABC">
@@ -73,6 +74,14 @@
                     <div class="mb-3">
                         <label class="form-label">Capacity</label>
                         <input type="text" class="form-control" id="capacity" placeholder="e.g. 10 Tons">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="truckStatus">
+                            <option value="available">Available</option>
+                            <option value="in_transit">In Transit</option>
+                            <option value="maintenance">Maintenance</option>
+                        </select>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">Save Truck</button>
@@ -178,9 +187,17 @@
                 <li class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
                         <div class="fw-bold">${t.registration_number}</div>
-                        <small class="text-muted">${t.driver_name}</small>
+                        <small class="text-muted">${t.driver_name || '—'}${t.capacity ? ' · ' + t.capacity : ''}</small>
                     </div>
-                    <span class="badge bg-${badge} rounded-pill">${t.status.replace('_', ' ')}</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-${badge} rounded-pill text-capitalize">${t.status.replace('_', ' ')}</span>
+                        <button class="btn btn-sm btn-outline-primary" title="Edit" onclick='editTruck(${JSON.stringify(t)})'>
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteTruck(${t.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
                 </li>
             `;
         });
@@ -202,7 +219,7 @@
                 <td>${a.po_ref || '-'}</td>
                 <td>${new Date(a.start_date).toLocaleString()}</td>
                  <td>
-                    <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteAllocation(${a.id})"><i class="bi bi-trash"></i></button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -226,22 +243,58 @@
         });
     }
 
-    function openTruckModal() { truckModal.show(); }
+    function openTruckModal() {
+        document.getElementById('truckForm').reset();
+        document.getElementById('truckId').value = '';
+        document.getElementById('truckModalTitle').innerText = 'Add New Truck';
+        truckModal.show();
+    }
     function openAllocModal() {
         populateSelects(); // refresh available trucks
         allocModal.show();
     }
 
+    function editTruck(t) {
+        document.getElementById('truckId').value = t.id;
+        document.getElementById('regNum').value = t.registration_number;
+        document.getElementById('driverName').value = t.driver_name || '';
+        document.getElementById('capacity').value = t.capacity || '';
+        document.getElementById('truckStatus').value = t.status || 'available';
+        document.getElementById('truckModalTitle').innerText = 'Edit Truck';
+        truckModal.show();
+    }
+
+    async function deleteTruck(id) {
+        if (!await Swal.fire({ title: 'Delete truck?', text: 'This also removes its allocations and cost records.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Yes, delete' }).then(r => r.isConfirmed)) return;
+        try {
+            const res = await fetch(`/api/trucks/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) { Swal.fire('Deleted', 'Truck removed.', 'success'); loadData(); }
+            else { Swal.fire('Error', res.status === 403 ? "You don't have permission to do this." : 'Failed to delete truck.', 'error'); }
+        } catch (e) { console.error(e); Swal.fire('Error', 'Network error — please try again.', 'error'); }
+    }
+
+    async function deleteAllocation(id) {
+        if (!await Swal.fire({ title: 'Remove allocation?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Yes, remove' }).then(r => r.isConfirmed)) return;
+        try {
+            const res = await fetch(`/api/truck-allocations/${id}/`, { method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+            if (res.ok) { Swal.fire('Removed', 'Allocation removed.', 'success'); loadData(); }
+            else { Swal.fire('Error', res.status === 403 ? "You don't have permission to do this." : 'Failed to remove allocation.', 'error'); }
+        } catch (e) { console.error(e); Swal.fire('Error', 'Network error — please try again.', 'error'); }
+    }
+
     async function handleTruckSubmit(e) {
         e.preventDefault();
+        const id = document.getElementById('truckId').value;
         const data = {
             registration_number: document.getElementById('regNum').value,
             driver_name: document.getElementById('driverName').value,
             capacity: document.getElementById('capacity').value,
-            status: 'available'
+            status: document.getElementById('truckStatus').value
         };
 
-        await postData('/api/trucks/', data, truckModal, 'Truck added');
+        const url = id ? `/api/trucks/${id}/` : '/api/trucks/';
+        const method = id ? 'PUT' : 'POST';
+        await sendData(url, data, truckModal, id ? 'Truck updated' : 'Truck added', method);
     }
 
     async function handleAllocSubmit(e) {
@@ -254,16 +307,16 @@
             notes: document.getElementById('notes').value
         };
 
-        await postData('/api/truck-allocations/', data, allocModal, 'Allocation created');
+        await sendData('/api/truck-allocations/', data, allocModal, 'Allocation created');
 
         // Also update truck status to in_transit
         // Ideally backend does this via signal, but for now just refresh
     }
 
-    async function postData(url, data, modalInstance, successMsg) {
+    async function sendData(url, data, modalInstance, successMsg, method = 'POST') {
         try {
             const res = await fetch(url, {
-                method: 'POST',
+                method: method,
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                 body: JSON.stringify(data)
             });
