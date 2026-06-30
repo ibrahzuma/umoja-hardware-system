@@ -106,9 +106,13 @@ class SaleViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         status = self.request.query_params.get('status')
         if status == 'credit':
-            from django.db.models import Sum, F, Coalesce
+            from django.db.models import Sum, F, DecimalField
+            from django.db.models.functions import Coalesce
             queryset = queryset.annotate(
-                total_paid=Coalesce(Sum('transactions__amount'), 0.0)
+                total_paid=Coalesce(
+                    Sum('transactions__amount'), 0,
+                    output_field=DecimalField(max_digits=12, decimal_places=2),
+                )
             ).filter(total_paid__lt=F('total_amount'))
         return queryset
 
@@ -258,6 +262,8 @@ class SaleViewSet(viewsets.ModelViewSet):
             'total': it.subtotal,
         } for it in sale.items.all()]
         subtotal_ex, tax_amount, total = _money_breakdown(sale.total_amount, tax_rate)
+        discount = float(sale.discount or 0)
+        gross_subtotal = float((sale.total_amount or 0) + (sale.discount or 0))
         ctx = {
             'doc': {
                 'type': 'TAX INVOICE', 'number_label': 'Invoice No.',
@@ -280,6 +286,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             'items': items, 'currency': currency,
             'subtotal_ex': subtotal_ex, 'tax_rate': tax_rate,
             'tax_amount': tax_amount, 'total': total,
+            'discount': discount, 'gross_subtotal': gross_subtotal,
             'amount_words': _amount_in_words(total, currency),
         }
         return render_to_pdf('sales/pdf_document.html', ctx)

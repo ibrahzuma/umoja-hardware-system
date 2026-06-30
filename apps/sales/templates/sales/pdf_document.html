@@ -184,8 +184,13 @@
             <td width="40%">&nbsp;</td>
             <td width="60%">
                 <table class="totals">
+                    {% if discount %}
+                    <tr><td class="t-l">Subtotal</td><td class="t-v">{{ currency }} {{ gross_subtotal|floatformat:0|intcomma }}</td></tr>
+                    <tr><td class="t-l">Discount</td><td class="t-v">- {{ currency }} {{ discount|floatformat:0|intcomma }}</td></tr>
+                    {% else %}
                     <tr><td class="t-l">Order Subtotal</td><td class="t-v">{{ currency }} {{ subtotal_ex|floatformat:0|intcomma }}</td></tr>
                     <tr><td class="t-l">Total Before Tax</td><td class="t-v">{{ currency }} {{ subtotal_ex|floatformat:0|intcomma }}</td></tr>
+                    {% endif %}
                     <tr><td class="t-l">Total Tax ({{ tax_rate|floatformat:0 }}% VAT)</td><td class="t-v">{{ currency }} {{ tax_amount|floatformat:0|intcomma }}</td></tr>
                     <tr class="grand"><td class="t-l">Total Amount</td><td class="t-v">{{ currency }} {{ total|floatformat:0|intcomma }}</td></tr>
                 </table>

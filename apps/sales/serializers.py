@@ -44,10 +44,10 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = [
-            'id', 'invoice_number', 'status', 'branch', 'user', 'created_by_name', 'customer_name', 
-            'total_amount', 'total_weight', 'created_at', 'items', 'items_response', 'payment_details', 
-            'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name', 
-            'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper', 
+            'id', 'invoice_number', 'status', 'branch', 'user', 'created_by_name', 'customer_name',
+            'total_amount', 'discount', 'total_weight', 'created_at', 'items', 'items_response', 'payment_details',
+            'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name',
+            'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper',
             'store_keeper_name', 'lorry_info', 'vehicle', 'vehicle_details'
         ]
         read_only_fields = ('total_amount', 'invoice_number', 'amount_paid', 'balance', 'payment_status', 'status', 'approved_at')
@@ -80,19 +80,26 @@ class SaleSerializer(serializers.ModelSerializer):
         validated_data['status'] = 'pending'
         
         sale = Sale.objects.create(**validated_data)
-        
+
         # Handle Subtotals ONLY (No stock deduction here anymore)
         total = Decimal('0.00')
         for item in items_data:
             product = Product.objects.get(id=item['product'])
             qty = int(item['quantity'])
             price = Decimal(str(item.get('price_at_sale', product.price)))
-            
+
             subtotal = price * qty
             SaleItem.objects.create(sale=sale, product=product, quantity=qty, price_at_sale=price, subtotal=subtotal)
             total += subtotal
-            
-        sale.total_amount = total
+
+        # Apply the flat discount (never below zero).
+        discount = Decimal(str(sale.discount or '0.00'))
+        if discount < 0:
+            discount = Decimal('0.00')
+        if discount > total:
+            discount = total
+        sale.discount = discount
+        sale.total_amount = total - discount
         sale.save()
 
         # Handle Payment

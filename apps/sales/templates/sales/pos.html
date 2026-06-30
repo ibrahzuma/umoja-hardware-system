@@ -63,9 +63,13 @@
                     <span class="text-muted">Subtotal</span>
                     <span class="fw-bold" id="cartSubtotal">TZS 0</span>
                 </div>
-                <div class="d-flex justify-content-between mb-3">
-                    <span class="text-muted">Tax (0%)</span> <!-- Configurable later -->
-                    <span class="fw-bold">TZS 0</span>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted">Discount</span>
+                    <div class="input-group input-group-sm" style="width: 150px;">
+                        <span class="input-group-text">TZS</span>
+                        <input type="number" min="0" step="1" value="0" id="cartDiscount"
+                            class="form-control text-end" inputmode="numeric">
+                    </div>
                 </div>
                 <div class="d-flex justify-content-between mb-4">
                     <span class="h5 fw-bold text-dark">Total</span>
@@ -193,7 +197,23 @@
             clearCart();
         });
         document.getElementById('paymentForm').addEventListener('submit', processSale);
+        document.getElementById('cartDiscount').addEventListener('input', updateCartUI);
     });
+
+    // --- Money helpers (subtotal / discount / total) ---
+    function getSubtotal() {
+        return cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+    }
+    function getDiscount() {
+        const el = document.getElementById('cartDiscount');
+        let d = Math.max(0, parseFloat(el && el.value) || 0);
+        const sub = getSubtotal();
+        if (d > sub) d = sub;   // never discount below zero
+        return d;
+    }
+    function getTotal() {
+        return Math.max(0, getSubtotal() - getDiscount());
+    }
 
     // --- Data Fetching ---
     async function fetchInitialData() {
@@ -315,15 +335,11 @@
         const existingItem = cart.find(i => i.id === productId);
         const currentQty = existingItem ? existingItem.qty : 0;
 
+        // Out-of-stock / over-stock items are allowed as back-orders — stock is
+        // only deducted at dispatch, which re-checks availability. Just warn.
         if (currentQty + 1 > available) {
-            const Toast = Swal.mixin({
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 2000
-            });
-            Toast.fire({ icon: 'error', title: 'Insufficient Stock' });
-            return;
+            Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2200 })
+                .fire({ icon: 'warning', title: available > 0 ? 'Exceeds stock — added as back-order' : 'Out of stock — added as back-order' });
         }
 
         if (existingItem) {
@@ -382,7 +398,7 @@
         }
 
         document.getElementById('cartSubtotal').innerText = 'TZS ' + Math.round(Number(subtotal)).toLocaleString();
-        document.getElementById('cartTotal').innerText = 'TZS ' + Math.round(Number(subtotal)).toLocaleString();
+        document.getElementById('cartTotal').innerText = 'TZS ' + Math.round(getTotal()).toLocaleString();
     }
 
     function updateQty(id, delta) {
@@ -392,10 +408,10 @@
         const newQty = item.qty + delta;
         if (newQty <= 0) {
             cart = cart.filter(i => i.id !== id);
-        } else if (newQty > item.max) {
-            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: 'Max stock reached', timer: 1500, showConfirmButton: false });
-            return;
         } else {
+            if (newQty > item.max) {
+                Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: 'Beyond available stock (back-order)', timer: 1500, showConfirmButton: false });
+            }
             item.qty = newQty;
         }
         updateCartUI();
@@ -403,6 +419,8 @@
 
     function clearCart() {
         cart = [];
+        const disc = document.getElementById('cartDiscount');
+        if (disc) disc.value = 0;
         updateCartUI();
     }
 
@@ -421,9 +439,7 @@
 
     // --- Checkout ---
     function showPaymentModal() {
-        // Recalculate total
-        const total = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
-        document.getElementById('modalTotal').innerText = 'TZS ' + Math.round(Number(total)).toLocaleString();
+        document.getElementById('modalTotal').innerText = 'TZS ' + Math.round(getTotal()).toLocaleString();
         paymentModal.show();
     }
 
@@ -438,18 +454,21 @@
             return;
         }
 
+        const method = document.querySelector('input[name="payment_method"]:checked').value;
+        const total = getTotal();
         const saleData = {
             branch: currentBranch,
             customer: custSelect.value || null,
             customer_name: selectedOption ? selectedOption.text : "Walk-in Customer",
+            discount: getDiscount(),
             items: cart.map(i => ({
                 product: i.id,
                 quantity: i.qty,
                 price_at_sale: i.price
             })),
             payment_details: {
-                method: document.querySelector('input[name="payment_method"]:checked').value,
-                amount: document.querySelector('input[name="payment_method"]:checked').value === 'credit' ? 0 : cart.reduce((acc, item) => acc + (item.price * item.qty), 0)
+                method: method,
+                amount: method === 'credit' ? 0 : total
             }
         };
 

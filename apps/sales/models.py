@@ -65,6 +65,8 @@ class Sale(models.Model):
     customer_name = models.CharField(max_length=100, blank=True, default="Walk-in Customer")
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00,
+                                   help_text="Flat discount applied to this sale")
     created_at = models.DateTimeField(auto_now_add=True)
     history = HistoricalRecords()
 
