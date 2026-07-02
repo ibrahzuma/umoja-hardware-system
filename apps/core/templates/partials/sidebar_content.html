@@ -209,6 +209,7 @@
         </a>
         <ul class="collapse list-unstyled" id="storeManagerSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Daily Operations</a></li>
+            <li><a href="{% url 'inventory:po_cross_check' %}"><i class="bi bi-clipboard-check"></i> Deliveries to Verify</a></li>
             <li><a href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck"></i> Dispatch Board</a></li>
             <li><a href="{% url 'inventory:inventory_transfer' %}"><i class="bi bi-arrow-left-right"></i> Stock Transfer</a></li>
             <li><a href="{% url 'inventory:driver_list' %}"><i class="bi bi-person-badge"></i> Drivers</a></li>

@@ -15,7 +15,7 @@ from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet,
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
-from apps.core.api_views import ActivityViewSet
+from apps.core.api_views import ActivityViewSet, NotificationViewSet
 from apps.hr.views import (
     DepartmentViewSet, JobPositionViewSet, EmployeeViewSet, LeaveTypeViewSet,
     LeaveRequestViewSet, AttendanceRecordViewSet, PayrollPeriodViewSet,
@@ -25,6 +25,7 @@ from apps.hr.views import (
 
 router = DefaultRouter()
 router.register(r'activities', ActivityViewSet)
+router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'branches', BranchViewSet)
 router.register(r'categories', CategoryViewSet)
 router.register(r'products', ProductViewSet)

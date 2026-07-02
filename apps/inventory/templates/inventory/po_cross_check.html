@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Store Manager</div>
+        <h2>Deliveries to Verify</h2>
+        <p class="subtitle">Cross-check delivered goods against what was ordered.</p>
+    </div>
+    <button class="btn btn-secondary" onclick="loadPOs()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="poContainer">
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border text-primary"></div>
+        <p class="mt-2">Loading confirmed orders…</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', loadPOs);
+
+    async function loadPOs() {
+        const box = document.getElementById('poContainer');
+        try {
+            const res = await fetch('/api/purchase-orders/');
+            const data = await res.json();
+            const pos = (Array.isArray(data) ? data : data.results).filter(p => p.status === 'awaiting_check');
+            box.innerHTML = '';
+
+            if (!pos.length) {
+                box.innerHTML = `<div class="card shadow-sm"><div class="card-body text-center text-muted py-5">
+                    <i class="bi bi-check2-circle display-4 text-success opacity-50"></i>
+                    <p class="mt-3 mb-0">No deliveries waiting for verification.</p></div></div>`;
+                return;
+            }
+
+            pos.forEach(po => box.appendChild(renderPOCard(po)));
+        } catch (e) {
+            console.error(e);
+            box.innerHTML = '<div class="alert alert-danger">Failed to load orders.</div>';
+        }
+    }
+
+    function renderPOCard(po) {
+        const wrap = document.createElement('div');
+        wrap.className = 'card shadow-sm mb-4';
+        const rows = (po.items || []).map(it => `
+            <tr>
+                <td>${it.product_name || it.product}</td>
+                <td class="text-center fw-semibold">${it.quantity}</td>
+                <td style="width:140px;">
+                    <input type="number" min="0" class="form-control form-control-sm delivered-input text-center"
+                        data-item="${it.id}" data-ordered="${it.quantity}" value="${it.quantity}">
+                </td>
+            </tr>`).join('');
+
+        wrap.innerHTML = `
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="fw-bold">PO-${String(po.id).padStart(5, '0')}</span>
+                    <span class="text-muted ms-2">${po.supplier_name || '—'} · ${po.branch_name || ''}</span>
+                </div>
+                <span class="badge bg-info-subtle text-info">Awaiting cross-check</span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-3">
+                        <thead class="text-muted small text-uppercase">
+                            <tr><th>Product</th><th class="text-center">Ordered</th><th class="text-center">Delivered</th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Note (optional)</label>
+                    <textarea class="form-control store-note" rows="2" placeholder="Any remarks about this delivery…"></textarea>
+                </div>
+                <div class="d-flex justify-content-end">
+                    <button class="btn btn-primary" onclick="submitCheck(${po.id}, this)">
+                        <i class="bi bi-clipboard-check"></i> Save Cross-check
+                    </button>
+                </div>
+            </div>`;
+        return wrap;
+    }
+
+    async function submitCheck(poId, btn) {
+        const card = btn.closest('.card');
+        const items = Array.from(card.querySelectorAll('.delivered-input')).map(inp => ({
+            item: parseInt(inp.dataset.item),
+            delivered_quantity: Math.max(0, parseInt(inp.value) || 0)
+        }));
+        const store_note = card.querySelector('.store-note').value;
+
+        // Warn if any mismatch before submitting
+        const mismatch = Array.from(card.querySelectorAll('.delivered-input'))
+            .some(inp => (parseInt(inp.value) || 0) !== parseInt(inp.dataset.ordered));
+        if (mismatch) {
+            const ok = await Swal.fire({
+                icon: 'warning', title: 'Delivery does not match order',
+                text: 'This will flag a discrepancy and notify Afisa Ugavi to comment. Continue?',
+                showCancelButton: true, confirmButtonText: 'Yes, flag discrepancy'
+            }).then(r => r.isConfirmed);
+            if (!ok) return;
+        }
+
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/purchase-orders/${poId}/cross_check/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ items, store_note })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                Swal.fire({
+                    icon: data.has_discrepancy ? 'warning' : 'success',
+                    title: data.has_discrepancy ? 'Discrepancy flagged' : 'Delivery verified',
+                    text: data.detail, timer: 2600, showConfirmButton: false
+                });
+                loadPOs();
+            } else {
+                btn.disabled = false;
+                Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed to save.'), 'error');
+            }
+        } catch (e) {
+            btn.disabled = false;
+            Swal.fire('Error', 'Network error — please try again.', 'error');
+        }
+    }
+</script>
+{% endblock %}

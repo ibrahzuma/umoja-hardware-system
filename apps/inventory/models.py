@@ -103,6 +103,8 @@ class PurchaseOrder(models.Model):
     STATUS_CHOICES = (
         ('draft', 'Draft'),
         ('sent', 'Sent'),
+        ('awaiting_check', 'Awaiting Store Check'),
+        ('discrepancy', 'Discrepancy'),
         ('received', 'Received'),
         ('cancelled', 'Cancelled'),
     )
@@ -114,6 +116,14 @@ class PurchaseOrder(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Store Manager cross-check (delivered vs ordered)
+    checked_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='checked_purchase_orders')
+    checked_at = models.DateTimeField(null=True, blank=True)
+    has_discrepancy = models.BooleanField(default=False)
+    store_note = models.TextField(blank=True, help_text="Store Manager's note during cross-check")
+    afisa_comment = models.TextField(blank=True, help_text="Afisa Ugavi's explanation for a discrepancy")
 
     def __str__(self):
         return f"PO #{self.id} - {self.supplier}"
@@ -128,6 +138,8 @@ class PurchaseOrderItem(models.Model):
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    delivered_quantity = models.PositiveIntegerField(null=True, blank=True,
+                                                     help_text="Quantity actually delivered (set at store cross-check)")
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='pcs')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
     total_cost = models.DecimalField(max_digits=12, decimal_places=2)

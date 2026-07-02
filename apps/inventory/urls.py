@@ -55,6 +55,7 @@ urlpatterns = [
 
     path('purchase-orders/', views.PurchaseOrderListView.as_view(), name='purchase_order_list'),
     path('purchase-orders/create/', views.PurchaseOrderCreateView.as_view(), name='purchase_order_create'),
+    path('deliveries/verify/', views.PurchaseOrderCheckView.as_view(), name='po_cross_check'),
 
     path('grns/', views.GRNListView.as_view(), name='grn_list'),
     path('grns/create/', views.GRNCreateView.as_view(), name='grn_create'),

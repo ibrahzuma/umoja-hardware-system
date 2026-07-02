@@ -15,6 +15,24 @@ class SystemActivity(models.Model):
     def __str__(self):
         return f"{self.activity_type}: {self.description[:30]}"
 
+
+class Notification(models.Model):
+    """A per-user inbox item. Created via apps.core.notify.notify()."""
+    LEVELS = (('info', 'Info'), ('success', 'Success'), ('warning', 'Warning'), ('danger', 'Danger'))
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=150)
+    message = models.TextField(blank=True)
+    url = models.CharField(max_length=300, blank=True, help_text="Where clicking the notification takes the user")
+    level = models.CharField(max_length=10, choices=LEVELS, default='info')
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.recipient}: {self.title}"
+
 class SystemSettings(models.Model):
     company_name = models.CharField(max_length=100, default="Umoja Hardware")
     currency = models.CharField(max_length=10, default="TZS")

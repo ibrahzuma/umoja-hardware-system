@@ -72,10 +72,22 @@
                 </div>
 
                 <div class="d-flex align-items-center gap-2">
-                    <a href="#" class="topbar-icon-btn" aria-label="Notifications" title="Notifications">
-                        <i class="bi bi-bell"></i>
-                        <span class="badge" id="notification-badge">0</span>
-                    </a>
+                    <div class="dropdown">
+                        <button type="button" class="topbar-icon-btn" aria-label="Notifications" title="Notifications"
+                            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="notifBell">
+                            <i class="bi bi-bell"></i>
+                            <span class="badge" id="notification-badge" style="display:none;">0</span>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end shadow" style="width: 340px; max-width: 92vw;" aria-labelledby="notifBell">
+                            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+                                <span class="fw-semibold">Notifications</span>
+                                <a href="javascript:void(0)" class="small text-decoration-none" id="notifMarkAll">Mark all read</a>
+                            </div>
+                            <div id="notifList" style="max-height: 360px; overflow-y: auto;">
+                                <div class="text-center text-muted py-4 small">Loading…</div>
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="dropdown">
                         <button class="topbar-profile" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="navbarDropdown">

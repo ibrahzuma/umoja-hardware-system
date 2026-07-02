@@ -62,29 +62,39 @@
             return;
         }
 
+        const BADGE = { draft: 'secondary', sent: 'info', awaiting_check: 'warning',
+                        discrepancy: 'danger', received: 'success', cancelled: 'dark' };
+        const LABEL = { draft: 'Draft', sent: 'Sent', awaiting_check: 'Awaiting Store Check',
+                        discrepancy: 'Discrepancy', received: 'Received', cancelled: 'Cancelled' };
+
         data.forEach(po => {
             const tr = document.createElement('tr');
+            const badge = BADGE[po.status] || 'secondary';
+            const label = LABEL[po.status] || po.status.toUpperCase();
 
-            let statusBadge = 'secondary';
-            if (po.status === 'received') statusBadge = 'success';
-            else if (po.status === 'sent') statusBadge = 'info';
-            else if (po.status === 'cancelled') statusBadge = 'danger';
+            let actions = `
+                <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${po.id})"><i class="bi bi-eye"></i></button>
+                <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${po.id}/pdf/" target="_blank" rel="noopener" title="Download PO PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>`;
+
+            if (po.status === 'draft' || po.status === 'sent') {
+                actions += `<button class="btn btn-sm btn-success ms-1" onclick="confirmOrder(${po.id})" title="Confirm & send to Store Manager for cross-check"><i class="bi bi-send-check"></i> Confirm</button>
+                            <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteOrder(${po.id})" title="Delete order"><i class="bi bi-trash"></i></button>`;
+            } else if (po.status === 'awaiting_check') {
+                actions += `<span class="badge bg-warning-subtle text-warning ms-1"><i class="bi bi-hourglass-split"></i> With Store Manager</span>`;
+            } else if (po.status === 'discrepancy') {
+                actions += `<button class="btn btn-sm btn-warning ms-1" onclick="addComment(${po.id})" title="Delivery incomplete — add your comment"><i class="bi bi-chat-left-text"></i> ${po.afisa_comment ? 'Edit Comment' : 'Add Comment'}</button>`;
+            } else if (po.status === 'received') {
+                actions += `<span class="badge bg-success-subtle text-success ms-1"><i class="bi bi-check2-circle"></i> Received</span>`;
+            }
 
             tr.innerHTML = `
                 <td class="ps-4 fw-bold">#${po.id}</td>
                 <td class="text-muted">${new Date(po.order_date).toLocaleDateString()}</td>
                 <td class="fw-medium">${po.supplier_name || '-'}</td>
                 <td><span class="badge bg-light text-dark border">${po.branch_name || '-'}</span></td>
-                <td><span class="badge bg-${statusBadge}">${po.status.toUpperCase()}</span></td>
+                <td><span class="badge bg-${badge}">${label}</span></td>
                 <td class="fw-bold">TZS ${Math.round(Number(po.total_amount)).toLocaleString()}</td>
-                <td>
-                    <button class="btn btn-sm btn-outline-primary" onclick="viewDetails(${po.id})"><i class="bi bi-eye"></i></button>
-                    <a class="btn btn-sm btn-outline-danger" href="/api/purchase-orders/${po.id}/pdf/" target="_blank" rel="noopener" title="Download PO PDF"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
-                    ${po.status === 'received'
-                        ? '<span class="badge bg-success-subtle text-success ms-1"><i class="bi bi-check2-circle"></i> Received</span>'
-                        : `<button class="btn btn-sm btn-success ms-1" onclick="confirmReceived(${po.id})" title="Confirm goods arrived (adds to stock)"><i class="bi bi-box-arrow-in-down"></i> Confirm Received</button>
-                           <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteOrder(${po.id})" title="Delete order"><i class="bi bi-trash"></i></button>`}
-                </td>
+                <td>${actions}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -104,19 +114,62 @@
         } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
-    async function confirmReceived(id) {
+    async function confirmOrder(id) {
         const result = await Swal.fire({
-            icon: 'question', title: 'Confirm goods received?',
-            text: 'This adds all items on this order to stock. It can only be done once.',
-            showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Yes, goods arrived'
+            icon: 'question', title: 'Confirm this order?',
+            text: 'It will be sent to the Store Manager to cross-check the delivered goods against what was ordered.',
+            showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Yes, confirm'
         });
         if (!result.isConfirmed) return;
         try {
-            const res = await fetch(`/api/purchase-orders/${id}/receive/`, {
+            const res = await fetch(`/api/purchase-orders/${id}/confirm/`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' }
             });
             const data = await res.json();
-            if (res.ok) { Swal.fire({ icon: 'success', title: 'Goods Received', text: data.detail, timer: 1800, showConfirmButton: false }); fetchData(); }
+            if (res.ok) { Swal.fire({ icon: 'success', title: 'Sent for cross-check', text: data.detail, timer: 2200, showConfirmButton: false }); fetchData(); }
+            else { Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed.'), 'error'); }
+        } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
+    }
+
+    async function addComment(id) {
+        // Fetch the PO so Afisa Ugavi can see delivered vs ordered before commenting.
+        let po;
+        try { po = await (await fetch(`/api/purchase-orders/${id}/`)).json(); }
+        catch (e) { Swal.fire('Error', 'Could not load the order.', 'error'); return; }
+
+        const rows = (po.items || []).map(it => {
+            const d = (it.delivered_quantity == null) ? '—' : it.delivered_quantity;
+            const short = it.delivered_quantity != null && it.delivered_quantity !== it.quantity;
+            return `<tr class="${short ? 'table-danger' : ''}">
+                <td style="text-align:left;">${it.product_name || it.product}</td>
+                <td>${it.quantity}</td><td>${d}</td></tr>`;
+        }).join('');
+
+        const { value: comment } = await Swal.fire({
+            title: `PO-${String(po.id).padStart(5, '0')} — Discrepancy`,
+            html: `
+                <table class="table table-sm" style="font-size:.85rem;">
+                    <thead><tr><th style="text-align:left;">Product</th><th>Ordered</th><th>Delivered</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                ${po.store_note ? `<div class="text-muted small mb-2">Store note: ${po.store_note}</div>` : ''}
+                <textarea id="afisaComment" class="form-control" rows="3" placeholder="Explain why the goods are not complete…">${po.afisa_comment || ''}</textarea>`,
+            showCancelButton: true, confirmButtonText: 'Save comment',
+            preConfirm: () => {
+                const v = document.getElementById('afisaComment').value.trim();
+                if (!v) { Swal.showValidationMessage('A comment is required.'); }
+                return v;
+            }
+        });
+        if (!comment) return;
+
+        try {
+            const res = await fetch(`/api/purchase-orders/${id}/comment/`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ comment })
+            });
+            const data = await res.json();
+            if (res.ok) { Swal.fire({ icon: 'success', title: 'Comment saved', timer: 1600, showConfirmButton: false }); fetchData(); }
             else { Swal.fire('Error', data.detail || 'Failed.', 'error'); }
         } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }

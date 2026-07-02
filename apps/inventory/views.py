@@ -253,25 +253,94 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
-    @action(detail=True, methods=['POST'])
-    def receive(self, request, pk=None):
-        """Confirm goods have arrived: increase stock for every line item and
-        mark the order Received. Idempotent — stock is only added once."""
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsAfisaUgavi])
+    def confirm(self, request, pk=None):
+        """Afisa Ugavi confirms the order — it goes to the Store Manager to
+        cross-check the delivered goods against what was ordered."""
         po = self.get_object()
-        if po.status == 'received':
-            return Response({'detail': 'This order is already marked as received.', 'status': po.status},
-                            status=status.HTTP_200_OK)
+        if po.status not in ('draft', 'sent'):
+            return Response({'detail': 'Only draft/sent orders can be confirmed.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        po.status = 'awaiting_check'
+        po.save(update_fields=['status'])
+        return Response({'detail': 'Order confirmed and sent to the Store Manager for cross-check.',
+                         'status': po.status}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsStoreManager])
+    def cross_check(self, request, pk=None):
+        """Store Manager records what actually arrived. Stock is increased by the
+        delivered quantities. If everything matches the order -> Received;
+        otherwise -> Discrepancy, and the Afisa Ugavi who raised it is notified."""
+        from django.utils import timezone
+        po = self.get_object()
+        if po.status != 'awaiting_check':
+            return Response({'detail': 'This order is not awaiting a store cross-check.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        delivered_map = {}
+        for ln in (request.data.get('items') or []):
+            try:
+                delivered_map[int(ln.get('item'))] = max(0, int(ln.get('delivered_quantity') or 0))
+            except (TypeError, ValueError):
+                continue
+        note = (request.data.get('store_note') or '').strip()
+
+        mismatch = False
         with transaction.atomic():
             for it in po.items.all():
-                stock, _ = Stock.objects.get_or_create(
-                    product=it.product, branch=po.branch, defaults={'quantity': 0}
-                )
-                stock.quantity += it.quantity
-                stock.save()
-            po.status = 'received'
+                delivered = delivered_map.get(it.id, 0)
+                it.delivered_quantity = delivered
+                it.save(update_fields=['delivered_quantity'])
+                if delivered != it.quantity:
+                    mismatch = True
+                if delivered > 0:
+                    stock, _ = Stock.objects.get_or_create(
+                        product=it.product, branch=po.branch, defaults={'quantity': 0}
+                    )
+                    stock.quantity += delivered
+                    stock.save()
+            po.checked_by = request.user
+            po.checked_at = timezone.now()
+            po.store_note = note
+            po.has_discrepancy = mismatch
+            po.status = 'discrepancy' if mismatch else 'received'
             po.save()
-        return Response({'detail': 'Goods received — stock updated.', 'status': po.status},
-                        status=status.HTTP_200_OK)
+
+        if mismatch:
+            from apps.core.notify import notify
+            from apps.core.models import SystemActivity
+            supplier = po.supplier.name if po.supplier else 'supplier'
+            notify(
+                po.created_by,
+                title=f"Delivery discrepancy on PO-{po.id:05d}",
+                message=(f"The Store Manager found that the delivery for PO-{po.id:05d} ({supplier}) "
+                         f"does not match what was ordered. Please open the order and add a comment "
+                         f"explaining why the goods are not complete."),
+                url='/inventory/purchase-orders/',
+                level='warning',
+            )
+            SystemActivity.objects.create(
+                user=request.user, activity_type='purchase',
+                description=f"Delivery discrepancy flagged on PO-{po.id:05d} at store cross-check",
+                icon_class='bi-exclamation-triangle',
+            )
+
+        return Response({
+            'detail': ('Cross-check saved. Discrepancy flagged — Afisa Ugavi has been notified.'
+                       if mismatch else 'Cross-check saved. Delivery matches the order; stock updated.'),
+            'status': po.status, 'has_discrepancy': mismatch,
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsAfisaUgavi])
+    def comment(self, request, pk=None):
+        """Afisa Ugavi explains why a flagged delivery is incomplete."""
+        po = self.get_object()
+        text = (request.data.get('comment') or '').strip()
+        if not text:
+            return Response({'detail': 'Comment is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        po.afisa_comment = text
+        po.save(update_fields=['afisa_comment'])
+        return Response({'detail': 'Comment saved.', 'status': po.status}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['GET'])
     def pdf(self, request, pk=None):
@@ -622,6 +691,10 @@ class PurchaseOrderListView(LoginRequiredMixin, TemplateView):
 
 class PurchaseOrderCreateView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/purchase_order_form.html'
+
+class PurchaseOrderCheckView(LoginRequiredMixin, TemplateView):
+    """Store Manager screen: cross-check deliveries against confirmed POs."""
+    template_name = 'inventory/po_cross_check.html'
 
 class TruckListView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/truck_list.html'
