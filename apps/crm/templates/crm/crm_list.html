@@ -6,6 +6,9 @@
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="text-primary fw-bold mb-0"><i class="bi bi-person-vcard"></i> CRM - Customer Records</h2>
     <div class="d-flex gap-2">
+        <button class="btn btn-outline-success" onclick="openUploadModal()">
+            <i class="bi bi-file-earmark-excel"></i> Bulk Upload (Excel)
+        </button>
         <button class="btn btn-outline-secondary" onclick="openImportModal()">
             <i class="bi bi-download"></i> Pull from Sales
         </button>
@@ -127,6 +130,45 @@
                 </div>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Bulk upload modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-excel text-success"></i> Bulk Upload Customers</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Upload an Excel file with the columns
+                    <strong>Date, Receipt No, EFD Receipt No, Customer Name, TIN, Sales Amount</strong>.
+                    Column order does not matter and extra columns are ignored.
+                    <div class="mt-2">
+                        <a href="{% url 'crm:import_template' %}" class="btn btn-sm btn-outline-info bg-white text-info fw-bold">
+                            <i class="bi bi-download"></i> Download Excel Template
+                        </a>
+                    </div>
+                </div>
+                <div class="text-center p-4 border rounded bg-light">
+                    <input type="file" id="uploadFile" class="form-control mb-3" accept=".xlsx,.xlsm,.csv">
+                    <button class="btn btn-success" id="uploadBtn" onclick="handleUpload()">
+                        <i class="bi bi-cloud-upload"></i> Upload &amp; Process
+                    </button>
+                    <div class="form-text mt-2">
+                        Accepts .xlsx or .csv, up to 5,000 rows per file.
+                        Rows whose receipt number is already in the register are skipped.
+                    </div>
+                </div>
+                <div id="uploadResult" class="mt-3 d-none">
+                    <div class="alert" id="uploadSummary"></div>
+                    <div id="uploadErrors" class="small"></div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -335,6 +377,75 @@
                 Swal.fire('Error', 'Failed to delete', 'error');
             }
         } catch (error) { console.error(error); }
+    }
+
+    function openUploadModal() {
+        document.getElementById('uploadFile').value = '';
+        document.getElementById('uploadResult').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('uploadModal')).show();
+    }
+
+    async function handleUpload() {
+        const input = document.getElementById('uploadFile');
+        const file = input.files[0];
+        if (!file) {
+            Swal.fire('No file', 'Choose an Excel or CSV file first', 'info');
+            return;
+        }
+
+        const button = document.getElementById('uploadBtn');
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Processing...';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/crm-records/bulk_upload/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF },
+                body: formData
+            });
+            const result = await response.json();
+            showUploadResult(response, result);
+            if (response.ok || response.status === 207) {
+                input.value = '';
+                fetchRecords();
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire('Error', 'Connection error while uploading', 'error');
+        } finally {
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-cloud-upload"></i> Upload &amp; Process';
+        }
+    }
+
+    function showUploadResult(response, result) {
+        const wrapper = document.getElementById('uploadResult');
+        const summary = document.getElementById('uploadSummary');
+        const errorBox = document.getElementById('uploadErrors');
+        wrapper.classList.remove('d-none');
+        errorBox.innerHTML = '';
+
+        if (!response.ok && response.status !== 207) {
+            summary.className = 'alert alert-danger mb-2';
+            summary.innerText = result.detail || 'Upload failed';
+            return;
+        }
+
+        const errors = result.errors || [];
+        summary.className = errors.length ? 'alert alert-warning mb-2' : 'alert alert-success mb-2';
+        summary.innerText = result.detail;
+
+        if (errors.length) {
+            const shown = errors.map(e => `<li>${escapeHtml(e)}</li>`).join('');
+            const hidden = (result.error_count || errors.length) - errors.length;
+            errorBox.innerHTML =
+                '<div class="fw-semibold mb-1">Rows not imported:</div>'
+                + `<ul class="mb-1" style="max-height: 30vh; overflow-y: auto;">${shown}</ul>`
+                + (hidden > 0 ? `<div class="text-muted">…and ${hidden} more.</div>` : '');
+        }
     }
 
     function openImportModal() {

@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from apps.sales.models import Sale
 from apps.users.permissions import IsAccountant
 
+from .imports import TEMPLATE_HEADERS, ImportError_, parse_upload
 from .models import CustomerRecord
 from .serializers import CustomerRecordSerializer
 
@@ -132,6 +133,62 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         })
 
 
+    @action(detail=False, methods=['post'], url_path='bulk_upload')
+    def bulk_upload(self, request):
+        """Import many customer records from an Excel (.xlsx) or CSV upload.
+
+        Rows that fail validation are reported back with their spreadsheet row
+        number and skipped — the rest still import. A row whose receipt or EFD
+        receipt number already exists is skipped too, so re-uploading the same
+        file does not double the register.
+        """
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'detail': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            rows, errors = parse_upload(upload)
+        except ImportError_ as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Existing receipt numbers, so a repeated upload is a no-op.
+        seen = set(
+            CustomerRecord.objects.exclude(receipt_number='')
+            .values_list('receipt_number', flat=True)
+        )
+        seen |= set(
+            CustomerRecord.objects.exclude(efd_receipt_number='')
+            .values_list('efd_receipt_number', flat=True)
+        )
+
+        to_create, skipped = [], 0
+        for row in rows:
+            keys = {k for k in (row['receipt_number'], row['efd_receipt_number']) if k}
+            if keys & seen:
+                skipped += 1
+                continue
+            seen |= keys
+            to_create.append(CustomerRecord(created_by=request.user, **row))
+
+        CustomerRecord.objects.bulk_create(to_create)
+
+        message = f'{len(to_create)} record(s) imported.'
+        if skipped:
+            message += f' {skipped} skipped as already in the register.'
+        if errors:
+            message += f' {len(errors)} row(s) had problems.'
+        return Response(
+            {
+                'created': len(to_create),
+                'skipped': skipped,
+                'errors': errors[:50],
+                'error_count': len(errors),
+                'detail': message,
+            },
+            status=status.HTTP_200_OK if not errors else status.HTTP_207_MULTI_STATUS,
+        )
+
+
 class CrmListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'crm/crm_list.html'
 
@@ -155,4 +212,32 @@ class CrmExportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
                 r.date, r.receipt_number, r.efd_receipt_number,
                 r.customer_name, r.tin, r.sales_amount,
             ])
+        return response
+
+
+class CrmImportTemplateView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Blank .xlsx with the expected headers and one example row."""
+
+    def test_func(self):
+        return can_use_crm(self.request.user)
+
+    def get(self, request, *args, **kwargs):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = 'Customers'
+        sheet.append(TEMPLATE_HEADERS)
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        sheet.append(['2026-08-01', 'RC-0012', '35EFD9921', 'Kibo Traders', '109-882-441', 1250000])
+        for column, width in zip('ABCDEF', (14, 16, 18, 28, 18, 16)):
+            sheet.column_dimensions[column].width = width
+
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="crm_import_template.xlsx"'
+        workbook.save(response)
         return response
