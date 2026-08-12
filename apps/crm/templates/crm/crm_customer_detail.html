@@ -87,6 +87,7 @@
                 </tbody>
             </table>
         </div>
+        {% include 'crm/_pagination.html' %}
     </div>
 </div>
 
@@ -107,13 +108,19 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         ['filterStart', 'filterEnd'].forEach(id => {
-            document.getElementById(id).addEventListener('change', fetchRecords);
+            document.getElementById(id).addEventListener('change', function () {
+                pageState.page = 1;  // a changed window invalidates the page number
+                fetchRecords();
+            });
         });
         fetchRecords();
     });
 
     // Called by the shared record form after a save/delete.
     function afterRecordChange() { fetchRecords(); }
+
+    // Called by the shared pagination controls.
+    function reloadPage() { fetchRecords(); }
 
     function addForCustomer() {
         openRecordModal(null, { customer_name: CUSTOMER_NAME, tin: CUSTOMER_TIN });
@@ -122,6 +129,7 @@
     function clearDates() {
         document.getElementById('filterStart').value = '';
         document.getElementById('filterEnd').value = '';
+        pageState.page = 1;
         fetchRecords();
     }
 
@@ -135,13 +143,18 @@
     }
 
     async function fetchRecords() {
+        // The summary stays unpaged — the tiles total the whole selection,
+        // not just the rows visible on this page.
         const query = currentQuery();
+        const paged = withPaging(new URLSearchParams(query)).toString();
         try {
             const [listRes, sumRes] = await Promise.all([
-                fetch('/api/crm-records/?' + query),
+                fetch('/api/crm-records/?' + paged),
                 fetch('/api/crm-records/summary/?' + query)
             ]);
-            renderRecords(await listRes.json());
+            const listData = await listRes.json();
+            renderRecords(listData.results || []);
+            renderPagination(listData.count || 0);
             renderSummary(await sumRes.json());
         } catch (error) { console.error(error); }
     }
@@ -154,8 +167,7 @@
         document.getElementById('statAverage').innerText = count ? money(total / count) : '0';
     }
 
-    function renderRecords(data) {
-        const rows = Array.isArray(data) ? data : (data.results || []);
+    function renderRecords(rows) {
         const tbody = document.getElementById('recordTableBody');
         tbody.innerHTML = '';
         if (!rows.length) {

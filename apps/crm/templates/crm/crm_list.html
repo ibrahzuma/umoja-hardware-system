@@ -86,6 +86,7 @@
                 </tbody>
             </table>
         </div>
+        {% include 'crm/_pagination.html' %}
     </div>
 </div>
 
@@ -191,6 +192,8 @@
         ['filterSearch', 'filterStart', 'filterEnd'].forEach(id => {
             document.getElementById(id).addEventListener('input', function () {
                 clearTimeout(filterTimer);
+                // A changed filter invalidates the current page number.
+                pageState.page = 1;
                 filterTimer = setTimeout(fetchCustomers, 300);
             });
         });
@@ -199,6 +202,9 @@
 
     // Called by the shared record form after a save/delete.
     function afterRecordChange() { fetchCustomers(); }
+
+    // Called by the shared pagination controls.
+    function reloadPage() { fetchCustomers(); }
 
     function currentQuery() {
         const params = new URLSearchParams();
@@ -215,18 +221,23 @@
         document.getElementById('filterSearch').value = '';
         document.getElementById('filterStart').value = '';
         document.getElementById('filterEnd').value = '';
+        pageState.page = 1;
         fetchCustomers();
     }
 
     async function fetchCustomers() {
+        // Export stays unpaged — it exports everything the filters match.
         const query = currentQuery();
         document.getElementById('exportLink').href = "{% url 'crm:export' %}" + (query ? '?' + query : '');
+        const paged = withPaging(new URLSearchParams(query)).toString();
         try {
             const [listRes, sumRes] = await Promise.all([
-                fetch('/api/crm-records/customers/' + (query ? '?' + query : '')),
+                fetch('/api/crm-records/customers/?' + paged),
                 fetch('/api/crm-records/summary/' + (query ? '?' + query : ''))
             ]);
-            renderCustomers(await listRes.json());
+            const listData = await listRes.json();
+            renderCustomers(listData.results || []);
+            renderPagination(listData.count || 0);
             renderSummary(await sumRes.json());
         } catch (error) { console.error(error); }
     }

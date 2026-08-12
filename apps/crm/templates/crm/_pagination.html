@@ -1,0 +1,66 @@
+{% comment %}
+Page-size picker + prev/next for a CRM table. The host page keeps `pageState`
+and calls renderPagination(count) after each fetch; changing anything here
+calls reloadPage(), which each host defines.
+{% endcomment %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-2 border-top bg-light">
+    <div class="d-flex align-items-center gap-2">
+        <label class="small text-muted mb-0">Show</label>
+        <select class="form-select form-select-sm" id="pageSize" style="width: auto;" onchange="changePageSize(this.value)">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+        </select>
+        <span class="small text-muted" id="pageRange"></span>
+    </div>
+    <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary" id="prevPage" onclick="goToPage(pageState.page - 1)">
+            <i class="bi bi-chevron-left"></i> Previous
+        </button>
+        <button class="btn btn-outline-secondary disabled" id="pageLabel" style="pointer-events: none;">Page 1</button>
+        <button class="btn btn-outline-secondary" id="nextPage" onclick="goToPage(pageState.page + 1)">
+            Next <i class="bi bi-chevron-right"></i>
+        </button>
+    </div>
+</div>
+
+<script>
+    const pageState = { page: 1, size: 20, count: 0 };
+
+    function changePageSize(size) {
+        pageState.size = parseInt(size, 10);
+        pageState.page = 1;
+        reloadPage();
+    }
+
+    function goToPage(page) {
+        const pages = Math.max(1, Math.ceil(pageState.count / pageState.size));
+        if (page < 1 || page > pages) return;
+        pageState.page = page;
+        reloadPage();
+    }
+
+    // Called by the host after a fetch; `count` is the API's total row count.
+    function renderPagination(count) {
+        pageState.count = count || 0;
+        const pages = Math.max(1, Math.ceil(pageState.count / pageState.size));
+        if (pageState.page > pages) pageState.page = pages;
+
+        const first = pageState.count ? (pageState.page - 1) * pageState.size + 1 : 0;
+        const last = Math.min(pageState.page * pageState.size, pageState.count);
+
+        document.getElementById('pageRange').innerText =
+            pageState.count ? `${first}–${last} of ${pageState.count.toLocaleString()}` : 'No rows';
+        document.getElementById('pageLabel').innerText = `Page ${pageState.page} of ${pages}`;
+        document.getElementById('prevPage').classList.toggle('disabled', pageState.page <= 1);
+        document.getElementById('nextPage').classList.toggle('disabled', pageState.page >= pages);
+    }
+
+    // Appends paging params to a query string built by the host page.
+    function withPaging(params) {
+        params.set('page', pageState.page);
+        params.set('page_size', pageState.size);
+        return params;
+    }
+</script>

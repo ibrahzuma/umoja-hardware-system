@@ -6,6 +6,7 @@ from django.http import HttpResponse
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.sales.models import Sale
@@ -49,12 +50,22 @@ def _filtered_records(params):
     return qs
 
 
+class CrmPagination(PageNumberPagination):
+    """Both CRM tables page through their rows — the register grows without
+    bound, so neither screen may ever fetch everything. The UI offers
+    10/20/50/100 via ?page_size=; anything larger is clamped to 100."""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class CustomerRecordViewSet(viewsets.ModelViewSet):
     """CRM records API. Admin/superuser and Accountants only (IsAccountant
     allows privileged users through — see apps/users/permissions.py)."""
     queryset = CustomerRecord.objects.all()
     serializer_class = CustomerRecordSerializer
     permission_classes = [permissions.IsAuthenticated, IsAccountant]
+    pagination_class = CrmPagination
 
     def get_queryset(self):
         return _filtered_records(self.request.query_params)
@@ -101,7 +112,7 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         ):
             tins[name] = tin
 
-        return Response([
+        rows = [
             {
                 'customer_name': row['customer_name'],
                 'tin': tins.get(row['customer_name'], ''),
@@ -111,7 +122,13 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
                 'first_transaction': row['first_transaction'],
             }
             for row in grouped
-        ])
+        ]
+        # Paginated like the record list — a busy register has thousands of
+        # customers and the landing screen must not fetch them all.
+        page = self.paginate_queryset(rows)
+        if page is not None:
+            return self.get_paginated_response(page)
+        return Response(rows)
 
     @action(detail=False, methods=['get'])
     def available_sales(self, request):

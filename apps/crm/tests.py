@@ -55,11 +55,11 @@ class CrmRecordApiTest(TestCase):
         self.assertEqual(record.created_by, self.accountant)
 
         listing = self.client.get('/api/crm-records/?search=Kibo').json()
-        self.assertEqual(len(listing), 1)
-        self.assertEqual(listing[0]['efd_receipt_number'], '35EFD9921')
+        self.assertEqual(listing['count'], 1)
+        self.assertEqual(listing['results'][0]['efd_receipt_number'], '35EFD9921')
 
         # A search that matches nothing filters the row out
-        self.assertEqual(len(self.client.get('/api/crm-records/?search=nobody').json()), 0)
+        self.assertEqual(self.client.get('/api/crm-records/?search=nobody').json()['count'], 0)
 
         summary = self.client.get('/api/crm-records/summary/').json()
         self.assertEqual(summary['records'], 1)
@@ -139,7 +139,7 @@ class CrmCustomerListTest(TestCase):
                                       receipt_number='RC-3', tin='122-004-908', sales_amount=900)
 
     def test_customers_are_grouped_with_totals(self):
-        rows = self.client.get('/api/crm-records/customers/').json()
+        rows = self.client.get('/api/crm-records/customers/').json()['results']
         self.assertEqual([r['customer_name'] for r in rows], ['Mwanza Const', 'Kibo Traders'])
 
         kibo = next(r for r in rows if r['customer_name'] == 'Kibo Traders')
@@ -151,18 +151,18 @@ class CrmCustomerListTest(TestCase):
         self.assertEqual(kibo['tin'], '109-882-441')
 
     def test_customer_list_respects_filters(self):
-        rows = self.client.get('/api/crm-records/customers/?search=Mwanza').json()
+        rows = self.client.get('/api/crm-records/customers/?search=Mwanza').json()['results']
         self.assertEqual([r['customer_name'] for r in rows], ['Mwanza Const'])
 
         # A date window re-totals each customer rather than dropping them
-        rows = self.client.get('/api/crm-records/customers/?start=2026-08-04').json()
+        rows = self.client.get('/api/crm-records/customers/?start=2026-08-04').json()['results']
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['customer_name'], 'Kibo Traders')
         self.assertEqual(rows[0]['records'], 1)
         self.assertEqual(float(rows[0]['total_amount']), 250.0)
 
     def test_records_can_be_scoped_to_one_customer(self):
-        rows = self.client.get('/api/crm-records/?customer=Kibo Traders').json()
+        rows = self.client.get('/api/crm-records/?customer=Kibo Traders').json()['results']
         self.assertEqual(len(rows), 2)
         self.assertTrue(all(r['customer_name'] == 'Kibo Traders' for r in rows))
 
@@ -171,7 +171,7 @@ class CrmCustomerListTest(TestCase):
         self.assertEqual(float(summary['total_amount']), 350.0)
 
         # Exact match — a partial name must not leak another customer's rows
-        self.assertEqual(self.client.get('/api/crm-records/?customer=Kibo').json(), [])
+        self.assertEqual(self.client.get('/api/crm-records/?customer=Kibo').json()['results'], [])
 
     def test_detail_page_renders_for_a_known_customer(self):
         response = self.client.get(reverse('crm:customer_detail'), {'name': 'Kibo Traders'})
@@ -199,6 +199,69 @@ class CrmCustomerListTest(TestCase):
         response = self.client.get(reverse('crm:customer_detail'), {'name': 'Kibo Traders'})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.client.get('/api/crm-records/customers/').status_code, 403)
+
+
+class CrmPaginationTest(TestCase):
+    """Neither table may ever return the whole register."""
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct5', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        CustomerRecord.objects.bulk_create([
+            CustomerRecord(date=date(2026, 8, 1), customer_name=f'Customer {i:03d}',
+                           receipt_number=f'RC-{i:03d}', sales_amount=10 * i)
+            for i in range(1, 46)
+        ])
+
+    def test_records_default_to_20_per_page(self):
+        body = self.client.get('/api/crm-records/').json()
+        self.assertEqual(body['count'], 45)
+        self.assertEqual(len(body['results']), 20)
+        self.assertIsNotNone(body['next'])
+
+    def test_page_size_options(self):
+        for size in (10, 20, 50, 100):
+            body = self.client.get('/api/crm-records/', {'page_size': size}).json()
+            self.assertEqual(len(body['results']), min(size, 45), f'page_size={size}')
+
+    def test_page_size_is_capped_at_100(self):
+        body = self.client.get('/api/crm-records/', {'page_size': 5000}).json()
+        self.assertEqual(len(body['results']), 45)  # capped, not unbounded
+        CustomerRecord.objects.bulk_create([
+            CustomerRecord(date=date(2026, 8, 2), customer_name=f'Extra {i}', sales_amount=1)
+            for i in range(120)
+        ])
+        body = self.client.get('/api/crm-records/', {'page_size': 5000}).json()
+        self.assertEqual(len(body['results']), 100)
+
+    def test_paging_walks_the_whole_set_without_repeats(self):
+        seen, page = [], 1
+        while True:
+            body = self.client.get('/api/crm-records/', {'page_size': 10, 'page': page}).json()
+            seen.extend(r['id'] for r in body['results'])
+            if not body['next']:
+                break
+            page += 1
+        self.assertEqual(len(seen), 45)
+        self.assertEqual(len(set(seen)), 45)
+
+    def test_customer_list_is_paginated_too(self):
+        body = self.client.get('/api/crm-records/customers/', {'page_size': 10}).json()
+        self.assertEqual(body['count'], 45)
+        self.assertEqual(len(body['results']), 10)
+
+    def test_summary_totals_the_whole_selection_not_the_page(self):
+        """The stat tiles must not report only what is on screen."""
+        summary = self.client.get('/api/crm-records/summary/', {'page_size': 10}).json()
+        self.assertEqual(summary['records'], 45)
+        self.assertEqual(summary['customers'], 45)
+        self.assertEqual(float(summary['total_amount']), sum(10 * i for i in range(1, 46)))
+
+    def test_csv_export_is_not_paginated(self):
+        """Export gives every matching row, not the current page."""
+        response = self.client.get(reverse('crm:export'), {'page_size': 10})
+        rows = response.content.decode().strip().splitlines()
+        self.assertEqual(len(rows), 46)  # 45 records + header
 
 
 def build_xlsx(rows, headers=None, name='customers.xlsx'):
