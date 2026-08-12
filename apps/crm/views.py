@@ -1,7 +1,7 @@
 import csv
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Q, Sum
+from django.db.models import Count, Max, Min, Q, Sum
 from django.http import HttpResponse
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
@@ -36,6 +36,10 @@ def _filtered_records(params):
             | Q(receipt_number__icontains=search)
             | Q(efd_receipt_number__icontains=search)
         )
+    # Exact name — how the customer detail screen scopes itself to one customer.
+    customer = (params.get('customer') or '').strip()
+    if customer:
+        qs = qs.filter(customer_name=customer)
     start = (params.get('start') or '').strip()
     end = (params.get('end') or '').strip()
     if start:
@@ -67,6 +71,47 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
             'customers': qs.values('customer_name').distinct().count(),
             'total_amount': total,
         })
+
+    @action(detail=False, methods=['get'])
+    def customers(self, request):
+        """One row per customer for the CRM landing screen.
+
+        Records are grouped by customer_name — the register has no customer
+        entity of its own by design, so the name written on the transaction is
+        the identity. TIN is reported from the customer's most recent record
+        that carries one, since older rows are often left blank.
+        """
+        qs = self.get_queryset()
+        grouped = (
+            qs.values('customer_name')
+            .annotate(
+                records=Count('id'),
+                total_amount=Sum('sales_amount'),
+                last_transaction=Max('date'),
+                first_transaction=Min('date'),
+            )
+            .order_by('-total_amount', 'customer_name')
+        )
+
+        # Latest non-blank TIN per customer, in one pass rather than per row.
+        tins = {}
+        for name, tin in (
+            qs.exclude(tin='').order_by('date', 'id')
+            .values_list('customer_name', 'tin')
+        ):
+            tins[name] = tin
+
+        return Response([
+            {
+                'customer_name': row['customer_name'],
+                'tin': tins.get(row['customer_name'], ''),
+                'records': row['records'],
+                'total_amount': row['total_amount'] or 0,
+                'last_transaction': row['last_transaction'],
+                'first_transaction': row['first_transaction'],
+            }
+            for row in grouped
+        ])
 
     @action(detail=False, methods=['get'])
     def available_sales(self, request):
@@ -194,6 +239,28 @@ class CrmListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
     def test_func(self):
         return can_use_crm(self.request.user)
+
+
+class CrmCustomerDetailView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Everything on file for one customer, reached by picking them from the
+    CRM list. The name arrives as a query parameter rather than a path segment
+    because customer names legitimately contain slashes and dots."""
+    template_name = 'crm/crm_customer_detail.html'
+
+    def test_func(self):
+        return can_use_crm(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        name = (self.request.GET.get('name') or '').strip()
+        records = CustomerRecord.objects.filter(customer_name=name)
+        context['customer_name'] = name
+        context['exists'] = records.exists()
+        context['tin'] = (
+            records.exclude(tin='').order_by('-date', '-id')
+            .values_list('tin', flat=True).first() or ''
+        )
+        return context
 
 
 class CrmExportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):

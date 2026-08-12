@@ -1,0 +1,135 @@
+{% comment %}
+Add/edit/delete of a single CRM record. Included by both the customer list and
+the customer detail screen; each host page defines afterRecordChange() to
+refresh whatever it is showing.
+{% endcomment %}
+<div class="modal fade" id="recordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="recordForm" onsubmit="handleSave(event)">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="recordModalTitle">Add CRM Record</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" name="date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Receipt Number</label>
+                        <input type="text" class="form-control" name="receipt_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">EFD Receipt Number</label>
+                        <input type="text" class="form-control" name="efd_receipt_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer Name</label>
+                        <input type="text" class="form-control" name="customer_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">TIN</label>
+                        <input type="text" class="form-control" name="tin" placeholder="e.g. 109-882-441">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sales Amount (TZS)</label>
+                        <input type="number" class="form-control" name="sales_amount" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Record</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const CSRF = '{{ csrf_token }}';
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+        return String(value).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
+
+    function money(value) {
+        return Math.round(Number(value || 0)).toLocaleString();
+    }
+
+    // `preset` pre-fills fields on a new record (the detail screen pins the
+    // customer it is showing).
+    function openRecordModal(record, preset) {
+        const form = document.getElementById('recordForm');
+        form.reset();
+        form.id.value = record ? record.id : '';
+        document.getElementById('recordModalTitle').innerText = record ? 'Edit CRM Record' : 'Add CRM Record';
+        if (record) {
+            form.date.value = record.date || '';
+            form.receipt_number.value = record.receipt_number || '';
+            form.efd_receipt_number.value = record.efd_receipt_number || '';
+            form.customer_name.value = record.customer_name || '';
+            form.tin.value = record.tin || '';
+            form.sales_amount.value = record.sales_amount || '';
+        } else {
+            form.date.value = new Date().toISOString().slice(0, 10);
+            if (preset) {
+                form.customer_name.value = preset.customer_name || '';
+                form.tin.value = preset.tin || '';
+            }
+        }
+        new bootstrap.Modal(document.getElementById('recordModal')).show();
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = Object.fromEntries(new FormData(form).entries());
+        const id = data.id;
+        delete data.id;
+
+        try {
+            const response = await fetch('/api/crm-records/' + (id ? id + '/' : ''), {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                bootstrap.Modal.getInstance(document.getElementById('recordModal')).hide();
+                form.reset();
+                afterRecordChange();
+                Swal.fire('Saved', id ? 'Record updated' : 'Record added', 'success');
+            } else {
+                const err = await response.json().catch(() => ({}));
+                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    async function handleDelete(record) {
+        const confirmed = await Swal.fire({
+            title: 'Delete record?',
+            text: `${record.customer_name} - ${record.receipt_number || record.date}`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Delete'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-records/${record.id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': CSRF }
+            });
+            if (response.ok) {
+                afterRecordChange();
+                Swal.fire('Deleted', 'Record removed', 'success');
+            } else {
+                Swal.fire('Error', 'Failed to delete', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>

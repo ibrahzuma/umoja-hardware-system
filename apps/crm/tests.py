@@ -125,6 +125,82 @@ class CrmImportFromSalesTest(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class CrmCustomerListTest(TestCase):
+    """The CRM landing screen groups the register by customer."""
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct4', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        CustomerRecord.objects.create(date=date(2026, 8, 1), customer_name='Kibo Traders',
+                                      receipt_number='RC-1', tin='', sales_amount=100)
+        CustomerRecord.objects.create(date=date(2026, 8, 5), customer_name='Kibo Traders',
+                                      receipt_number='RC-2', tin='109-882-441', sales_amount=250)
+        CustomerRecord.objects.create(date=date(2026, 8, 3), customer_name='Mwanza Const',
+                                      receipt_number='RC-3', tin='122-004-908', sales_amount=900)
+
+    def test_customers_are_grouped_with_totals(self):
+        rows = self.client.get('/api/crm-records/customers/').json()
+        self.assertEqual([r['customer_name'] for r in rows], ['Mwanza Const', 'Kibo Traders'])
+
+        kibo = next(r for r in rows if r['customer_name'] == 'Kibo Traders')
+        self.assertEqual(kibo['records'], 2)
+        self.assertEqual(float(kibo['total_amount']), 350.0)
+        self.assertEqual(kibo['first_transaction'], '2026-08-01')
+        self.assertEqual(kibo['last_transaction'], '2026-08-05')
+        # TIN comes from the most recent record that carries one
+        self.assertEqual(kibo['tin'], '109-882-441')
+
+    def test_customer_list_respects_filters(self):
+        rows = self.client.get('/api/crm-records/customers/?search=Mwanza').json()
+        self.assertEqual([r['customer_name'] for r in rows], ['Mwanza Const'])
+
+        # A date window re-totals each customer rather than dropping them
+        rows = self.client.get('/api/crm-records/customers/?start=2026-08-04').json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['customer_name'], 'Kibo Traders')
+        self.assertEqual(rows[0]['records'], 1)
+        self.assertEqual(float(rows[0]['total_amount']), 250.0)
+
+    def test_records_can_be_scoped_to_one_customer(self):
+        rows = self.client.get('/api/crm-records/?customer=Kibo Traders').json()
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r['customer_name'] == 'Kibo Traders' for r in rows))
+
+        summary = self.client.get('/api/crm-records/summary/?customer=Kibo Traders').json()
+        self.assertEqual(summary['records'], 2)
+        self.assertEqual(float(summary['total_amount']), 350.0)
+
+        # Exact match — a partial name must not leak another customer's rows
+        self.assertEqual(self.client.get('/api/crm-records/?customer=Kibo').json(), [])
+
+    def test_detail_page_renders_for_a_known_customer(self):
+        response = self.client.get(reverse('crm:customer_detail'), {'name': 'Kibo Traders'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['exists'])
+        self.assertEqual(response.context['customer_name'], 'Kibo Traders')
+        self.assertEqual(response.context['tin'], '109-882-441')
+        self.assertContains(response, 'Kibo Traders')
+
+    def test_detail_page_handles_unknown_customer(self):
+        response = self.client.get(reverse('crm:customer_detail'), {'name': 'Nobody Ltd'})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['exists'])
+        self.assertContains(response, 'No records found')
+
+    def test_detail_export_is_scoped_to_the_customer(self):
+        response = self.client.get(reverse('crm:export'), {'customer': 'Kibo Traders'})
+        body = response.content.decode()
+        self.assertIn('RC-1', body)
+        self.assertIn('RC-2', body)
+        self.assertNotIn('RC-3', body)
+
+    def test_detail_page_is_closed_to_other_roles(self):
+        self.client.force_login(User.objects.create_user(username='crm_rep3', password='pw', role='sales_rep'))
+        response = self.client.get(reverse('crm:customer_detail'), {'name': 'Kibo Traders'})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.client.get('/api/crm-records/customers/').status_code, 403)
+
+
 def build_xlsx(rows, headers=None, name='customers.xlsx'):
     """An in-memory .xlsx upload, as the browser would send it."""
     workbook = Workbook()

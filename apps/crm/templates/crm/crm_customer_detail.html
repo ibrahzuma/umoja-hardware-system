@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+
+{% block title %}CRM - {{ customer_name }}{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="{% url 'crm:customer_records' %}">CRM</a></li>
+        <li class="breadcrumb-item active">{{ customer_name|default:"Customer" }}</li>
+    </ol>
+</nav>
+
+{% if not exists %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    No records found for <strong>{{ customer_name|default:"this customer" }}</strong>.
+    <a href="{% url 'crm:customer_records' %}" class="alert-link">Back to the customer list</a>.
+</div>
+{% else %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-person-circle"></i> {{ customer_name }}</h2>
+        <div class="text-muted">
+            TIN: <strong>{{ tin|default:"not recorded" }}</strong>
+        </div>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="{% url 'crm:customer_records' %}">
+            <i class="bi bi-arrow-left"></i> All Customers
+        </a>
+        <a class="btn btn-outline-primary" href="{% url 'crm:export' %}?customer={{ customer_name|urlencode }}">
+            <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
+        </a>
+        <button class="btn btn-success" onclick="addForCustomer()">
+            <i class="bi bi-plus-lg"></i> Add Record
+        </button>
+    </div>
+</div>
+
+<div class="row mb-4 g-3">
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Records</h6>
+            <h4 class="fw-bold text-primary mb-0" id="statRecords">0</h4>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Total Sales Amount (TZS)</h6>
+            <h4 class="fw-bold text-success mb-0" id="statTotal">0</h4>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Average per Transaction</h6>
+            <h4 class="fw-bold text-dark mb-0" id="statAverage">0</h4>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="fw-bold mb-0">Transactions</h5>
+        <div class="d-flex gap-2">
+            <input type="date" class="form-control form-control-sm" id="filterStart" style="width: auto;">
+            <input type="date" class="form-control form-control-sm" id="filterEnd" style="width: auto;">
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearDates()" title="Clear dates">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-3">Date</th>
+                        <th>Receipt No</th>
+                        <th>EFD Receipt No</th>
+                        <th>TIN</th>
+                        <th class="text-end">Sales Amount</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="recordTableBody">
+                    <tr><td colspan="6" class="text-center py-4">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% include 'crm/_record_form.html' %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if exists %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+{{ customer_name|json_script:"customer-name-data" }}
+{{ tin|json_script:"customer-tin-data" }}
+<script>
+    // Names carry quotes and apostrophes ("Kibo Traders (T) Ltd"), so hand them
+    // to JS as JSON rather than interpolating into a string literal.
+    const CUSTOMER_NAME = JSON.parse(document.getElementById('customer-name-data').textContent);
+    const CUSTOMER_TIN = JSON.parse(document.getElementById('customer-tin-data').textContent);
+
+    document.addEventListener('DOMContentLoaded', function () {
+        ['filterStart', 'filterEnd'].forEach(id => {
+            document.getElementById(id).addEventListener('change', fetchRecords);
+        });
+        fetchRecords();
+    });
+
+    // Called by the shared record form after a save/delete.
+    function afterRecordChange() { fetchRecords(); }
+
+    function addForCustomer() {
+        openRecordModal(null, { customer_name: CUSTOMER_NAME, tin: CUSTOMER_TIN });
+    }
+
+    function clearDates() {
+        document.getElementById('filterStart').value = '';
+        document.getElementById('filterEnd').value = '';
+        fetchRecords();
+    }
+
+    function currentQuery() {
+        const params = new URLSearchParams({ customer: CUSTOMER_NAME });
+        const start = document.getElementById('filterStart').value;
+        const end = document.getElementById('filterEnd').value;
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        return params.toString();
+    }
+
+    async function fetchRecords() {
+        const query = currentQuery();
+        try {
+            const [listRes, sumRes] = await Promise.all([
+                fetch('/api/crm-records/?' + query),
+                fetch('/api/crm-records/summary/?' + query)
+            ]);
+            renderRecords(await listRes.json());
+            renderSummary(await sumRes.json());
+        } catch (error) { console.error(error); }
+    }
+
+    function renderSummary(s) {
+        const count = Number(s.records || 0);
+        const total = Number(s.total_amount || 0);
+        document.getElementById('statRecords').innerText = count.toLocaleString();
+        document.getElementById('statTotal').innerText = money(total);
+        document.getElementById('statAverage').innerText = count ? money(total / count) : '0';
+    }
+
+    function renderRecords(data) {
+        const rows = Array.isArray(data) ? data : (data.results || []);
+        const tbody = document.getElementById('recordTableBody');
+        tbody.innerHTML = '';
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No transactions in this period</td></tr>';
+            return;
+        }
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${r.date || '-'}</td>
+                <td>${escapeHtml(r.receipt_number) || '-'}</td>
+                <td>${escapeHtml(r.efd_receipt_number) || '-'}</td>
+                <td>${escapeHtml(r.tin) || '-'}</td>
+                <td class="text-end fw-bold">${money(r.sales_amount)}</td>
+                <td class="text-end pe-3">
+                    <button class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                </td>
+            `;
+            const [editBtn, deleteBtn] = tr.querySelectorAll('button');
+            editBtn.addEventListener('click', () => openRecordModal(r));
+            deleteBtn.addEventListener('click', () => handleDelete(r));
+            tbody.appendChild(tr);
+        });
+    }
+</script>
+{% endif %}
+{% endblock %}
