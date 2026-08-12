@@ -15,6 +15,7 @@ from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet,
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
+from apps.crm.views import CustomerRecordViewSet
 from apps.core.api_views import ActivityViewSet, NotificationViewSet
 from apps.hr.views import (
     DepartmentViewSet, JobPositionViewSet, EmployeeViewSet, LeaveTypeViewSet,
@@ -69,6 +70,8 @@ router.register(r'payslips', PayslipViewSet)
 router.register(r'employee-documents', EmployeeDocumentViewSet)
 router.register(r'performance-reviews', PerformanceReviewViewSet)
 router.register(r'disciplinary-actions', DisciplinaryActionViewSet)
+# CRM
+router.register(r'crm-records', CustomerRecordViewSet)
 
 urlpatterns = [
     path(ADMIN_URL, admin.site.urls),
@@ -77,6 +80,7 @@ urlpatterns = [
     path('sales/', include('apps.sales.urls', namespace='sales')),
     path('finance/', include('apps.finance.urls', namespace='finance')),
     path('hr/', include('apps.hr.urls', namespace='hr')),
+    path('crm/', include('apps.crm.urls', namespace='crm')),
     path('', include('apps.core.urls')),
     path('', include('apps.users.urls')),
     # API Documentation

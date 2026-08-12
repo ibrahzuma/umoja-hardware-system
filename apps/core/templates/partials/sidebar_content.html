@@ -127,6 +127,12 @@
     </li>
     {% endif %}
 
+    <!-- CRM (admin + finance only) -->
+    {% if user.is_superuser or user.is_admin_role or user.is_accountant %}
+    <li class="section-title">CRM</li>
+    <li><a href="{% url 'crm:customer_records' %}"><i class="bi bi-person-vcard"></i> CRM</a></li>
+    {% endif %}
+
     <!-- Finance -->
     {% if user.is_superuser or perms.finance.view_expense %}
     <li class="section-title">Finance</li>

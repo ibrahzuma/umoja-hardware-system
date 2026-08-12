@@ -1,0 +1,404 @@
+{% extends 'base.html' %}
+
+{% block title %}CRM - Customers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2 class="text-primary fw-bold mb-0"><i class="bi bi-person-vcard"></i> CRM - Customer Records</h2>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" onclick="openImportModal()">
+            <i class="bi bi-download"></i> Pull from Sales
+        </button>
+        <a class="btn btn-outline-primary" id="exportLink" href="{% url 'crm:export' %}">
+            <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
+        </a>
+        <button class="btn btn-success" onclick="openRecordModal()">
+            <i class="bi bi-plus-lg"></i> Add Record
+        </button>
+    </div>
+</div>
+
+<div class="row mb-4 g-3">
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Records</h6>
+            <h4 class="fw-bold text-primary mb-0" id="statRecords">0</h4>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Customers</h6>
+            <h4 class="fw-bold text-dark mb-0" id="statCustomers">0</h4>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Total Sales Amount (TZS)</h6>
+            <h4 class="fw-bold text-success mb-0" id="statTotal">0</h4>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label small text-muted mb-1">Search</label>
+                <input type="text" class="form-control" id="filterSearch" placeholder="Customer name, TIN, receipt or EFD number">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">From</label>
+                <input type="date" class="form-control" id="filterStart">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">To</label>
+                <input type="date" class="form-control" id="filterEnd">
+            </div>
+            <div class="col-md-1 d-grid">
+                <button class="btn btn-outline-secondary" onclick="clearFilters()" title="Clear filters">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-3">Date</th>
+                        <th>Receipt No</th>
+                        <th>EFD Receipt No</th>
+                        <th>Customer Name</th>
+                        <th>TIN</th>
+                        <th class="text-end">Sales Amount</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="crmTableBody">
+                    <tr><td colspan="7" class="text-center py-4">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add / Edit modal -->
+<div class="modal fade" id="recordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="recordForm" onsubmit="handleSave(event)">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="recordModalTitle">Add CRM Record</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" name="date" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Receipt Number</label>
+                        <input type="text" class="form-control" name="receipt_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">EFD Receipt Number</label>
+                        <input type="text" class="form-control" name="efd_receipt_number">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer Name</label>
+                        <input type="text" class="form-control" name="customer_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">TIN</label>
+                        <input type="text" class="form-control" name="tin" placeholder="e.g. 109-882-441">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sales Amount (TZS)</label>
+                        <input type="number" class="form-control" name="sales_amount" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save Record</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Pull from sales modal -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Pull Records from Sales</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    Copies the selected sales into CRM as normal records. They stay editable here and are
+                    not linked back to the sales module. Already-imported sales are hidden.
+                </p>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label small text-muted mb-1">From</label>
+                        <input type="date" class="form-control" id="importStart">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label small text-muted mb-1">To</label>
+                        <input type="date" class="form-control" id="importEnd">
+                    </div>
+                    <div class="col-md-2 d-grid align-self-end">
+                        <button class="btn btn-outline-primary" onclick="loadAvailableSales()">Search</button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="max-height: 45vh; overflow-y: auto;">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th><input type="checkbox" id="checkAll" onclick="toggleAll(this)"></th>
+                                <th>Date</th>
+                                <th>Invoice</th>
+                                <th>Customer</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="importTableBody">
+                            <tr><td colspan="5" class="text-center py-4 text-muted">Click Search to load sales</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="handleImport()">Import Selected</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const CSRF = '{{ csrf_token }}';
+    let filterTimer = null;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        ['filterSearch', 'filterStart', 'filterEnd'].forEach(id => {
+            document.getElementById(id).addEventListener('input', function () {
+                clearTimeout(filterTimer);
+                filterTimer = setTimeout(fetchRecords, 300);
+            });
+        });
+        fetchRecords();
+    });
+
+    function currentQuery() {
+        const params = new URLSearchParams();
+        const search = document.getElementById('filterSearch').value.trim();
+        const start = document.getElementById('filterStart').value;
+        const end = document.getElementById('filterEnd').value;
+        if (search) params.set('search', search);
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        return params.toString();
+    }
+
+    function clearFilters() {
+        document.getElementById('filterSearch').value = '';
+        document.getElementById('filterStart').value = '';
+        document.getElementById('filterEnd').value = '';
+        fetchRecords();
+    }
+
+    async function fetchRecords() {
+        const query = currentQuery();
+        document.getElementById('exportLink').href = "{% url 'crm:export' %}" + (query ? '?' + query : '');
+        try {
+            const [listRes, sumRes] = await Promise.all([
+                fetch('/api/crm-records/' + (query ? '?' + query : '')),
+                fetch('/api/crm-records/summary/' + (query ? '?' + query : ''))
+            ]);
+            renderTable(await listRes.json());
+            renderSummary(await sumRes.json());
+        } catch (error) { console.error(error); }
+    }
+
+    function renderSummary(s) {
+        document.getElementById('statRecords').innerText = Number(s.records || 0).toLocaleString();
+        document.getElementById('statCustomers').innerText = Number(s.customers || 0).toLocaleString();
+        document.getElementById('statTotal').innerText = Math.round(Number(s.total_amount || 0)).toLocaleString();
+    }
+
+    function renderTable(data) {
+        const rows = Array.isArray(data) ? data : (data.results || []);
+        const tbody = document.getElementById('crmTableBody');
+        tbody.innerHTML = '';
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No customer records found</td></tr>';
+            return;
+        }
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-3 text-muted">${r.date || '-'}</td>
+                <td>${escapeHtml(r.receipt_number) || '-'}</td>
+                <td>${escapeHtml(r.efd_receipt_number) || '-'}</td>
+                <td class="fw-semibold">${escapeHtml(r.customer_name)}</td>
+                <td>${escapeHtml(r.tin) || '-'}</td>
+                <td class="text-end fw-bold">${Math.round(Number(r.sales_amount || 0)).toLocaleString()}</td>
+                <td class="text-end pe-3">
+                    <button class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                </td>
+            `;
+            const [editBtn, deleteBtn] = tr.querySelectorAll('button');
+            editBtn.addEventListener('click', () => openRecordModal(r));
+            deleteBtn.addEventListener('click', () => handleDelete(r));
+            tbody.appendChild(tr);
+        });
+    }
+
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+        return String(value).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
+
+    function openRecordModal(record) {
+        const form = document.getElementById('recordForm');
+        form.reset();
+        form.id.value = record ? record.id : '';
+        document.getElementById('recordModalTitle').innerText = record ? 'Edit CRM Record' : 'Add CRM Record';
+        if (record) {
+            form.date.value = record.date || '';
+            form.receipt_number.value = record.receipt_number || '';
+            form.efd_receipt_number.value = record.efd_receipt_number || '';
+            form.customer_name.value = record.customer_name || '';
+            form.tin.value = record.tin || '';
+            form.sales_amount.value = record.sales_amount || '';
+        } else {
+            form.date.value = new Date().toISOString().slice(0, 10);
+        }
+        new bootstrap.Modal(document.getElementById('recordModal')).show();
+    }
+
+    async function handleSave(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = Object.fromEntries(new FormData(form).entries());
+        const id = data.id;
+        delete data.id;
+
+        try {
+            const response = await fetch('/api/crm-records/' + (id ? id + '/' : ''), {
+                method: id ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                bootstrap.Modal.getInstance(document.getElementById('recordModal')).hide();
+                form.reset();
+                fetchRecords();
+                Swal.fire('Saved', id ? 'Record updated' : 'Record added', 'success');
+            } else {
+                const err = await response.json().catch(() => ({}));
+                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    async function handleDelete(record) {
+        const confirmed = await Swal.fire({
+            title: 'Delete record?',
+            text: `${record.customer_name} - ${record.receipt_number || record.date}`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Delete'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-records/${record.id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': CSRF }
+            });
+            if (response.ok) {
+                fetchRecords();
+                Swal.fire('Deleted', 'Record removed', 'success');
+            } else {
+                Swal.fire('Error', 'Failed to delete', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    function openImportModal() {
+        document.getElementById('importTableBody').innerHTML =
+            '<tr><td colspan="5" class="text-center py-4 text-muted">Click Search to load sales</td></tr>';
+        document.getElementById('checkAll').checked = false;
+        new bootstrap.Modal(document.getElementById('importModal')).show();
+    }
+
+    async function loadAvailableSales() {
+        const params = new URLSearchParams();
+        const start = document.getElementById('importStart').value;
+        const end = document.getElementById('importEnd').value;
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        const tbody = document.getElementById('importTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Loading...</td></tr>';
+        try {
+            const response = await fetch('/api/crm-records/available_sales/?' + params.toString());
+            const rows = await response.json();
+            tbody.innerHTML = '';
+            if (!rows.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No un-imported sales in this period</td></tr>';
+                return;
+            }
+            rows.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="import-check" value="${escapeHtml(s.invoice_number)}"></td>
+                    <td class="text-muted">${s.date}</td>
+                    <td>${escapeHtml(s.invoice_number)}</td>
+                    <td>${escapeHtml(s.customer_name)}</td>
+                    <td class="text-end">${Math.round(Number(s.sales_amount || 0)).toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (error) { console.error(error); }
+    }
+
+    function toggleAll(box) {
+        document.querySelectorAll('.import-check').forEach(c => { c.checked = box.checked; });
+    }
+
+    async function handleImport() {
+        const invoices = Array.from(document.querySelectorAll('.import-check:checked')).map(c => c.value);
+        if (!invoices.length) {
+            Swal.fire('Nothing selected', 'Tick at least one sale to import', 'info');
+            return;
+        }
+        try {
+            const response = await fetch('/api/crm-records/import_sales/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({ invoices })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+                fetchRecords();
+                Swal.fire('Imported', result.detail, 'success');
+            } else {
+                Swal.fire('Error', result.detail || 'Failed to import', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+</script>
+{% endblock %}
