@@ -1,6 +1,22 @@
 from rest_framework import serializers
 
-from .models import CrmPayment, CustomerRecord
+from .models import CrmCredit, CrmPayment, CustomerRecord
+
+
+class CrmCreditSerializer(serializers.ModelSerializer):
+    source_display = serializers.CharField(source='get_source_display', read_only=True)
+    method_display = serializers.CharField(source='get_method_display', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True, default='')
+
+    class Meta:
+        model = CrmCredit
+        fields = '__all__'
+        read_only_fields = ('created_by', 'created_at')
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError('Credit amount must be greater than zero.')
+        return value
 
 
 class CrmPaymentSerializer(serializers.ModelSerializer):
@@ -35,7 +51,8 @@ class CrmPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'amount': (
                     f'Payment of {amount:,.2f} exceeds the outstanding balance '
-                    f'of {outstanding:,.2f} on this sale.'
+                    f'of {outstanding:,.2f} on this sale. Use "receive" to put '
+                    f'the excess on the customer\'s account as credit.'
                 )
             })
         return attrs

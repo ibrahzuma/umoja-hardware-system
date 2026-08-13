@@ -1,14 +1,16 @@
 import csv
 from datetime import date as date_cls
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db import transaction
 from django.db.models import Count, DecimalField, F, Max, Min, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -16,9 +18,9 @@ from apps.sales.models import Sale
 from apps.users.permissions import IsAccountant
 
 from .imports import TEMPLATE_HEADERS, ImportError_, parse_upload
-from .models import CrmPayment, CustomerRecord
+from .models import CrmCredit, CrmPayment, CustomerRecord, credit_balance, credit_balances
 from .reports import customer_statement, customers_report
-from .serializers import CrmPaymentSerializer, CustomerRecordSerializer
+from .serializers import CrmCreditSerializer, CrmPaymentSerializer, CustomerRecordSerializer
 
 
 def can_use_crm(user):
@@ -120,6 +122,8 @@ def _customer_rows(qs):
         tins[name] = tin
 
     paid_map = _paid_by_customer(qs)
+    grouped = list(grouped)
+    credits = credit_balances([row['customer_name'] for row in grouped])
 
     rows = []
     for row in grouped:
@@ -133,6 +137,7 @@ def _customer_rows(qs):
             'total_amount': total,
             'amount_paid': paid,
             'balance': balance,
+            'credit_available': credits.get(row['customer_name'], Decimal('0')),
             'payment_status': 'paid' if balance <= 0 else ('partial' if paid > 0 else 'unpaid'),
             'last_transaction': row['last_transaction'],
             'first_transaction': row['first_transaction'],
@@ -195,12 +200,15 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
             CrmPayment.objects.filter(record__in=qs.values('pk'))
             .aggregate(total=Sum('amount'))['total'] or 0
         ))
+        names = list(qs.values_list('customer_name', flat=True).distinct())
+        credit = sum(credit_balances(names).values(), Decimal('0'))
         return Response({
             'records': qs.count(),
-            'customers': qs.values('customer_name').distinct().count(),
+            'customers': len(names),
             'total_amount': total,
             'amount_paid': paid,
             'balance': total - paid,
+            'credit_available': credit,
         })
 
     @action(detail=True, methods=['post'])
@@ -229,14 +237,108 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def payments(self, request, pk=None):
-        """Payment history for one sale."""
+        """Payment history for one sale, plus the customer's credit position."""
         record = self.get_object()
         return Response({
             'sales_amount': record.sales_amount,
             'amount_paid': record.amount_paid,
             'balance': record.balance,
             'payment_status': record.payment_status,
+            'customer_name': record.customer_name,
+            'credit_available': credit_balance(record.customer_name),
             'payments': CrmPaymentSerializer(record.payments.all(), many=True).data,
+        })
+
+    @action(detail=True, methods=['post'])
+    def receive(self, request, pk=None):
+        """Take money against this sale, sending any excess to the customer's
+        credit — a customer who hands over more than the sale is worth keeps
+        the difference on account instead of the payment being refused.
+        """
+        record = self.get_object()
+        try:
+            amount = Decimal(str(request.data.get('amount', '0')))
+        except (InvalidOperation, TypeError):
+            return Response({'detail': 'Enter a valid amount.'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({'detail': 'Amount must be greater than zero.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        paid_on = request.data.get('paid_on') or date_cls.today()
+        method = request.data.get('method') or 'cash'
+        reference = request.data.get('reference', '')
+
+        outstanding = record.balance
+        applied = min(amount, outstanding) if outstanding > 0 else Decimal('0')
+        excess = amount - applied
+
+        with transaction.atomic():
+            if applied > 0:
+                CrmPayment.objects.create(
+                    record=record, amount=applied, paid_on=paid_on, method=method,
+                    reference=reference, created_by=request.user,
+                )
+            if excess > 0:
+                CrmCredit.objects.create(
+                    customer_name=record.customer_name, amount=excess, received_on=paid_on,
+                    source='overpayment', method=method, reference=reference,
+                    note=f'Excess on receipt {record.receipt_number or record.date}',
+                    created_by=request.user,
+                )
+
+        parts = []
+        if applied > 0:
+            parts.append(f'{applied:,.2f} applied to this sale')
+        if excess > 0:
+            parts.append(f'{excess:,.2f} added to {record.customer_name}\'s credit')
+        return Response({
+            'applied': applied,
+            'to_credit': excess,
+            'credit_available': credit_balance(record.customer_name),
+            'detail': ' — '.join(parts) + '.',
+        })
+
+    @action(detail=True, methods=['post'])
+    def apply_credit(self, request, pk=None):
+        """Settle (part of) this sale from the customer's credit on account."""
+        record = self.get_object()
+        available = credit_balance(record.customer_name)
+        outstanding = record.balance
+
+        if outstanding <= 0:
+            return Response({'detail': 'This sale is already fully paid.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if available <= 0:
+            return Response({'detail': f'{record.customer_name} has no credit on account.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        requested = request.data.get('amount')
+        if requested in (None, ''):
+            amount = min(available, outstanding)
+        else:
+            try:
+                amount = Decimal(str(requested))
+            except (InvalidOperation, TypeError):
+                return Response({'detail': 'Enter a valid amount.'}, status=status.HTTP_400_BAD_REQUEST)
+            if amount <= 0:
+                return Response({'detail': 'Amount must be greater than zero.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if amount > available:
+                return Response({'detail': f'Only {available:,.2f} of credit is available.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if amount > outstanding:
+                return Response({'detail': f'Only {outstanding:,.2f} is outstanding on this sale.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        CrmPayment.objects.create(
+            record=record, amount=amount, paid_on=request.data.get('paid_on') or date_cls.today(),
+            method='other', reference='From credit on account', from_credit=True,
+            created_by=request.user,
+        )
+        return Response({
+            'applied': amount,
+            'credit_available': credit_balance(record.customer_name),
+            'detail': f'{amount:,.2f} deducted from credit and applied to this sale.',
         })
 
     @action(detail=False, methods=['get'])
@@ -352,18 +454,51 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
             .values_list('efd_receipt_number', flat=True)
         )
 
-        to_create, skipped = [], 0
+        to_create, paid_amounts, skipped = [], [], 0
         for row in rows:
             keys = {k for k in (row['receipt_number'], row['efd_receipt_number']) if k}
             if keys & seen:
                 skipped += 1
                 continue
             seen |= keys
+            paid_amounts.append(row.pop('amount_paid', Decimal('0')))
             to_create.append(CustomerRecord(created_by=request.user, **row))
 
-        CustomerRecord.objects.bulk_create(to_create)
+        with transaction.atomic():
+            created = CustomerRecord.objects.bulk_create(to_create)
+
+            # An "Amount Paid" figure becomes an opening payment dated with the
+            # sale, so an imported balance is backed by the same payment
+            # history as one entered by hand. Anything above the sale value
+            # lands on the customer's credit rather than being lost.
+            payments, credits = [], []
+            for record, paid in zip(created, paid_amounts):
+                if paid <= 0:
+                    continue
+                applied = min(paid, record.sales_amount)
+                if applied > 0:
+                    payments.append(CrmPayment(
+                        record=record, amount=applied, paid_on=record.date,
+                        method='other', reference='Imported opening balance',
+                        created_by=request.user,
+                    ))
+                excess = paid - applied
+                if excess > 0:
+                    credits.append(CrmCredit(
+                        customer_name=record.customer_name, amount=excess,
+                        received_on=record.date, source='overpayment', method='other',
+                        reference='Imported opening balance',
+                        note=f'Excess on receipt {record.receipt_number or record.date}',
+                        created_by=request.user,
+                    ))
+            CrmPayment.objects.bulk_create(payments)
+            CrmCredit.objects.bulk_create(credits)
 
         message = f'{len(to_create)} record(s) imported.'
+        if payments:
+            message += f' {len(payments)} payment(s) recorded.'
+        if credits:
+            message += f' {len(credits)} overpayment(s) put on customer credit.'
         if skipped:
             message += f' {skipped} skipped as already in the register.'
         if errors:
@@ -371,6 +506,8 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 'created': len(to_create),
+                'payments': len(payments),
+                'credits': len(credits),
                 'skipped': skipped,
                 'errors': errors[:50],
                 'error_count': len(errors),
@@ -403,6 +540,53 @@ class CrmPaymentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+
+class CrmCreditViewSet(viewsets.ModelViewSet):
+    """Money customers hold on account. Same admin + finance gate."""
+    queryset = CrmCredit.objects.all()
+    serializer_class = CrmCreditSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccountant]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        customer = (self.request.query_params.get('customer') or '').strip()
+        if customer:
+            qs = qs.filter(customer_name=customer)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Refuse to remove credit that has already been spent on a sale —
+        deleting it would leave the customer's account negative."""
+        remaining = credit_balance(instance.customer_name)
+        if instance.amount > remaining:
+            raise ValidationError({
+                'detail': (
+                    f'{instance.amount:,.2f} cannot be removed: only '
+                    f'{remaining:,.2f} of this customer\'s credit is unspent. '
+                    f'Remove the payments that drew on it first.'
+                )
+            })
+        instance.delete()
+
+    @action(detail=False, methods=['get'])
+    def balance(self, request):
+        customer = (request.query_params.get('customer') or '').strip()
+        if not customer:
+            return Response({'detail': 'No customer specified.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'customer_name': customer,
+            'credit_available': credit_balance(customer),
+            'entries': CrmCreditSerializer(
+                CrmCredit.objects.filter(customer_name=customer), many=True).data,
+            'drawn': CrmPaymentSerializer(
+                CrmPayment.objects.filter(record__customer_name=customer, from_credit=True),
+                many=True).data,
+        })
 
 
 class CrmCustomerDetailView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
@@ -490,6 +674,7 @@ class CrmCustomerReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
             name, tin, list(records),
             filters=_filter_labels(request.GET),
             generated_by=request.user.get_full_name() or request.user.username,
+            credit=credit_balance(name),
         )
 
 
@@ -509,8 +694,9 @@ class CrmImportTemplateView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
         sheet.append(TEMPLATE_HEADERS)
         for cell in sheet[1]:
             cell.font = Font(bold=True)
-        sheet.append(['2026-08-01', 'RC-0012', '35EFD9921', 'Kibo Traders', '109-882-441', 1250000])
-        for column, width in zip('ABCDEF', (14, 16, 18, 28, 18, 16)):
+        sheet.append(['2026-08-01', 'RC-0012', '35EFD9921', 'Kibo Traders', '109-882-441',
+                      1250000, 500000])
+        for column, width in zip('ABCDEFG', (14, 16, 18, 28, 18, 16, 16)):
             sheet.column_dimensions[column].width = width
 
         response = HttpResponse(

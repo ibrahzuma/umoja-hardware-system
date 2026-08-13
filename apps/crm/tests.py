@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
-from apps.crm.models import CrmPayment, CustomerRecord
+from apps.crm.models import CrmCredit, CrmPayment, CustomerRecord, credit_balance
 from apps.inventory.models import Branch
 from apps.sales.models import Customer, Sale
 from apps.users.models import User
@@ -327,6 +327,153 @@ class CrmPaymentTest(TestCase):
             self.client.post(f'/api/crm-records/{self.record.id}/mark_paid/').status_code, 403)
 
 
+class CrmCreditTest(TestCase):
+    """Overpayments and deposits become credit the customer can spend later."""
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct9', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        self.sale = CustomerRecord.objects.create(
+            date=date(2026, 8, 1), customer_name='Kibo Traders',
+            receipt_number='RC-1', sales_amount=1000)
+
+    def receive(self, record, amount, **extra):
+        payload = {'amount': amount, 'paid_on': '2026-08-02', 'method': 'cash'}
+        payload.update(extra)
+        return self.client.post(f'/api/crm-records/{record.id}/receive/',
+                                payload, content_type='application/json')
+
+    def test_overpayment_settles_the_sale_and_banks_the_rest(self):
+        """1,000 sale, customer hands over 1,500."""
+        response = self.receive(self.sale, '1500')
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertEqual(Decimal(str(body['applied'])), Decimal('1000'))
+        self.assertEqual(Decimal(str(body['to_credit'])), Decimal('500'))
+
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.balance, Decimal('0'))
+        self.assertEqual(self.sale.payment_status, 'paid')
+        # The sale's own balance never goes negative
+        self.assertEqual(self.sale.amount_paid, Decimal('1000'))
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('500'))
+
+        credit = CrmCredit.objects.get()
+        self.assertEqual(credit.source, 'overpayment')
+        self.assertEqual(credit.customer_name, 'Kibo Traders')
+
+    def test_credit_is_deducted_from_a_later_order(self):
+        self.receive(self.sale, '1500')  # 500 left on account
+
+        later = CustomerRecord.objects.create(
+            date=date(2026, 9, 1), customer_name='Kibo Traders',
+            receipt_number='RC-2', sales_amount=800)
+
+        response = self.client.post(f'/api/crm-records/{later.id}/apply_credit/',
+                                    {}, content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+
+        later.refresh_from_db()
+        self.assertEqual(later.amount_paid, Decimal('500'))
+        self.assertEqual(later.balance, Decimal('300'))
+        self.assertEqual(later.payment_status, 'partial')
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('0'))
+
+        # The draw is recorded as a credit-funded payment, not new money
+        drawn = later.payments.get()
+        self.assertTrue(drawn.from_credit)
+
+    def test_credit_use_is_capped_by_what_is_owed(self):
+        self.receive(self.sale, '3000')  # 2,000 on account
+        small = CustomerRecord.objects.create(
+            date=date(2026, 9, 1), customer_name='Kibo Traders',
+            receipt_number='RC-3', sales_amount=300)
+
+        self.client.post(f'/api/crm-records/{small.id}/apply_credit/', {}, content_type='application/json')
+        small.refresh_from_db()
+        self.assertEqual(small.balance, Decimal('0'))
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('1700'))
+
+    def test_cannot_spend_more_credit_than_is_held(self):
+        deposit = self.client.post('/api/crm-credits/', {
+            'customer_name': 'Kibo Traders', 'amount': '200',
+            'received_on': '2026-08-01', 'method': 'cash',
+        }, content_type='application/json')
+        self.assertEqual(deposit.status_code, 201, deposit.content)
+
+        response = self.client.post(f'/api/crm-records/{self.sale.id}/apply_credit/',
+                                    {'amount': '500'}, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Only 200.00 of credit is available', response.json()['detail'])
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('200'))
+
+    def test_apply_credit_needs_credit_and_an_unpaid_sale(self):
+        no_credit = self.client.post(f'/api/crm-records/{self.sale.id}/apply_credit/',
+                                     {}, content_type='application/json')
+        self.assertEqual(no_credit.status_code, 400)
+        self.assertIn('no credit on account', no_credit.json()['detail'])
+
+        self.receive(self.sale, '1000')
+        self.client.post('/api/crm-credits/', {
+            'customer_name': 'Kibo Traders', 'amount': '100', 'received_on': '2026-08-01',
+        }, content_type='application/json')
+        settled = self.client.post(f'/api/crm-records/{self.sale.id}/apply_credit/',
+                                   {}, content_type='application/json')
+        self.assertEqual(settled.status_code, 400)
+        self.assertIn('already fully paid', settled.json()['detail'])
+
+    def test_deposit_before_any_order(self):
+        """Customer pays in advance; the money waits on their account."""
+        response = self.client.post('/api/crm-credits/', {
+            'customer_name': 'Walk In Ltd', 'amount': '750',
+            'received_on': '2026-08-01', 'method': 'mobile', 'reference': 'MPESA-9',
+        }, content_type='application/json')
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(credit_balance('Walk In Ltd'), Decimal('750'))
+
+        balance = self.client.get('/api/crm-credits/balance/', {'customer': 'Walk In Ltd'}).json()
+        self.assertEqual(Decimal(str(balance['credit_available'])), Decimal('750'))
+        self.assertEqual(len(balance['entries']), 1)
+
+    def test_spent_credit_cannot_be_deleted(self):
+        self.receive(self.sale, '1500')
+        later = CustomerRecord.objects.create(date=date(2026, 9, 1), customer_name='Kibo Traders',
+                                              receipt_number='RC-9', sales_amount=800)
+        self.client.post(f'/api/crm-records/{later.id}/apply_credit/', {}, content_type='application/json')
+
+        credit = CrmCredit.objects.get()
+        response = self.client.delete(f'/api/crm-credits/{credit.id}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('cannot be removed', response.json()['detail'])
+        self.assertEqual(CrmCredit.objects.count(), 1)
+
+    def test_unspent_credit_can_be_deleted(self):
+        self.receive(self.sale, '1500')
+        credit = CrmCredit.objects.get()
+        self.assertEqual(self.client.delete(f'/api/crm-credits/{credit.id}/').status_code, 204)
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('0'))
+
+    def test_credit_shows_on_the_customer_list_and_summary(self):
+        self.receive(self.sale, '1500')
+        row = self.client.get('/api/crm-records/customers/').json()['results'][0]
+        self.assertEqual(Decimal(str(row['credit_available'])), Decimal('500'))
+
+        summary = self.client.get('/api/crm-records/summary/').json()
+        self.assertEqual(Decimal(str(summary['credit_available'])), Decimal('500'))
+
+    def test_receive_rejects_junk(self):
+        self.assertEqual(self.receive(self.sale, '0').status_code, 400)
+        self.assertEqual(self.receive(self.sale, '-100').status_code, 400)
+        self.assertEqual(self.receive(self.sale, 'abc').status_code, 400)
+
+    def test_credit_endpoints_are_closed_to_other_roles(self):
+        self.client.force_login(User.objects.create_user(username='crm_rep6', password='pw', role='sales_rep'))
+        self.assertEqual(self.receive(self.sale, '100').status_code, 403)
+        self.assertEqual(
+            self.client.post(f'/api/crm-records/{self.sale.id}/apply_credit/').status_code, 403)
+        self.assertEqual(self.client.get('/api/crm-credits/').status_code, 403)
+
+
 class CrmPaymentAggregationTest(TestCase):
     """Payment sums must not corrupt the sales totals they sit beside."""
 
@@ -501,7 +648,8 @@ def build_xlsx(rows, headers=None, name='customers.xlsx'):
     workbook = Workbook()
     sheet = workbook.active
     sheet.append(headers if headers is not None
-                 else ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN', 'Sales Amount'])
+                 else ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN',
+                       'Sales Amount', 'Amount Paid'])
     for row in rows:
         sheet.append(row)
     buffer = io.BytesIO()
@@ -606,6 +754,65 @@ class CrmBulkUploadTest(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(CustomerRecord.objects.get().customer_name, 'Kibo Traders')
 
+    def test_amount_paid_column_creates_opening_payments(self):
+        upload = build_xlsx([
+            ['2026-08-01', 'RC-1', '', 'Kibo Traders', '', 1000, 1000],   # settled
+            ['2026-08-02', 'RC-2', '', 'Kibo Traders', '', 1000, 400],    # part paid
+            ['2026-08-03', 'RC-3', '', 'Kibo Traders', '', 1000, ''],     # nothing paid
+        ])
+        response = self.post_file(upload)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()['payments'], 2)
+
+        by_receipt = {r.receipt_number: r for r in CustomerRecord.objects.all()}
+        self.assertEqual(by_receipt['RC-1'].payment_status, 'paid')
+        self.assertEqual(by_receipt['RC-2'].amount_paid, Decimal('400'))
+        self.assertEqual(by_receipt['RC-2'].payment_status, 'partial')
+        self.assertEqual(by_receipt['RC-3'].payment_status, 'unpaid')
+
+        opening = by_receipt['RC-2'].payments.get()
+        self.assertEqual(opening.paid_on, date(2026, 8, 2))  # dated with the sale
+        self.assertEqual(opening.reference, 'Imported opening balance')
+
+    def test_imported_overpayment_goes_to_customer_credit(self):
+        upload = build_xlsx([['2026-08-01', 'RC-1', '', 'Kibo Traders', '', 1000, 1500]])
+        response = self.post_file(upload)
+        body = response.json()
+        self.assertEqual(body['payments'], 1)
+        self.assertEqual(body['credits'], 1)
+
+        record = CustomerRecord.objects.get()
+        self.assertEqual(record.amount_paid, Decimal('1000'))  # capped at the sale
+        self.assertEqual(record.payment_status, 'paid')
+        self.assertEqual(credit_balance('Kibo Traders'), Decimal('500'))
+
+    def test_amount_paid_header_variants_and_absence(self):
+        upload = build_xlsx(
+            [['2026-08-01', 'Kibo Traders', 1000, 250]],
+            headers=['Date', 'Customer Name', 'Sales Amount', 'PAID'],
+        )
+        self.assertEqual(self.post_file(upload).status_code, 200)
+        self.assertEqual(CustomerRecord.objects.get().amount_paid, Decimal('250'))
+
+        # A sheet with no paid column still imports, as unpaid
+        CustomerRecord.objects.all().delete()
+        upload = build_xlsx(
+            [['2026-08-01', 'Mwanza Const', 500]],
+            headers=['Date', 'Customer Name', 'Sales Amount'],
+        )
+        self.assertEqual(self.post_file(upload).status_code, 200)
+        self.assertEqual(CustomerRecord.objects.get().payment_status, 'unpaid')
+
+    def test_negative_amount_paid_is_rejected_per_row(self):
+        upload = build_xlsx([
+            ['2026-08-01', 'RC-1', '', 'Good', '', 1000, 100],
+            ['2026-08-02', 'RC-2', '', 'Bad', '', 1000, -50],
+        ])
+        response = self.post_file(upload)
+        self.assertEqual(response.status_code, 207)
+        self.assertEqual(response.json()['created'], 1)
+        self.assertTrue(any('Amount Paid cannot be negative' in e for e in response.json()['errors']))
+
     def test_no_file_returns_400(self):
         response = self.client.post('/api/crm-records/bulk_upload/', {})
         self.assertEqual(response.status_code, 400)
@@ -617,7 +824,8 @@ class CrmBulkUploadTest(TestCase):
         sheet = load_workbook(io.BytesIO(response.content)).active
         self.assertEqual(
             [c.value for c in sheet[1]],
-            ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN', 'Sales Amount'],
+            ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN',
+             'Sales Amount', 'Amount Paid'],
         )
 
     def test_upload_is_closed_to_other_roles(self):

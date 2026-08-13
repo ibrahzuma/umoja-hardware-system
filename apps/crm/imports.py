@@ -50,11 +50,18 @@ COLUMN_ALIASES = {
     'sales': 'sales_amount',
     'total': 'sales_amount',
     'totalamount': 'sales_amount',
+
+    'amountpaid': 'amount_paid',
+    'paid': 'amount_paid',
+    'paidamount': 'amount_paid',
+    'payment': 'amount_paid',
+    'amountreceived': 'amount_paid',
 }
 
 REQUIRED_FIELDS = ('date', 'customer_name')
 
-TEMPLATE_HEADERS = ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN', 'Sales Amount']
+TEMPLATE_HEADERS = ['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN',
+                    'Sales Amount', 'Amount Paid']
 
 DATE_FORMATS = ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y', '%Y/%m/%d', '%m/%d/%Y')
 
@@ -200,6 +207,10 @@ def parse_upload(upload):
                 'customer_name': _clean_text(values.get('customer_name'), 200),
                 'tin': _clean_text(values.get('tin'), 40),
                 'sales_amount': parse_amount(values.get('sales_amount')),
+                # Optional column. Absent means "nothing recorded as paid"; it
+                # is not the same as a zero the user actually typed, but for an
+                # opening import the two behave identically.
+                'amount_paid': parse_amount(values.get('amount_paid')),
             }
         except ValueError as exc:
             errors.append(f'Row {offset}: {exc}')
@@ -207,6 +218,9 @@ def parse_upload(upload):
 
         if not record['customer_name']:
             errors.append(f'Row {offset}: Customer Name is required')
+            continue
+        if record['amount_paid'] < 0:
+            errors.append(f'Row {offset}: Amount Paid cannot be negative')
             continue
 
         rows.append(record)

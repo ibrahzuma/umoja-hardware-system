@@ -15,7 +15,7 @@ from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet,
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
-from apps.crm.views import CrmPaymentViewSet, CustomerRecordViewSet
+from apps.crm.views import CrmCreditViewSet, CrmPaymentViewSet, CustomerRecordViewSet
 from apps.core.api_views import ActivityViewSet, NotificationViewSet
 from apps.hr.views import (
     DepartmentViewSet, JobPositionViewSet, EmployeeViewSet, LeaveTypeViewSet,
@@ -73,6 +73,7 @@ router.register(r'disciplinary-actions', DisciplinaryActionViewSet)
 # CRM
 router.register(r'crm-records', CustomerRecordViewSet)
 router.register(r'crm-payments', CrmPaymentViewSet)
+router.register(r'crm-credits', CrmCreditViewSet)
 
 urlpatterns = [
     path(ADMIN_URL, admin.site.urls),

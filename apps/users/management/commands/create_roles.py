@@ -69,6 +69,8 @@ class Command(BaseCommand):
                 'crm.change_customerrecord', 'crm.delete_customerrecord',
                 'crm.view_crmpayment', 'crm.add_crmpayment',
                 'crm.change_crmpayment', 'crm.delete_crmpayment',
+                'crm.view_crmcredit', 'crm.add_crmcredit',
+                'crm.change_crmcredit', 'crm.delete_crmcredit',
             ],
             'Store Keeper': [
                 'inventory.view_stock',

@@ -200,30 +200,34 @@ def customers_report(rows, filters=(), generated_by=''):
     elements.append(Spacer(1, 8))
 
     currency = company['currency']
-    data = [['#', 'Customer Name', 'TIN', 'Records', 'First', 'Last',
-             f'Total ({currency})', f'Paid ({currency})', f'Balance ({currency})', 'Status']]
-    widths = [9 * mm, 54 * mm, 25 * mm, 16 * mm, 20 * mm, 20 * mm,
-              34 * mm, 34 * mm, 34 * mm, 23 * mm]
-    money_cols = (6, 7, 8)
+    data = [['#', 'Customer Name', 'TIN', 'Recs', 'Last',
+             f'Total ({currency})', f'Paid ({currency})', f'Balance ({currency})',
+             f'Credit ({currency})', 'Status']]
+    widths = [9 * mm, 52 * mm, 25 * mm, 13 * mm, 20 * mm,
+              33 * mm, 33 * mm, 33 * mm, 28 * mm, 23 * mm]
+    money_cols = (5, 6, 7, 8)
 
     total = Decimal('0')
     paid_total = Decimal('0')
+    credit_total = Decimal('0')
     records = 0
     for index, row in enumerate(rows, start=1):
+        credit = Decimal(str(row.get('credit_available') or 0))
         data.append([
             str(index),
             Paragraph(str(row['customer_name']), cell),
             row['tin'] or '-',
             str(row['records']),
-            str(row['first_transaction'] or '-'),
             str(row['last_transaction'] or '-'),
             _money(row['total_amount']),
             _money(row.get('amount_paid', 0)),
             _money(row.get('balance', row['total_amount'])),
+            _money(credit) if credit > 0 else '-',
             STATUS_LABELS.get(row.get('payment_status', ''), '-'),
         ])
         total += Decimal(str(row['total_amount'] or 0))
         paid_total += Decimal(str(row.get('amount_paid') or 0))
+        credit_total += credit
         records += row['records']
 
     if len(data) == 1:
@@ -231,8 +235,9 @@ def customers_report(rows, filters=(), generated_by=''):
         table = Table(data, repeatRows=1, colWidths=widths)
         table.setStyle(_table_style(total_row=False, right_cols=money_cols))
     else:
-        data.append(['', f'TOTAL — {len(rows)} customer(s)', '', str(records), '', '',
-                     _money(total), _money(paid_total), _money(total - paid_total), ''])
+        data.append(['', f'TOTAL — {len(rows)} customer(s)', '', str(records), '',
+                     _money(total), _money(paid_total), _money(total - paid_total),
+                     _money(credit_total), ''])
         table = Table(data, repeatRows=1, colWidths=widths)
         table.setStyle(_table_style(right_cols=money_cols))
 
@@ -244,7 +249,7 @@ def customers_report(rows, filters=(), generated_by=''):
     )
 
 
-def customer_statement(customer_name, tin, records, filters=(), generated_by=''):
+def customer_statement(customer_name, tin, records, filters=(), generated_by='', credit=Decimal('0')):
     """Every transaction on file for one customer."""
     company = company_info()
     styles = getSampleStyleSheet()
@@ -302,6 +307,12 @@ def customer_statement(customer_name, tin, records, filters=(), generated_by='')
             f" &nbsp;&nbsp;|&nbsp;&nbsp; Outstanding balance: "
             f"<b><font color='{'#B00020' if outstanding > 0 else '#1B7F3B'}'>"
             f"{_money(outstanding)} {currency}</font></b>", label))
+
+    if credit and credit > 0:
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(
+            f"Credit on account: <b><font color='#0B6E8A'>{_money(credit)} {currency}</font></b>"
+            f" &nbsp;<font size=8 color='#666666'>(held for future orders)</font>", label))
 
     safe_name = ''.join(c if c.isalnum() else '_' for c in customer_name)[:40] or 'customer'
     return _build(

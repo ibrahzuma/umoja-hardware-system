@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CrmPayment, CustomerRecord
+from .models import CrmCredit, CrmPayment, CustomerRecord
 
 
 class CrmPaymentInline(admin.TabularInline):
@@ -20,6 +20,13 @@ class CustomerRecordAdmin(admin.ModelAdmin):
 
 @admin.register(CrmPayment)
 class CrmPaymentAdmin(admin.ModelAdmin):
-    list_display = ('paid_on', 'record', 'amount', 'method', 'reference')
-    list_filter = ('method', 'paid_on')
+    list_display = ('paid_on', 'record', 'amount', 'method', 'from_credit', 'reference')
+    list_filter = ('method', 'from_credit', 'paid_on')
     search_fields = ('record__customer_name', 'reference')
+
+
+@admin.register(CrmCredit)
+class CrmCreditAdmin(admin.ModelAdmin):
+    list_display = ('received_on', 'customer_name', 'amount', 'source', 'method', 'reference')
+    list_filter = ('source', 'method', 'received_on')
+    search_fields = ('customer_name', 'reference', 'note')

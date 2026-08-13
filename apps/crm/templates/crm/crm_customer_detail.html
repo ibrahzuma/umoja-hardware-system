@@ -22,12 +22,16 @@
         <h2 class="text-primary fw-bold mb-1"><i class="bi bi-person-circle"></i> {{ customer_name }}</h2>
         <div class="text-muted">
             TIN: <strong>{{ tin|default:"not recorded" }}</strong>
+            <span id="creditPill" class="badge bg-info text-dark ms-2 d-none"></span>
         </div>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="{% url 'crm:customer_records' %}">
             <i class="bi bi-arrow-left"></i> All Customers
         </a>
+        <button class="btn btn-outline-info" onclick="openCreditModal()">
+            <i class="bi bi-wallet2"></i> Credit / Deposit
+        </button>
         <a class="btn btn-outline-primary" href="{% url 'crm:export' %}?customer={{ customer_name|urlencode }}">
             <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
         </a>
@@ -66,6 +70,16 @@
             <h4 class="fw-bold text-danger mb-0" id="statBalance">0</h4>
         </div>
     </div>
+</div>
+
+<div class="alert alert-info d-none align-items-center justify-content-between flex-wrap gap-2" id="creditBanner">
+    <div>
+        <i class="bi bi-wallet2"></i>
+        <strong>{{ customer_name }}</strong> has
+        <strong id="creditAmount">0</strong> TZS on account.
+        Use it against any unpaid sale with the <i class="bi bi-wallet2"></i> button on its row.
+    </div>
+    <button class="btn btn-sm btn-outline-info" onclick="openCreditModal()">View credit</button>
 </div>
 
 <div class="card shadow-sm">
@@ -179,8 +193,14 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="form-text">
+                        <div class="form-text" id="paymentHint">
                             Pre-filled with the full balance — reduce it to record a part payment.
+                        </div>
+                        <div class="alert alert-info py-2 mt-2 mb-0 d-none" id="paymentOverflowNote">
+                            <i class="bi bi-wallet2"></i>
+                            That is more than this sale is worth —
+                            <strong id="paymentOverflowAmount">0</strong> TZS will be put on
+                            the customer's account as credit for a future order.
                         </div>
                     </form>
                 </div>
@@ -197,6 +217,79 @@
                             </tr>
                         </thead>
                         <tbody id="paymentTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Credit on account -->
+<div class="modal fade" id="creditModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title"><i class="bi bi-wallet2 text-info"></i> Credit on Account</h5>
+                    <div class="small text-muted">{{ customer_name }}</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center border rounded p-3 mb-3 bg-light">
+                    <div class="small text-muted">Available to use on future orders</div>
+                    <h3 class="fw-bold text-info mb-0"><span id="creditModalBalance">0</span> TZS</h3>
+                </div>
+
+                <div class="border rounded p-3 bg-light mb-3">
+                    <form id="creditForm" onsubmit="handleCreditSave(event)">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small mb-1">Deposit amount</label>
+                                <input type="number" class="form-control" name="amount" step="0.01" min="0.01" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-1">Date</label>
+                                <input type="date" class="form-control" name="received_on" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-1">Method</label>
+                                <select class="form-select" name="method">
+                                    <option value="cash">Cash</option>
+                                    <option value="bank">Bank Transfer</option>
+                                    <option value="mobile">Mobile Money</option>
+                                    <option value="cheque">Cheque</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-1">Reference</label>
+                                <input type="text" class="form-control" name="reference" placeholder="optional">
+                            </div>
+                            <div class="col-md-2 d-grid">
+                                <button type="submit" class="btn btn-info text-white">
+                                    <i class="bi bi-plus-lg"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-text">
+                            Money taken in advance of an order. Deduct it later from any unpaid sale.
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th class="text-end">Amount</th>
+                                <th>Reference</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="creditTableBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -283,11 +376,147 @@
         } catch (error) { console.error(error); }
     }
 
+    // Credit currently on account; refreshed with every summary fetch and used
+    // to enable/disable the "use credit" button on each row.
+    let creditAvailable = 0;
+
     function renderSummary(s) {
         document.getElementById('statRecords').innerText = Number(s.records || 0).toLocaleString();
         document.getElementById('statTotal').innerText = money(s.total_amount);
         document.getElementById('statPaid').innerText = money(s.amount_paid);
         document.getElementById('statBalance').innerText = money(s.balance);
+
+        creditAvailable = Number(s.credit_available || 0);
+        const banner = document.getElementById('creditBanner');
+        const pill = document.getElementById('creditPill');
+        document.getElementById('creditAmount').innerText = money(creditAvailable);
+        banner.classList.toggle('d-none', creditAvailable <= 0);
+        banner.classList.toggle('d-flex', creditAvailable > 0);
+        pill.classList.toggle('d-none', creditAvailable <= 0);
+        pill.innerText = `Credit: ${money(creditAvailable)} TZS`;
+    }
+
+    async function useCredit(record) {
+        const usable = Math.min(creditAvailable, Number(record.balance));
+        const confirmed = await Swal.fire({
+            title: 'Use credit on account?',
+            html: `Deduct <b>${money(usable)} TZS</b> from ${escapeHtml(CUSTOMER_NAME)}'s credit `
+                + `and apply it to receipt ${escapeHtml(record.receipt_number) || record.date}.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Apply credit'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-records/${record.id}/apply_credit/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({})
+            });
+            const result = await response.json();
+            if (response.ok) {
+                fetchRecords();
+                Swal.fire('Applied', result.detail, 'success');
+            } else {
+                Swal.fire('Error', result.detail || 'Could not apply credit', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    async function openCreditModal() {
+        const form = document.getElementById('creditForm');
+        form.reset();
+        form.received_on.value = new Date().toISOString().slice(0, 10);
+        new bootstrap.Modal(document.getElementById('creditModal')).show();
+        await loadCredit();
+    }
+
+    async function loadCredit() {
+        const tbody = document.getElementById('creditTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3">Loading...</td></tr>';
+        try {
+            const response = await fetch('/api/crm-credits/balance/?customer=' + encodeURIComponent(CUSTOMER_NAME));
+            const data = await response.json();
+            document.getElementById('creditModalBalance').innerText = money(data.credit_available);
+
+            tbody.innerHTML = '';
+            const entries = (data.entries || []).map(e => ({
+                date: e.received_on, label: e.source_display, amount: Number(e.amount),
+                reference: e.reference || e.note || '', id: e.id, removable: true,
+            })).concat((data.drawn || []).map(p => ({
+                date: p.paid_on, label: 'Applied to a sale', amount: -Number(p.amount),
+                reference: p.reference || '', id: p.id, removable: false,
+            })));
+            entries.sort((a, b) => (a.date < b.date ? 1 : -1));
+
+            if (!entries.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">No credit on account</td></tr>';
+                return;
+            }
+            entries.forEach(e => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-muted">${e.date}</td>
+                    <td>${escapeHtml(e.label)}</td>
+                    <td class="text-end fw-semibold ${e.amount < 0 ? 'text-danger' : 'text-success'}">
+                        ${e.amount < 0 ? '-' : '+'}${money(Math.abs(e.amount))}
+                    </td>
+                    <td><small>${escapeHtml(e.reference)}</small></td>
+                    <td class="text-end">${e.removable
+                        ? '<button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>'
+                        : ''}</td>
+                `;
+                const button = tr.querySelector('button');
+                if (button) button.addEventListener('click', () => deleteCredit(e));
+                tbody.appendChild(tr);
+            });
+        } catch (error) { console.error(error); }
+    }
+
+    async function handleCreditSave(e) {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target).entries());
+        data.customer_name = CUSTOMER_NAME;
+        data.source = 'deposit';
+        try {
+            const response = await fetch('/api/crm-credits/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                e.target.reset();
+                document.getElementById('creditForm').received_on.value = new Date().toISOString().slice(0, 10);
+                await loadCredit();
+                fetchRecords();
+                Swal.fire('Saved', 'Deposit added to the customer\'s account', 'success');
+            } else {
+                const err = await response.json().catch(() => ({}));
+                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    async function deleteCredit(entry) {
+        const confirmed = await Swal.fire({
+            title: 'Remove this credit?',
+            text: `${money(entry.amount)} TZS received on ${entry.date}`,
+            icon: 'warning', showCancelButton: true,
+            confirmButtonColor: '#dc3545', confirmButtonText: 'Remove'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-credits/${entry.id}/`, {
+                method: 'DELETE', headers: { 'X-CSRFToken': CSRF }
+            });
+            if (response.ok) {
+                await loadCredit();
+                fetchRecords();
+            } else {
+                const err = await response.json().catch(() => ({}));
+                Swal.fire('Cannot remove', err.detail || 'Failed to remove credit', 'error');
+            }
+        } catch (error) { console.error(error); }
     }
 
     const STATUS_BADGE = {
@@ -318,13 +547,18 @@
                     <button class="btn btn-sm btn-outline-success" title="Mark fully paid" ${settled ? 'disabled' : ''}>
                         <i class="bi bi-check2-circle"></i>
                     </button>
+                    <button class="btn btn-sm btn-outline-info" title="Use credit on account"
+                            ${settled || creditAvailable <= 0 ? 'disabled' : ''}>
+                        <i class="bi bi-wallet2"></i>
+                    </button>
                     <button class="btn btn-sm btn-outline-primary" title="Payments"><i class="bi bi-cash-coin"></i></button>
                     <button class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
             `;
-            const [payFullBtn, paymentsBtn, editBtn, deleteBtn] = tr.querySelectorAll('button');
+            const [payFullBtn, creditBtn, paymentsBtn, editBtn, deleteBtn] = tr.querySelectorAll('button');
             payFullBtn.addEventListener('click', () => markPaid(r));
+            creditBtn.addEventListener('click', () => useCredit(r));
             paymentsBtn.addEventListener('click', () => openPaymentModal(r));
             editBtn.addEventListener('click', () => openRecordModal(r));
             deleteBtn.addEventListener('click', () => handleDelete(r));
@@ -383,10 +617,18 @@
             document.getElementById('paymentPaid').innerText = money(data.amount_paid);
             document.getElementById('paymentBalance').innerText = money(data.balance);
             const form = document.getElementById('paymentForm');
-            form.amount.max = data.balance;
+            // No max: paying over the balance is allowed and becomes credit.
             form.amount.value = data.balance > 0 ? data.balance : '';
             document.getElementById('paymentAddBox').classList.toggle('d-none', Number(data.balance) <= 0);
             document.getElementById('paymentSettled').classList.toggle('d-none', Number(data.balance) > 0);
+
+            const outstanding = Number(data.balance);
+            form.amount.oninput = function () {
+                const excess = Number(this.value || 0) - outstanding;
+                document.getElementById('paymentOverflowAmount').innerText = money(Math.max(excess, 0));
+                document.getElementById('paymentOverflowNote').classList.toggle('d-none', excess <= 0);
+            };
+            form.amount.oninput();
 
             tbody.innerHTML = '';
             if (!data.payments.length) {
@@ -412,22 +654,22 @@
 
     async function handlePaymentSave(e) {
         e.preventDefault();
-        const form = e.target;
-        const data = Object.fromEntries(new FormData(form).entries());
-        data.record = activeRecord.id;
+        const data = Object.fromEntries(new FormData(e.target).entries());
         try {
-            const response = await fetch('/api/crm-payments/', {
+            // "receive" rather than a plain payment: it applies what the sale
+            // is owed and routes any excess to the customer's credit.
+            const response = await fetch(`/api/crm-records/${activeRecord.id}/receive/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
                 body: JSON.stringify(data)
             });
+            const result = await response.json();
             if (response.ok) {
                 await loadPayments();
                 fetchRecords();
-                Swal.fire('Recorded', 'Payment saved', 'success');
+                Swal.fire('Recorded', result.detail, 'success');
             } else {
-                const err = await response.json().catch(() => ({}));
-                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save payment', 'error');
+                Swal.fire('Error', result.detail || 'Failed to save payment', 'error');
             }
         } catch (error) { console.error(error); }
     }
