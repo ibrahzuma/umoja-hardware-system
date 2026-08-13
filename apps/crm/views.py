@@ -2,7 +2,7 @@ import csv
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.db.models import Count, Max, Min, Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
@@ -14,6 +14,7 @@ from apps.users.permissions import IsAccountant
 
 from .imports import TEMPLATE_HEADERS, ImportError_, parse_upload
 from .models import CustomerRecord
+from .reports import customer_statement, customers_report
 from .serializers import CustomerRecordSerializer
 
 
@@ -48,6 +49,64 @@ def _filtered_records(params):
     if end:
         qs = qs.filter(date__lte=end)
     return qs
+
+
+def _customer_rows(qs):
+    """Group a record queryset into one row per customer.
+
+    Shared by the customers API action and the PDF report so the screen and
+    the printout can never disagree.
+    """
+    grouped = (
+        qs.values('customer_name')
+        .annotate(
+            records=Count('id'),
+            total_amount=Sum('sales_amount'),
+            last_transaction=Max('date'),
+            first_transaction=Min('date'),
+        )
+        .order_by('-total_amount', 'customer_name')
+    )
+
+    # Latest non-blank TIN per customer, in one pass rather than per row.
+    tins = {}
+    for name, tin in (
+        qs.exclude(tin='').order_by('date', 'id')
+        .values_list('customer_name', 'tin')
+    ):
+        tins[name] = tin
+
+    return [
+        {
+            'customer_name': row['customer_name'],
+            'tin': tins.get(row['customer_name'], ''),
+            'records': row['records'],
+            'total_amount': row['total_amount'] or 0,
+            'last_transaction': row['last_transaction'],
+            'first_transaction': row['first_transaction'],
+        }
+        for row in grouped
+    ]
+
+
+def _filter_labels(params):
+    """Human-readable description of the filters a report was run with, so a
+    printed page always says what selection it represents."""
+    labels = []
+    search = (params.get('search') or '').strip()
+    start = (params.get('start') or '').strip()
+    end = (params.get('end') or '').strip()
+    if search:
+        labels.append(f'Search: "{search}"')
+    if start and end:
+        labels.append(f'Period: {start} to {end}')
+    elif start:
+        labels.append(f'Period: from {start}')
+    elif end:
+        labels.append(f'Period: up to {end}')
+    if not labels:
+        labels.append('All records')
+    return labels
 
 
 class CrmPagination(PageNumberPagination):
@@ -92,37 +151,7 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         the identity. TIN is reported from the customer's most recent record
         that carries one, since older rows are often left blank.
         """
-        qs = self.get_queryset()
-        grouped = (
-            qs.values('customer_name')
-            .annotate(
-                records=Count('id'),
-                total_amount=Sum('sales_amount'),
-                last_transaction=Max('date'),
-                first_transaction=Min('date'),
-            )
-            .order_by('-total_amount', 'customer_name')
-        )
-
-        # Latest non-blank TIN per customer, in one pass rather than per row.
-        tins = {}
-        for name, tin in (
-            qs.exclude(tin='').order_by('date', 'id')
-            .values_list('customer_name', 'tin')
-        ):
-            tins[name] = tin
-
-        rows = [
-            {
-                'customer_name': row['customer_name'],
-                'tin': tins.get(row['customer_name'], ''),
-                'records': row['records'],
-                'total_amount': row['total_amount'] or 0,
-                'last_transaction': row['last_transaction'],
-                'first_transaction': row['first_transaction'],
-            }
-            for row in grouped
-        ]
+        rows = _customer_rows(self.get_queryset())
         # Paginated like the record list — a busy register has thousands of
         # customers and the landing screen must not fetch them all.
         page = self.paginate_queryset(rows)
@@ -297,6 +326,49 @@ class CrmExportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
                 r.customer_name, r.tin, r.sales_amount,
             ])
         return response
+
+
+class CrmReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """PDF of every customer in the register, honouring the screen's filters."""
+
+    def test_func(self):
+        return can_use_crm(self.request.user)
+
+    def get(self, request, *args, **kwargs):
+        rows = _customer_rows(_filtered_records(request.GET))
+        return customers_report(
+            rows,
+            filters=_filter_labels(request.GET),
+            generated_by=request.user.get_full_name() or request.user.username,
+        )
+
+
+class CrmCustomerReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """PDF statement for a single customer."""
+
+    def test_func(self):
+        return can_use_crm(self.request.user)
+
+    def get(self, request, *args, **kwargs):
+        name = (request.GET.get('name') or '').strip()
+        if not name:
+            raise Http404('No customer specified.')
+
+        params = request.GET.copy()
+        params['customer'] = name
+        records = _filtered_records(params).order_by('date', 'id')
+        if not CustomerRecord.objects.filter(customer_name=name).exists():
+            raise Http404('No records for this customer.')
+
+        tin = (
+            CustomerRecord.objects.filter(customer_name=name).exclude(tin='')
+            .order_by('-date', '-id').values_list('tin', flat=True).first() or ''
+        )
+        return customer_statement(
+            name, tin, list(records),
+            filters=_filter_labels(request.GET),
+            generated_by=request.user.get_full_name() or request.user.username,
+        )
 
 
 class CrmImportTemplateView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):

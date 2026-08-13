@@ -201,6 +201,60 @@ class CrmCustomerListTest(TestCase):
         self.assertEqual(self.client.get('/api/crm-records/customers/').status_code, 403)
 
 
+class CrmPdfReportTest(TestCase):
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct6', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        CustomerRecord.objects.create(date=date(2026, 8, 1), customer_name='Kibo Traders',
+                                      receipt_number='RC-1', tin='109-882-441', sales_amount=100)
+        CustomerRecord.objects.create(date=date(2026, 8, 5), customer_name='Kibo Traders',
+                                      receipt_number='RC-2', tin='109-882-441', sales_amount=250)
+        CustomerRecord.objects.create(date=date(2026, 8, 3), customer_name='Mwanza Const',
+                                      receipt_number='RC-3', tin='122-004-908', sales_amount=900)
+
+    def assertIsPdf(self, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF-'), 'response is not a PDF')
+        self.assertGreater(len(response.content), 1000)
+
+    def test_all_customers_report(self):
+        response = self.client.get(reverse('crm:report'))
+        self.assertIsPdf(response)
+        self.assertIn('crm_customers_', response['Content-Disposition'])
+
+    def test_all_customers_report_honours_filters(self):
+        filtered = self.client.get(reverse('crm:report'), {'search': 'Mwanza'})
+        self.assertIsPdf(filtered)
+        # A filter that matches nothing still renders a valid (empty) report
+        empty = self.client.get(reverse('crm:report'), {'search': 'nobody at all'})
+        self.assertIsPdf(empty)
+
+    def test_single_customer_report(self):
+        response = self.client.get(reverse('crm:customer_report'), {'name': 'Kibo Traders'})
+        self.assertIsPdf(response)
+        self.assertIn('crm_Kibo_Traders_', response['Content-Disposition'])
+
+    def test_single_customer_report_needs_a_known_customer(self):
+        self.assertEqual(self.client.get(reverse('crm:customer_report')).status_code, 404)
+        self.assertEqual(
+            self.client.get(reverse('crm:customer_report'), {'name': 'Nobody Ltd'}).status_code, 404)
+
+    def test_reports_carry_the_logo(self):
+        """The logo must actually be embedded, not silently dropped."""
+        from apps.crm.reports import _logo_path
+        self.assertIsNotNone(_logo_path(), 'no logo file resolved')
+
+        response = self.client.get(reverse('crm:customer_report'), {'name': 'Kibo Traders'})
+        self.assertIn(b'/Image', response.content, 'no image XObject in the PDF')
+
+    def test_reports_are_closed_to_other_roles(self):
+        self.client.force_login(User.objects.create_user(username='crm_rep4', password='pw', role='sales_rep'))
+        self.assertEqual(self.client.get(reverse('crm:report')).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse('crm:customer_report'), {'name': 'Kibo Traders'}).status_code, 403)
+
+
 class CrmPaginationTest(TestCase):
     """Neither table may ever return the whole register."""
 

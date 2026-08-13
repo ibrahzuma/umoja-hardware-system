@@ -15,6 +15,9 @@
         <a class="btn btn-outline-primary" id="exportLink" href="{% url 'crm:export' %}">
             <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
         </a>
+        <a class="btn btn-outline-danger" id="reportLink" href="{% url 'crm:report' %}" target="_blank">
+            <i class="bi bi-file-earmark-pdf"></i> PDF Report
+        </a>
         <button class="btn btn-success" onclick="openRecordModal()">
             <i class="bi bi-plus-lg"></i> Add Record
         </button>
@@ -226,9 +229,10 @@
     }
 
     async function fetchCustomers() {
-        // Export stays unpaged — it exports everything the filters match.
+        // Export and PDF stay unpaged — they cover everything the filters match.
         const query = currentQuery();
         document.getElementById('exportLink').href = "{% url 'crm:export' %}" + (query ? '?' + query : '');
+        document.getElementById('reportLink').href = "{% url 'crm:report' %}" + (query ? '?' + query : '');
         const paged = withPaging(new URLSearchParams(query)).toString();
         try {
             const [listRes, sumRes] = await Promise.all([

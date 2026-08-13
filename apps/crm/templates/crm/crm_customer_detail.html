@@ -31,6 +31,10 @@
         <a class="btn btn-outline-primary" href="{% url 'crm:export' %}?customer={{ customer_name|urlencode }}">
             <i class="bi bi-file-earmark-spreadsheet"></i> Export CSV
         </a>
+        <a class="btn btn-outline-danger" id="reportLink" target="_blank"
+           href="{% url 'crm:customer_report' %}?name={{ customer_name|urlencode }}">
+            <i class="bi bi-file-earmark-pdf"></i> PDF Report
+        </a>
         <button class="btn btn-success" onclick="addForCustomer()">
             <i class="bi bi-plus-lg"></i> Add Record
         </button>
@@ -147,6 +151,16 @@
         // not just the rows visible on this page.
         const query = currentQuery();
         const paged = withPaging(new URLSearchParams(query)).toString();
+
+        // Keep the PDF on the same date window the table is showing.
+        const reportParams = new URLSearchParams({ name: CUSTOMER_NAME });
+        const start = document.getElementById('filterStart').value;
+        const end = document.getElementById('filterEnd').value;
+        if (start) reportParams.set('start', start);
+        if (end) reportParams.set('end', end);
+        document.getElementById('reportLink').href =
+            "{% url 'crm:customer_report' %}?" + reportParams.toString();
+
         try {
             const [listRes, sumRes] = await Promise.all([
                 fetch('/api/crm-records/?' + paged),
