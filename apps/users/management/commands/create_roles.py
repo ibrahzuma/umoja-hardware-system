@@ -67,6 +67,8 @@ class Command(BaseCommand):
                 # CRM customer register is an admin + finance screen
                 'crm.view_customerrecord', 'crm.add_customerrecord',
                 'crm.change_customerrecord', 'crm.delete_customerrecord',
+                'crm.view_crmpayment', 'crm.add_crmpayment',
+                'crm.change_crmpayment', 'crm.delete_crmpayment',
             ],
             'Store Keeper': [
                 'inventory.view_stock',

@@ -1,7 +1,10 @@
 import csv
+from datetime import date as date_cls
+from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Count, Max, Min, Q, Sum
+from django.db.models import Count, DecimalField, F, Max, Min, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse
 from django.views.generic import TemplateView
 from rest_framework import permissions, status, viewsets
@@ -13,9 +16,9 @@ from apps.sales.models import Sale
 from apps.users.permissions import IsAccountant
 
 from .imports import TEMPLATE_HEADERS, ImportError_, parse_upload
-from .models import CustomerRecord
+from .models import CrmPayment, CustomerRecord
 from .reports import customer_statement, customers_report
-from .serializers import CustomerRecordSerializer
+from .serializers import CrmPaymentSerializer, CustomerRecordSerializer
 
 
 def can_use_crm(user):
@@ -48,7 +51,47 @@ def _filtered_records(params):
         qs = qs.filter(date__gte=start)
     if end:
         qs = qs.filter(date__lte=end)
+
+    # Payment state is derived from the payments table, so it is filtered via a
+    # subquery — annotating here would join payments and inflate the SUM/COUNT
+    # aggregates that _customer_rows() computes on this same queryset.
+    status_filter = (params.get('status') or '').strip()
+    if status_filter in ('paid', 'partial', 'unpaid'):
+        paid = CustomerRecord.objects.annotate(
+            paid_total=Coalesce(Sum('payments__amount'), Value(Decimal('0')),
+                                output_field=DecimalField(max_digits=14, decimal_places=2))
+        )
+        if status_filter == 'unpaid':
+            matching = paid.filter(paid_total__lte=0, sales_amount__gt=0)
+        elif status_filter == 'partial':
+            matching = paid.filter(paid_total__gt=0, paid_total__lt=F('sales_amount'))
+        else:
+            matching = paid.filter(paid_total__gte=F('sales_amount'))
+        qs = qs.filter(pk__in=matching.values('pk'))
     return qs
+
+
+def _with_payments(qs):
+    """Attach each record's paid total, so a page of rows costs one query."""
+    return qs.annotate(
+        paid_total=Coalesce(Sum('payments__amount'), Value(Decimal('0')),
+                            output_field=DecimalField(max_digits=14, decimal_places=2))
+    )
+
+
+def _paid_by_customer(qs):
+    """{customer_name: amount paid} across a record selection.
+
+    Deliberately a separate query rather than another annotation on the
+    grouping above — joining payments there would multiply each record row by
+    its number of payments and inflate the sales totals.
+    """
+    rows = (
+        CrmPayment.objects.filter(record__in=qs.values('pk'))
+        .values('record__customer_name')
+        .annotate(paid=Sum('amount'))
+    )
+    return {row['record__customer_name']: row['paid'] or Decimal('0') for row in rows}
 
 
 def _customer_rows(qs):
@@ -76,17 +119,25 @@ def _customer_rows(qs):
     ):
         tins[name] = tin
 
-    return [
-        {
+    paid_map = _paid_by_customer(qs)
+
+    rows = []
+    for row in grouped:
+        total = Decimal(str(row['total_amount'] or 0))
+        paid = Decimal(str(paid_map.get(row['customer_name'], 0)))
+        balance = total - paid
+        rows.append({
             'customer_name': row['customer_name'],
             'tin': tins.get(row['customer_name'], ''),
             'records': row['records'],
-            'total_amount': row['total_amount'] or 0,
+            'total_amount': total,
+            'amount_paid': paid,
+            'balance': balance,
+            'payment_status': 'paid' if balance <= 0 else ('partial' if paid > 0 else 'unpaid'),
             'last_transaction': row['last_transaction'],
             'first_transaction': row['first_transaction'],
-        }
-        for row in grouped
-    ]
+        })
+    return rows
 
 
 def _filter_labels(params):
@@ -96,8 +147,12 @@ def _filter_labels(params):
     search = (params.get('search') or '').strip()
     start = (params.get('start') or '').strip()
     end = (params.get('end') or '').strip()
+    status_filter = (params.get('status') or '').strip()
     if search:
         labels.append(f'Search: "{search}"')
+    if status_filter in ('paid', 'partial', 'unpaid'):
+        labels.append({'paid': 'Fully paid only', 'partial': 'Partly paid only',
+                       'unpaid': 'Unpaid only'}[status_filter])
     if start and end:
         labels.append(f'Period: {start} to {end}')
     elif start:
@@ -127,19 +182,61 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
     pagination_class = CrmPagination
 
     def get_queryset(self):
-        return _filtered_records(self.request.query_params)
+        return _with_payments(_filtered_records(self.request.query_params))
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
     @action(detail=False, methods=['get'])
     def summary(self, request):
-        qs = self.get_queryset()
-        total = qs.aggregate(total=Sum('sales_amount'))['total'] or 0
+        qs = _filtered_records(request.query_params)
+        total = Decimal(str(qs.aggregate(total=Sum('sales_amount'))['total'] or 0))
+        paid = Decimal(str(
+            CrmPayment.objects.filter(record__in=qs.values('pk'))
+            .aggregate(total=Sum('amount'))['total'] or 0
+        ))
         return Response({
             'records': qs.count(),
             'customers': qs.values('customer_name').distinct().count(),
             'total_amount': total,
+            'amount_paid': paid,
+            'balance': total - paid,
+        })
+
+    @action(detail=True, methods=['post'])
+    def mark_paid(self, request, pk=None):
+        """Settle a sale in one click: records a payment for exactly whatever
+        is still outstanding, so the payment history stays truthful instead of
+        the sale just being flagged."""
+        record = self.get_object()
+        outstanding = record.balance
+        if outstanding <= 0:
+            return Response({'detail': 'This sale is already fully paid.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        payment = CrmPayment.objects.create(
+            record=record,
+            amount=outstanding,
+            paid_on=request.data.get('paid_on') or date_cls.today(),
+            method=request.data.get('method') or 'cash',
+            reference=request.data.get('reference', ''),
+            created_by=request.user,
+        )
+        return Response({
+            'detail': f'Marked as fully paid — {outstanding:,.2f} recorded.',
+            'payment': CrmPaymentSerializer(payment).data,
+        })
+
+    @action(detail=True, methods=['get'])
+    def payments(self, request, pk=None):
+        """Payment history for one sale."""
+        record = self.get_object()
+        return Response({
+            'sales_amount': record.sales_amount,
+            'amount_paid': record.amount_paid,
+            'balance': record.balance,
+            'payment_status': record.payment_status,
+            'payments': CrmPaymentSerializer(record.payments.all(), many=True).data,
         })
 
     @action(detail=False, methods=['get'])
@@ -151,7 +248,10 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         the identity. TIN is reported from the customer's most recent record
         that carries one, since older rows are often left blank.
         """
-        rows = _customer_rows(self.get_queryset())
+        # Deliberately NOT self.get_queryset(): that one is annotated with the
+        # payments join, which would multiply each record by its payment count
+        # and inflate the per-customer record counts and sales totals.
+        rows = _customer_rows(_filtered_records(request.query_params))
         # Paginated like the record list — a busy register has thousands of
         # customers and the landing screen must not fetch them all.
         page = self.paginate_queryset(rows)
@@ -287,6 +387,24 @@ class CrmListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
         return can_use_crm(self.request.user)
 
 
+class CrmPaymentViewSet(viewsets.ModelViewSet):
+    """Payments received against CRM sales. Same admin + finance gate."""
+    queryset = CrmPayment.objects.select_related('record').all()
+    serializer_class = CrmPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccountant]
+    pagination_class = None  # a single sale's history is short; the UI shows it whole
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        record = (self.request.query_params.get('record') or '').strip()
+        if record.isdigit():
+            qs = qs.filter(record_id=int(record))
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
 class CrmCustomerDetailView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     """Everything on file for one customer, reached by picking them from the
     CRM list. The name arrives as a query parameter rather than a path segment
@@ -319,11 +437,13 @@ class CrmExportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="crm_customers.csv"'
         writer = csv.writer(response)
-        writer.writerow(['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN', 'Sales Amount'])
-        for r in _filtered_records(request.GET):
+        writer.writerow(['Date', 'Receipt No', 'EFD Receipt No', 'Customer Name', 'TIN',
+                         'Sales Amount', 'Amount Paid', 'Balance', 'Status'])
+        for r in _with_payments(_filtered_records(request.GET)):
             writer.writerow([
                 r.date, r.receipt_number, r.efd_receipt_number,
                 r.customer_name, r.tin, r.sales_amount,
+                r.amount_paid, r.balance, r.payment_status,
             ])
         return response
 
@@ -356,7 +476,9 @@ class CrmCustomerReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
 
         params = request.GET.copy()
         params['customer'] = name
-        records = _filtered_records(params).order_by('date', 'id')
+        # Annotated: the report reads amount_paid/balance on every row and must
+        # not fire a query per record.
+        records = _with_payments(_filtered_records(params)).order_by('date', 'id')
         if not CustomerRecord.objects.filter(customer_name=name).exists():
             raise Http404('No records for this customer.')
 

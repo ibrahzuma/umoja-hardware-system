@@ -15,7 +15,7 @@ from django.conf import settings as django_settings
 from django.contrib.staticfiles import finders
 from django.http import HttpResponse
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
@@ -27,7 +27,12 @@ BRAND = colors.HexColor('#1F4E78')
 RULE = colors.HexColor('#DDDDDD')
 ZEBRA = colors.HexColor('#F5F7FA')
 
-USABLE_WIDTH = 182 * mm  # A4 portrait less the 14mm margins
+STATUS_LABELS = {'paid': 'Paid', 'partial': 'Part paid', 'unpaid': 'Unpaid'}
+
+# Landscape A4 less the 14mm margins. Both reports run wide because they carry
+# the money columns (total, paid, balance) alongside the identifiers.
+PAGE_SIZE = landscape(A4)
+USABLE_WIDTH = 269 * mm
 
 
 def _logo_path():
@@ -122,14 +127,14 @@ def _footer(canvas, doc):
     canvas.setFont('Helvetica', 7.5)
     canvas.setFillColor(colors.HexColor('#777777'))
     canvas.drawString(14 * mm, 10 * mm, doc.crm_footer_note)
-    canvas.drawRightString(A4[0] - 14 * mm, 10 * mm, f'Page {doc.page}')
+    canvas.drawRightString(PAGE_SIZE[0] - 14 * mm, 10 * mm, f'Page {doc.page}')
     canvas.restoreState()
 
 
 def _build(title, elements, filename, footer_note):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
+        buffer, pagesize=PAGE_SIZE,
         leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm, bottomMargin=18 * mm,
         title=title,
     )
@@ -194,8 +199,15 @@ def customers_report(rows, filters=(), generated_by=''):
     elements += _meta_lines(styles, filters, generated_by)
     elements.append(Spacer(1, 8))
 
-    data = [['#', 'Customer Name', 'TIN', 'Records', 'First', 'Last', f"Total ({company['currency']})"]]
+    currency = company['currency']
+    data = [['#', 'Customer Name', 'TIN', 'Records', 'First', 'Last',
+             f'Total ({currency})', f'Paid ({currency})', f'Balance ({currency})', 'Status']]
+    widths = [9 * mm, 54 * mm, 25 * mm, 16 * mm, 20 * mm, 20 * mm,
+              34 * mm, 34 * mm, 34 * mm, 23 * mm]
+    money_cols = (6, 7, 8)
+
     total = Decimal('0')
+    paid_total = Decimal('0')
     records = 0
     for index, row in enumerate(rows, start=1):
         data.append([
@@ -206,20 +218,23 @@ def customers_report(rows, filters=(), generated_by=''):
             str(row['first_transaction'] or '-'),
             str(row['last_transaction'] or '-'),
             _money(row['total_amount']),
+            _money(row.get('amount_paid', 0)),
+            _money(row.get('balance', row['total_amount'])),
+            STATUS_LABELS.get(row.get('payment_status', ''), '-'),
         ])
         total += Decimal(str(row['total_amount'] or 0))
+        paid_total += Decimal(str(row.get('amount_paid') or 0))
         records += row['records']
 
     if len(data) == 1:
-        data.append(['', Paragraph('No customers match this selection.', cell), '', '', '', '', ''])
-        table = Table(data, repeatRows=1,
-                      colWidths=[10 * mm, 56 * mm, 26 * mm, 18 * mm, 22 * mm, 22 * mm, 28 * mm])
-        table.setStyle(_table_style(total_row=False, right_cols=(6,)))
+        data.append(['', Paragraph('No customers match this selection.', cell)] + [''] * 8)
+        table = Table(data, repeatRows=1, colWidths=widths)
+        table.setStyle(_table_style(total_row=False, right_cols=money_cols))
     else:
-        data.append(['', f'TOTAL — {len(rows)} customer(s)', '', str(records), '', '', _money(total)])
-        table = Table(data, repeatRows=1,
-                      colWidths=[10 * mm, 56 * mm, 26 * mm, 18 * mm, 22 * mm, 22 * mm, 28 * mm])
-        table.setStyle(_table_style(right_cols=(6,)))
+        data.append(['', f'TOTAL — {len(rows)} customer(s)', '', str(records), '', '',
+                     _money(total), _money(paid_total), _money(total - paid_total), ''])
+        table = Table(data, repeatRows=1, colWidths=widths)
+        table.setStyle(_table_style(right_cols=money_cols))
 
     elements.append(table)
     return _build(
@@ -244,35 +259,49 @@ def customer_statement(customer_name, tin, records, filters=(), generated_by='')
     elements += _meta_lines(styles, filters, generated_by)
     elements.append(Spacer(1, 8))
 
-    data = [['Date', 'Receipt No', 'EFD Receipt No', 'TIN', f"Sales Amount ({company['currency']})"]]
+    currency = company['currency']
+    data = [['Date', 'Receipt No', 'EFD Receipt No', 'TIN',
+             f'Sales Amount ({currency})', f'Paid ({currency})', f'Balance ({currency})', 'Status']]
+    widths = [22 * mm, 28 * mm, 38 * mm, 28 * mm, 40 * mm, 40 * mm, 40 * mm, 33 * mm]
+    money_cols = (4, 5, 6)
+
     total = Decimal('0')
+    paid_total = Decimal('0')
     for record in records:
+        paid = Decimal(str(record.amount_paid))
         data.append([
             str(record.date),
             record.receipt_number or '-',
             record.efd_receipt_number or '-',
             record.tin or '-',
             _money(record.sales_amount),
+            _money(paid),
+            _money(record.balance),
+            STATUS_LABELS.get(record.payment_status, '-'),
         ])
         total += Decimal(str(record.sales_amount or 0))
+        paid_total += paid
 
     count = len(data) - 1
-    widths = [26 * mm, 32 * mm, 46 * mm, 34 * mm, 44 * mm]
     if not count:
-        data.append([Paragraph('No transactions match this selection.', cell), '', '', '', ''])
+        data.append([Paragraph('No transactions match this selection.', cell)] + [''] * 7)
         table = Table(data, repeatRows=1, colWidths=widths)
-        table.setStyle(_table_style(total_row=False, right_cols=(4,)))
+        table.setStyle(_table_style(total_row=False, right_cols=money_cols))
     else:
-        data.append(['', f'TOTAL — {count} transaction(s)', '', '', _money(total)])
+        data.append(['', f'TOTAL — {count} transaction(s)', '', '',
+                     _money(total), _money(paid_total), _money(total - paid_total), ''])
         table = Table(data, repeatRows=1, colWidths=widths)
-        table.setStyle(_table_style(right_cols=(4,)))
+        table.setStyle(_table_style(right_cols=money_cols))
     elements.append(table)
 
     if count:
-        average = total / count
+        outstanding = total - paid_total
         elements.append(Spacer(1, 8))
         elements.append(Paragraph(
-            f"Average per transaction: <b>{_money(average)} {company['currency']}</b>", label))
+            f"Average per transaction: <b>{_money(total / count)} {currency}</b>"
+            f" &nbsp;&nbsp;|&nbsp;&nbsp; Outstanding balance: "
+            f"<b><font color='{'#B00020' if outstanding > 0 else '#1B7F3B'}'>"
+            f"{_money(outstanding)} {currency}</font></b>", label))
 
     safe_name = ''.join(c if c.isalnum() else '_' for c in customer_name)[:40] or 'customer'
     return _build(

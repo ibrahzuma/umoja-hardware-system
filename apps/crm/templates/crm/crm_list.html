@@ -40,7 +40,22 @@
     <div class="col-md-4">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
             <h6 class="text-muted mb-1">Total Sales Amount (TZS)</h6>
-            <h4 class="fw-bold text-success mb-0" id="statTotal">0</h4>
+            <h4 class="fw-bold text-dark mb-0" id="statTotal">0</h4>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4 g-3">
+    <div class="col-md-6">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Paid (TZS)</h6>
+            <h4 class="fw-bold text-success mb-0" id="statPaid">0</h4>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Outstanding (TZS)</h6>
+            <h4 class="fw-bold text-danger mb-0" id="statBalance">0</h4>
         </div>
     </div>
 </div>
@@ -56,9 +71,18 @@
                 <label class="form-label small text-muted mb-1">From</label>
                 <input type="date" class="form-control" id="filterStart">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label small text-muted mb-1">To</label>
                 <input type="date" class="form-control" id="filterEnd">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">Payment</label>
+                <select class="form-select" id="filterStatus">
+                    <option value="">All</option>
+                    <option value="unpaid">Unpaid</option>
+                    <option value="partial">Partly paid</option>
+                    <option value="paid">Fully paid</option>
+                </select>
             </div>
             <div class="col-md-1 d-grid">
                 <button class="btn btn-outline-secondary" onclick="clearFilters()" title="Clear filters">
@@ -78,14 +102,16 @@
                         <th class="ps-3">Customer Name</th>
                         <th>TIN</th>
                         <th class="text-center">Records</th>
-                        <th>First Transaction</th>
                         <th>Last Transaction</th>
                         <th class="text-end">Total Sales</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Outstanding</th>
+                        <th class="text-center">Status</th>
                         <th class="pe-3"></th>
                     </tr>
                 </thead>
                 <tbody id="customerTableBody">
-                    <tr><td colspan="7" class="text-center py-4">Loading...</td></tr>
+                    <tr><td colspan="9" class="text-center py-4">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -192,7 +218,7 @@
     let filterTimer = null;
 
     document.addEventListener('DOMContentLoaded', function () {
-        ['filterSearch', 'filterStart', 'filterEnd'].forEach(id => {
+        ['filterSearch', 'filterStart', 'filterEnd', 'filterStatus'].forEach(id => {
             document.getElementById(id).addEventListener('input', function () {
                 clearTimeout(filterTimer);
                 // A changed filter invalidates the current page number.
@@ -214,9 +240,11 @@
         const search = document.getElementById('filterSearch').value.trim();
         const start = document.getElementById('filterStart').value;
         const end = document.getElementById('filterEnd').value;
+        const status = document.getElementById('filterStatus').value;
         if (search) params.set('search', search);
         if (start) params.set('start', start);
         if (end) params.set('end', end);
+        if (status) params.set('status', status);
         return params.toString();
     }
 
@@ -224,6 +252,7 @@
         document.getElementById('filterSearch').value = '';
         document.getElementById('filterStart').value = '';
         document.getElementById('filterEnd').value = '';
+        document.getElementById('filterStatus').value = '';
         pageState.page = 1;
         fetchCustomers();
     }
@@ -250,17 +279,26 @@
         document.getElementById('statCustomers').innerText = Number(s.customers || 0).toLocaleString();
         document.getElementById('statRecords').innerText = Number(s.records || 0).toLocaleString();
         document.getElementById('statTotal').innerText = money(s.total_amount);
+        document.getElementById('statPaid').innerText = money(s.amount_paid);
+        document.getElementById('statBalance').innerText = money(s.balance);
     }
+
+    const STATUS_BADGE = {
+        paid: '<span class="badge bg-success">Paid</span>',
+        partial: '<span class="badge bg-warning text-dark">Part paid</span>',
+        unpaid: '<span class="badge bg-danger">Unpaid</span>',
+    };
 
     function renderCustomers(rows) {
         const tbody = document.getElementById('customerTableBody');
         tbody.innerHTML = '';
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">'
-                + 'No customers yet — add a record, upload an Excel file, or pull from sales.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">'
+                + 'No customers match — add a record, upload an Excel file, or pull from sales.</td></tr>';
             return;
         }
         rows.forEach(c => {
+            const settled = c.payment_status === 'paid';
             const tr = document.createElement('tr');
             tr.style.cursor = 'pointer';
             tr.title = 'Open ' + c.customer_name;
@@ -270,9 +308,11 @@
                 </td>
                 <td>${escapeHtml(c.tin) || '<span class="text-muted">-</span>'}</td>
                 <td class="text-center"><span class="badge bg-secondary">${c.records}</span></td>
-                <td class="text-muted">${c.first_transaction || '-'}</td>
                 <td class="text-muted">${c.last_transaction || '-'}</td>
                 <td class="text-end fw-bold">${money(c.total_amount)}</td>
+                <td class="text-end text-success">${money(c.amount_paid)}</td>
+                <td class="text-end ${settled ? 'text-muted' : 'text-danger fw-semibold'}">${money(c.balance)}</td>
+                <td class="text-center">${STATUS_BADGE[c.payment_status] || ''}</td>
                 <td class="text-end pe-3 text-muted"><i class="bi bi-chevron-right"></i></td>
             `;
             tr.addEventListener('click', () => {

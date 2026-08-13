@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
-from apps.crm.models import CustomerRecord
+from apps.crm.models import CrmPayment, CustomerRecord
 from apps.inventory.models import Branch
 from apps.sales.models import Customer, Sale
 from apps.users.models import User
@@ -199,6 +199,184 @@ class CrmCustomerListTest(TestCase):
         response = self.client.get(reverse('crm:customer_detail'), {'name': 'Kibo Traders'})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.client.get('/api/crm-records/customers/').status_code, 403)
+
+
+class CrmPaymentTest(TestCase):
+    """Part payments, the one-click settle, and the derived status."""
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct7', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        self.record = CustomerRecord.objects.create(
+            date=date(2026, 8, 1), customer_name='Kibo Traders',
+            receipt_number='RC-1', tin='109-882-441', sales_amount=1000)
+
+    def pay(self, amount, **extra):
+        payload = {'record': self.record.id, 'amount': amount,
+                   'paid_on': '2026-08-02', 'method': 'cash'}
+        payload.update(extra)
+        return self.client.post('/api/crm-payments/', payload, content_type='application/json')
+
+    def test_a_sale_starts_unpaid(self):
+        self.assertEqual(self.record.amount_paid, Decimal('0'))
+        self.assertEqual(self.record.balance, Decimal('1000'))
+        self.assertEqual(self.record.payment_status, 'unpaid')
+
+    def test_part_payment_is_kept_as_a_record(self):
+        """1000 sale, 500 paid: the 500 is retained, balance is 500, part paid."""
+        response = self.pay('500', reference='SLIP-77')
+        self.assertEqual(response.status_code, 201, response.content)
+
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.amount_paid, Decimal('500'))
+        self.assertEqual(self.record.balance, Decimal('500'))
+        self.assertEqual(self.record.payment_status, 'partial')
+
+        payment = CrmPayment.objects.get()
+        self.assertEqual(payment.amount, Decimal('500'))
+        self.assertEqual(payment.paid_on, date(2026, 8, 2))
+        self.assertEqual(payment.reference, 'SLIP-77')
+        self.assertEqual(payment.created_by, self.accountant)
+
+    def test_further_payments_accumulate_to_paid(self):
+        self.pay('500')
+        self.pay('300')
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.amount_paid, Decimal('800'))
+        self.assertEqual(self.record.payment_status, 'partial')
+
+        self.pay('200')
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.balance, Decimal('0'))
+        self.assertEqual(self.record.payment_status, 'paid')
+        self.assertEqual(self.record.payments.count(), 3)
+
+    def test_payment_cannot_exceed_the_outstanding_balance(self):
+        self.pay('600')
+        response = self.pay('600')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('exceeds the outstanding balance', str(response.json()))
+        self.assertEqual(CrmPayment.objects.count(), 1)
+
+    def test_payment_must_be_positive(self):
+        self.assertEqual(self.pay('0').status_code, 400)
+        self.assertEqual(self.pay('-50').status_code, 400)
+        self.assertEqual(CrmPayment.objects.count(), 0)
+
+    def test_mark_paid_settles_the_remaining_balance_in_one_click(self):
+        self.pay('400')
+        response = self.client.post(f'/api/crm-records/{self.record.id}/mark_paid/',
+                                    {}, content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.balance, Decimal('0'))
+        self.assertEqual(self.record.payment_status, 'paid')
+        # It records a real payment for the remainder rather than just flagging
+        self.assertEqual(self.record.payments.count(), 2)
+        self.assertEqual(
+            sorted(p.amount for p in self.record.payments.all()),
+            [Decimal('400.00'), Decimal('600.00')])
+
+    def test_mark_paid_rejects_an_already_settled_sale(self):
+        self.client.post(f'/api/crm-records/{self.record.id}/mark_paid/', {}, content_type='application/json')
+        response = self.client.post(f'/api/crm-records/{self.record.id}/mark_paid/',
+                                    {}, content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already fully paid', response.json()['detail'])
+        self.assertEqual(self.record.payments.count(), 1)
+
+    def test_removing_a_payment_reopens_the_balance(self):
+        self.pay('1000')
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.payment_status, 'paid')
+
+        payment = CrmPayment.objects.get()
+        self.assertEqual(self.client.delete(f'/api/crm-payments/{payment.id}/').status_code, 204)
+        self.record.refresh_from_db()
+        self.assertEqual(self.record.balance, Decimal('1000'))
+        self.assertEqual(self.record.payment_status, 'unpaid')
+
+    def test_deleting_a_sale_takes_its_payments_with_it(self):
+        self.pay('500')
+        self.record.delete()
+        self.assertEqual(CrmPayment.objects.count(), 0)
+
+    def test_record_list_and_history_expose_payment_state(self):
+        self.pay('250')
+        row = self.client.get('/api/crm-records/').json()['results'][0]
+        self.assertEqual(Decimal(row['amount_paid']), Decimal('250'))
+        self.assertEqual(Decimal(row['balance']), Decimal('750'))
+        self.assertEqual(row['payment_status'], 'partial')
+
+        history = self.client.get(f'/api/crm-records/{self.record.id}/payments/').json()
+        self.assertEqual(len(history['payments']), 1)
+        self.assertEqual(history['payment_status'], 'partial')
+
+    def test_summary_reports_paid_and_outstanding(self):
+        self.pay('400')
+        summary = self.client.get('/api/crm-records/summary/').json()
+        self.assertEqual(float(summary['total_amount']), 1000.0)
+        self.assertEqual(float(summary['amount_paid']), 400.0)
+        self.assertEqual(float(summary['balance']), 600.0)
+
+    def test_payments_are_closed_to_other_roles(self):
+        self.client.force_login(User.objects.create_user(username='crm_rep5', password='pw', role='sales_rep'))
+        self.assertEqual(self.pay('100').status_code, 403)
+        self.assertEqual(
+            self.client.post(f'/api/crm-records/{self.record.id}/mark_paid/').status_code, 403)
+
+
+class CrmPaymentAggregationTest(TestCase):
+    """Payment sums must not corrupt the sales totals they sit beside."""
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_acct8', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        self.a = CustomerRecord.objects.create(date=date(2026, 8, 1), customer_name='Kibo Traders',
+                                               receipt_number='RC-1', sales_amount=1000)
+        self.b = CustomerRecord.objects.create(date=date(2026, 8, 2), customer_name='Kibo Traders',
+                                               receipt_number='RC-2', sales_amount=500)
+        # Three payments on one sale is where a naive join would triple its
+        # sales_amount in the per-customer totals.
+        for amount in (100, 200, 300):
+            CrmPayment.objects.create(record=self.a, amount=amount, paid_on=date(2026, 8, 3))
+
+    def test_customer_totals_are_not_inflated_by_multiple_payments(self):
+        row = self.client.get('/api/crm-records/customers/').json()['results'][0]
+        self.assertEqual(row['records'], 2)
+        self.assertEqual(float(row['total_amount']), 1500.0)   # not 1000*3 + 500
+        self.assertEqual(float(row['amount_paid']), 600.0)
+        self.assertEqual(float(row['balance']), 900.0)
+        self.assertEqual(row['payment_status'], 'partial')
+
+    def test_summary_is_not_inflated_either(self):
+        summary = self.client.get('/api/crm-records/summary/').json()
+        self.assertEqual(summary['records'], 2)
+        self.assertEqual(float(summary['total_amount']), 1500.0)
+        self.assertEqual(float(summary['amount_paid']), 600.0)
+
+    def test_status_filter(self):
+        CustomerRecord.objects.create(date=date(2026, 8, 4), customer_name='Paid Customer',
+                                      receipt_number='RC-3', sales_amount=200)
+        paid_record = CustomerRecord.objects.get(receipt_number='RC-3')
+        CrmPayment.objects.create(record=paid_record, amount=200, paid_on=date(2026, 8, 4))
+
+        def receipts(status):
+            body = self.client.get('/api/crm-records/', {'status': status}).json()
+            return sorted(r['receipt_number'] for r in body['results'])
+
+        self.assertEqual(receipts('unpaid'), ['RC-2'])
+        self.assertEqual(receipts('partial'), ['RC-1'])
+        self.assertEqual(receipts('paid'), ['RC-3'])
+
+    def test_csv_export_carries_payment_columns(self):
+        body = self.client.get(reverse('crm:export')).content.decode()
+        header = body.splitlines()[0]
+        self.assertIn('Amount Paid', header)
+        self.assertIn('Balance', header)
+        self.assertIn('Status', header)
+        self.assertIn('partial', body)
 
 
 class CrmPdfReportTest(TestCase):

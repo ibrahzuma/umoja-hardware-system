@@ -42,22 +42,28 @@
 </div>
 
 <div class="row mb-4 g-3">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
             <h6 class="text-muted mb-1">Records</h6>
             <h4 class="fw-bold text-primary mb-0" id="statRecords">0</h4>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
-            <h6 class="text-muted mb-1">Total Sales Amount (TZS)</h6>
-            <h4 class="fw-bold text-success mb-0" id="statTotal">0</h4>
+            <h6 class="text-muted mb-1">Total Sales (TZS)</h6>
+            <h4 class="fw-bold text-dark mb-0" id="statTotal">0</h4>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card bg-light border-0 shadow-sm text-center p-3">
-            <h6 class="text-muted mb-1">Average per Transaction</h6>
-            <h4 class="fw-bold text-dark mb-0" id="statAverage">0</h4>
+            <h6 class="text-muted mb-1">Paid (TZS)</h6>
+            <h4 class="fw-bold text-success mb-0" id="statPaid">0</h4>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-light border-0 shadow-sm text-center p-3">
+            <h6 class="text-muted mb-1">Outstanding (TZS)</h6>
+            <h4 class="fw-bold text-danger mb-0" id="statBalance">0</h4>
         </div>
     </div>
 </div>
@@ -66,9 +72,15 @@
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h5 class="fw-bold mb-0">Transactions</h5>
         <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" id="filterStatus" style="width: auto;">
+                <option value="">All payment states</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="partial">Partly paid</option>
+                <option value="paid">Fully paid</option>
+            </select>
             <input type="date" class="form-control form-control-sm" id="filterStart" style="width: auto;">
             <input type="date" class="form-control form-control-sm" id="filterEnd" style="width: auto;">
-            <button class="btn btn-sm btn-outline-secondary" onclick="clearDates()" title="Clear dates">
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearDates()" title="Clear filters">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
@@ -81,13 +93,15 @@
                         <th class="ps-3">Date</th>
                         <th>Receipt No</th>
                         <th>EFD Receipt No</th>
-                        <th>TIN</th>
                         <th class="text-end">Sales Amount</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Balance</th>
+                        <th class="text-center">Status</th>
                         <th class="text-end pe-3">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="recordTableBody">
-                    <tr><td colspan="6" class="text-center py-4">Loading...</td></tr>
+                    <tr><td colspan="8" class="text-center py-4">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -96,6 +110,99 @@
 </div>
 
 {% include 'crm/_record_form.html' %}
+
+<!-- Payments for one sale -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title"><i class="bi bi-cash-coin text-primary"></i> Payments</h5>
+                    <div class="small text-muted" id="paymentRecordLabel"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-3 text-center">
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="small text-muted">Sale</div>
+                            <div class="fw-bold" id="paymentSale">0</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="small text-muted">Paid</div>
+                            <div class="fw-bold text-success" id="paymentPaid">0</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="small text-muted">Balance</div>
+                            <div class="fw-bold text-danger" id="paymentBalance">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="paymentSettled" class="alert alert-success py-2 d-none">
+                    <i class="bi bi-check2-circle"></i> This sale is fully paid.
+                </div>
+
+                <div id="paymentAddBox" class="border rounded p-3 bg-light mb-3">
+                    <form id="paymentForm" onsubmit="handlePaymentSave(event)">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label small mb-1">Amount received</label>
+                                <input type="number" class="form-control" name="amount" step="0.01" min="0.01" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small mb-1">Date</label>
+                                <input type="date" class="form-control" name="paid_on" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-1">Method</label>
+                                <select class="form-select" name="method">
+                                    <option value="cash">Cash</option>
+                                    <option value="bank">Bank Transfer</option>
+                                    <option value="mobile">Mobile Money</option>
+                                    <option value="cheque">Cheque</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small mb-1">Reference</label>
+                                <input type="text" class="form-control" name="reference" placeholder="optional">
+                            </div>
+                            <div class="col-md-2 d-grid">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-plus-lg"></i> Record
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-text">
+                            Pre-filled with the full balance — reduce it to record a part payment.
+                        </div>
+                    </form>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Date</th>
+                                <th class="text-end">Amount</th>
+                                <th>Method</th>
+                                <th>Reference</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endif %}
 {% endblock %}
 
@@ -111,9 +218,9 @@
     const CUSTOMER_TIN = JSON.parse(document.getElementById('customer-tin-data').textContent);
 
     document.addEventListener('DOMContentLoaded', function () {
-        ['filterStart', 'filterEnd'].forEach(id => {
+        ['filterStart', 'filterEnd', 'filterStatus'].forEach(id => {
             document.getElementById(id).addEventListener('change', function () {
-                pageState.page = 1;  // a changed window invalidates the page number
+                pageState.page = 1;  // a changed filter invalidates the page number
                 fetchRecords();
             });
         });
@@ -133,6 +240,7 @@
     function clearDates() {
         document.getElementById('filterStart').value = '';
         document.getElementById('filterEnd').value = '';
+        document.getElementById('filterStatus').value = '';
         pageState.page = 1;
         fetchRecords();
     }
@@ -141,8 +249,10 @@
         const params = new URLSearchParams({ customer: CUSTOMER_NAME });
         const start = document.getElementById('filterStart').value;
         const end = document.getElementById('filterEnd').value;
+        const status = document.getElementById('filterStatus').value;
         if (start) params.set('start', start);
         if (end) params.set('end', end);
+        if (status) params.set('status', status);
         return params.toString();
     }
 
@@ -174,38 +284,176 @@
     }
 
     function renderSummary(s) {
-        const count = Number(s.records || 0);
-        const total = Number(s.total_amount || 0);
-        document.getElementById('statRecords').innerText = count.toLocaleString();
-        document.getElementById('statTotal').innerText = money(total);
-        document.getElementById('statAverage').innerText = count ? money(total / count) : '0';
+        document.getElementById('statRecords').innerText = Number(s.records || 0).toLocaleString();
+        document.getElementById('statTotal').innerText = money(s.total_amount);
+        document.getElementById('statPaid').innerText = money(s.amount_paid);
+        document.getElementById('statBalance').innerText = money(s.balance);
     }
+
+    const STATUS_BADGE = {
+        paid: '<span class="badge bg-success">Paid</span>',
+        partial: '<span class="badge bg-warning text-dark">Part paid</span>',
+        unpaid: '<span class="badge bg-danger">Unpaid</span>',
+    };
 
     function renderRecords(rows) {
         const tbody = document.getElementById('recordTableBody');
         tbody.innerHTML = '';
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No transactions in this period</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No transactions match these filters</td></tr>';
             return;
         }
         rows.forEach(r => {
+            const settled = r.payment_status === 'paid';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="ps-3 text-muted">${r.date || '-'}</td>
                 <td>${escapeHtml(r.receipt_number) || '-'}</td>
                 <td>${escapeHtml(r.efd_receipt_number) || '-'}</td>
-                <td>${escapeHtml(r.tin) || '-'}</td>
                 <td class="text-end fw-bold">${money(r.sales_amount)}</td>
-                <td class="text-end pe-3">
+                <td class="text-end text-success">${money(r.amount_paid)}</td>
+                <td class="text-end ${settled ? 'text-muted' : 'text-danger fw-semibold'}">${money(r.balance)}</td>
+                <td class="text-center">${STATUS_BADGE[r.payment_status] || ''}</td>
+                <td class="text-end pe-3 text-nowrap">
+                    <button class="btn btn-sm btn-outline-success" title="Mark fully paid" ${settled ? 'disabled' : ''}>
+                        <i class="bi bi-check2-circle"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" title="Payments"><i class="bi bi-cash-coin"></i></button>
                     <button class="btn btn-sm btn-outline-secondary" title="Edit"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
             `;
-            const [editBtn, deleteBtn] = tr.querySelectorAll('button');
+            const [payFullBtn, paymentsBtn, editBtn, deleteBtn] = tr.querySelectorAll('button');
+            payFullBtn.addEventListener('click', () => markPaid(r));
+            paymentsBtn.addEventListener('click', () => openPaymentModal(r));
             editBtn.addEventListener('click', () => openRecordModal(r));
             deleteBtn.addEventListener('click', () => handleDelete(r));
             tbody.appendChild(tr);
         });
+    }
+
+    async function markPaid(record) {
+        const confirmed = await Swal.fire({
+            title: 'Mark as fully paid?',
+            html: `Records a payment of <b>${money(record.balance)} TZS</b> against `
+                + `receipt ${escapeHtml(record.receipt_number) || record.date}.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#198754',
+            confirmButtonText: 'Yes, fully paid'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-records/${record.id}/mark_paid/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({})
+            });
+            const result = await response.json();
+            if (response.ok) {
+                fetchRecords();
+                Swal.fire('Paid', result.detail, 'success');
+            } else {
+                Swal.fire('Error', result.detail || 'Could not mark as paid', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    let activeRecord = null;
+
+    async function openPaymentModal(record) {
+        activeRecord = record;
+        document.getElementById('paymentRecordLabel').innerHTML =
+            `Receipt <b>${escapeHtml(record.receipt_number) || '-'}</b> &middot; ${record.date}`;
+        const form = document.getElementById('paymentForm');
+        form.reset();
+        form.paid_on.value = new Date().toISOString().slice(0, 10);
+        new bootstrap.Modal(document.getElementById('paymentModal')).show();
+        await loadPayments();
+    }
+
+    async function loadPayments() {
+        const tbody = document.getElementById('paymentTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3">Loading...</td></tr>';
+        try {
+            const response = await fetch(`/api/crm-records/${activeRecord.id}/payments/`);
+            const data = await response.json();
+
+            document.getElementById('paymentSale').innerText = money(data.sales_amount);
+            document.getElementById('paymentPaid').innerText = money(data.amount_paid);
+            document.getElementById('paymentBalance').innerText = money(data.balance);
+            const form = document.getElementById('paymentForm');
+            form.amount.max = data.balance;
+            form.amount.value = data.balance > 0 ? data.balance : '';
+            document.getElementById('paymentAddBox').classList.toggle('d-none', Number(data.balance) <= 0);
+            document.getElementById('paymentSettled').classList.toggle('d-none', Number(data.balance) > 0);
+
+            tbody.innerHTML = '';
+            if (!data.payments.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">Nothing received yet</td></tr>';
+                return;
+            }
+            data.payments.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-muted">${p.paid_on}</td>
+                    <td class="text-end fw-semibold">${money(p.amount)}</td>
+                    <td>${escapeHtml(p.method_display)}</td>
+                    <td>${escapeHtml(p.reference) || '-'}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger" title="Remove"><i class="bi bi-x-lg"></i></button>
+                    </td>
+                `;
+                tr.querySelector('button').addEventListener('click', () => deletePayment(p));
+                tbody.appendChild(tr);
+            });
+        } catch (error) { console.error(error); }
+    }
+
+    async function handlePaymentSave(e) {
+        e.preventDefault();
+        const form = e.target;
+        const data = Object.fromEntries(new FormData(form).entries());
+        data.record = activeRecord.id;
+        try {
+            const response = await fetch('/api/crm-payments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(data)
+            });
+            if (response.ok) {
+                await loadPayments();
+                fetchRecords();
+                Swal.fire('Recorded', 'Payment saved', 'success');
+            } else {
+                const err = await response.json().catch(() => ({}));
+                Swal.fire('Error', Object.values(err).flat().join(' ') || 'Failed to save payment', 'error');
+            }
+        } catch (error) { console.error(error); }
+    }
+
+    async function deletePayment(payment) {
+        const confirmed = await Swal.fire({
+            title: 'Remove this payment?',
+            text: `${money(payment.amount)} TZS received on ${payment.paid_on}`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Remove'
+        });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const response = await fetch(`/api/crm-payments/${payment.id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': CSRF }
+            });
+            if (response.ok) {
+                await loadPayments();
+                fetchRecords();
+            } else {
+                Swal.fire('Error', 'Failed to remove payment', 'error');
+            }
+        } catch (error) { console.error(error); }
     }
 </script>
 {% endif %}
