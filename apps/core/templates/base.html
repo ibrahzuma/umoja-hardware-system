@@ -148,20 +148,37 @@
             const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
             if (sidebarCloseBtn) sidebarCloseBtn.addEventListener('click', toggleSidebar);
 
-            // Auto-expand sidebar based on current URL
-            const currentUrl = window.location.href;
-            const sidebarLinks = document.querySelectorAll('#sidebar .components a');
+            // Auto-expand the menu holding the current page.
+            //
+            // Only ONE menu may open. Several menus deliberately link to the same
+            // page (Stock Management sits in five of them), so matching every link
+            // would spring all of those menus open at once. The first match in the
+            // sidebar wins; the rest are only highlighted.
+            //
+            // Compared on pathname, not href, so a page reached with a query string
+            // (?status=credit, ?page=2) still lights up its menu.
+            const currentPath = window.location.pathname;
+            const sidebarLinks = document.querySelectorAll('#sidebar .components a[href]');
+            let expandedMenu = null;
             sidebarLinks.forEach(link => {
-                if (link.href === currentUrl) {
-                    link.classList.add('active');
-                    const parentUl = link.closest('ul.collapse');
-                    if (parentUl) {
-                        parentUl.classList.add('show');
-                        const toggler = document.querySelector(`a[href="#${parentUl.id}"]`);
-                        if (toggler) {
-                            toggler.setAttribute('aria-expanded', 'true');
-                            toggler.classList.remove('collapsed');
-                        }
+                const href = link.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+                if (link.pathname !== currentPath) return;
+
+                const parentUl = link.closest('ul.collapse');
+                if (parentUl && expandedMenu && parentUl !== expandedMenu) return;
+
+                link.classList.add('active');
+                if (parentUl && !expandedMenu) {
+                    expandedMenu = parentUl;
+                    // Set the class directly rather than calling Bootstrap's show():
+                    // no slide animation on page load. Bootstrap reads the state off
+                    // this class when the menu is first clicked, so it stays in sync.
+                    parentUl.classList.add('show');
+                    const toggler = document.querySelector(`#sidebar a[href="#${parentUl.id}"]`);
+                    if (toggler) {
+                        toggler.setAttribute('aria-expanded', 'true');
+                        toggler.classList.remove('collapsed');
                     }
                 }
             });
