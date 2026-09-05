@@ -1,4 +1,4 @@
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DeliveryCheck, DeliveryCheckItem
 from rest_framework import serializers
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -84,17 +84,44 @@ class StockAdjustmentSerializer(serializers.ModelSerializer):
 
 class PurchaseOrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
-    
+    outstanding = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = PurchaseOrderItem
         fields = '__all__'
-        read_only_fields = ('total_cost',)
+        read_only_fields = ('total_cost', 'received_quantity')
+
+
+class DeliveryCheckItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='item.product.name', read_only=True)
+    unit = serializers.CharField(source='item.unit', read_only=True)
+    shortfall = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = DeliveryCheckItem
+        fields = '__all__'
+
+
+class DeliveryCheckSerializer(serializers.ModelSerializer):
+    """One delivery round: what was counted, who explained a shortfall and what
+    the Admin decided about it."""
+    lines = DeliveryCheckItemSerializer(many=True, read_only=True)
+    checked_by_name = serializers.CharField(source='checked_by.username', read_only=True)
+    decided_by_name = serializers.CharField(source='decided_by.username', read_only=True)
+    decision_label = serializers.CharField(source='get_decision_display', read_only=True)
+
+    class Meta:
+        model = DeliveryCheck
+        fields = '__all__'
+
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    decided_by_name = serializers.CharField(source='decided_by.username', read_only=True)
     items = PurchaseOrderItemSerializer(many=True, read_only=True)
+    checks = DeliveryCheckSerializer(many=True, read_only=True)
     # Accept all line items in one request when creating the order.
     items_input = serializers.ListField(
         child=serializers.DictField(), write_only=True, required=False
@@ -103,7 +130,9 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrder
         fields = '__all__'
-        read_only_fields = ('created_by', 'created_at', 'updated_at', 'total_amount')
+        read_only_fields = ('created_by', 'created_at', 'updated_at', 'total_amount',
+                            'checked_by', 'checked_at', 'has_discrepancy', 'store_note',
+                            'afisa_comment', 'decided_by', 'decided_at', 'admin_note')
 
     def create(self, validated_data):
         from decimal import Decimal

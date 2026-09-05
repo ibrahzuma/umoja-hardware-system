@@ -1,5 +1,5 @@
 from rest_framework import viewsets, permissions
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DriverIssue
+from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DriverIssue, DeliveryCheck, DeliveryCheckItem
 from .serializers import (
     BranchSerializer, CategorySerializer, ProductSerializer,
     StockSerializer, PurchaseSerializer, SupplierSerializer, StockTransferSerializer,
@@ -18,10 +18,13 @@ from rest_framework.response import Response
 from django.db.models import Q, Sum
 from rest_framework.decorators import action
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 
-from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet, CanHandleGRN, CanManagePurchaseOrders
+from apps.core.models import SystemActivity
+from apps.core.notify import notify
+from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet, CanHandleGRN, CanManagePurchaseOrders, IsAdminOrSuperUser
 
 class BranchViewSet(viewsets.ModelViewSet):
     queryset = Branch.objects.all()
@@ -236,6 +239,36 @@ class StockTransferViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+def _admin_recipients():
+    """Users who decide on short deliveries: superusers and the admin role."""
+    from apps.users.models import User
+    return User.objects.filter(
+        Q(is_superuser=True) | Q(role='admin') | Q(groups__name__in=['Admin', 'admin'])
+    ).distinct()
+
+
+def _receive_delivery(check):
+    """Take one approved delivery round into stock.
+
+    Adds each line's delivered quantity to the branch stock and moves the same
+    amount onto the item's cumulative `received_quantity`, so what is still
+    owed stays correct across rounds. Call inside a transaction; safe to call
+    only once per round (guarded by the round's decision state).
+    """
+    po = check.purchase_order
+    for line in check.lines.select_related('item__product'):
+        if line.delivered_quantity <= 0:
+            continue
+        item = line.item
+        stock, _ = Stock.objects.get_or_create(
+            product=item.product, branch=po.branch, defaults={'quantity': 0}
+        )
+        stock.quantity += line.delivered_quantity
+        stock.save()
+        item.received_quantity = (item.received_quantity or 0) + line.delivered_quantity
+        item.save(update_fields=['received_quantity'])
+
+
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
@@ -246,7 +279,7 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         po = self.get_object()
-        if po.status == 'received':
+        if po.status in ('received', 'partial'):
             return Response(
                 {'detail': 'Cannot delete an order whose goods were already received (stock has been updated).'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -255,22 +288,34 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsAfisaUgavi])
     def confirm(self, request, pk=None):
-        """Afisa Ugavi confirms the order — it goes to the Store Manager to
-        cross-check the delivered goods against what was ordered."""
+        """Afisa Ugavi confirms goods have arrived — the order goes to the Store
+        Manager to cross-check them.
+
+        Also used for the balance of a partially received order: when the rest
+        of the goods turn up he confirms again and a fresh check round starts.
+        """
         po = self.get_object()
-        if po.status not in ('draft', 'sent'):
-            return Response({'detail': 'Only draft/sent orders can be confirmed.'},
+        if po.status not in ('draft', 'sent', 'partial'):
+            return Response({'detail': 'Only draft, sent or partially received orders can be confirmed.'},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        is_balance = po.status == 'partial'
         po.status = 'awaiting_check'
         po.save(update_fields=['status'])
-        return Response({'detail': 'Order confirmed and sent to the Store Manager for cross-check.',
-                         'status': po.status}, status=status.HTTP_200_OK)
+
+        detail = ('Balance delivery confirmed and sent to the Store Manager for cross-check.'
+                  if is_balance else
+                  'Order confirmed and sent to the Store Manager for cross-check.')
+        return Response({'detail': detail, 'status': po.status}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsStoreManager])
     def cross_check(self, request, pk=None):
-        """Store Manager records what actually arrived. Stock is increased by the
-        delivered quantities. If everything matches the order -> Received;
-        otherwise -> Discrepancy, and the Afisa Ugavi who raised it is notified."""
+        """Store Manager records what actually arrived, item by item.
+
+        Everything owed arrived -> straight to Received and into stock.
+        Anything short -> nothing goes to stock yet; the round is flagged and
+        Afisa Ugavi is asked to explain it, after which an Admin decides.
+        """
         from django.utils import timezone
         po = self.get_object()
         if po.status != 'awaiting_check':
@@ -278,44 +323,79 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
 
         delivered_map = {}
+        notes_map = {}
         for ln in (request.data.get('items') or []):
             try:
-                delivered_map[int(ln.get('item'))] = max(0, int(ln.get('delivered_quantity') or 0))
+                item_id = int(ln.get('item'))
             except (TypeError, ValueError):
                 continue
+            try:
+                delivered_map[item_id] = max(0, int(ln.get('delivered_quantity') or 0))
+            except (TypeError, ValueError):
+                delivered_map[item_id] = 0
+            notes_map[item_id] = (ln.get('note') or '').strip()[:255]
         note = (request.data.get('store_note') or '').strip()
+
+        pending = po.outstanding_items()
+        if not pending:
+            return Response({'detail': 'Every item on this order has already been received.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Every outstanding item must be counted — this screen is a per-item
+        # check, so a missing line means the Store Manager has not finished.
+        unchecked = [it for it in pending if it.id not in delivered_map]
+        if unchecked:
+            return Response(
+                {'detail': f'Check every item before submitting — {len(unchecked)} still not counted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         mismatch = False
         with transaction.atomic():
-            for it in po.items.all():
-                delivered = delivered_map.get(it.id, 0)
+            check = DeliveryCheck.objects.create(
+                purchase_order=po,
+                round_number=po.next_round_number,
+                checked_by=request.user,
+                store_note=note,
+            )
+            for it in pending:
+                expected = it.outstanding
+                # Clamp over-delivery: accepting more than was ordered would
+                # leave a negative balance and the round loop would not settle.
+                delivered = min(delivered_map.get(it.id, 0), expected)
+                DeliveryCheckItem.objects.create(
+                    delivery_check=check, item=it, expected_quantity=expected,
+                    delivered_quantity=delivered, note=notes_map.get(it.id, ''),
+                )
                 it.delivered_quantity = delivered
                 it.save(update_fields=['delivered_quantity'])
-                if delivered != it.quantity:
+                if delivered != expected:
                     mismatch = True
-                if delivered > 0:
-                    stock, _ = Stock.objects.get_or_create(
-                        product=it.product, branch=po.branch, defaults={'quantity': 0}
-                    )
-                    stock.quantity += delivered
-                    stock.save()
+
+            check.has_discrepancy = mismatch
+            check.decision = 'pending_comment' if mismatch else 'complete'
+            check.save(update_fields=['has_discrepancy', 'decision'])
+
             po.checked_by = request.user
             po.checked_at = timezone.now()
             po.store_note = note
             po.has_discrepancy = mismatch
             po.status = 'discrepancy' if mismatch else 'received'
+
+            if not mismatch:
+                # Full delivery needs no admin sign-off — receive it now.
+                _receive_delivery(check)
+
             po.save()
 
         if mismatch:
-            from apps.core.notify import notify
-            from apps.core.models import SystemActivity
             supplier = po.supplier.name if po.supplier else 'supplier'
             notify(
                 po.created_by,
                 title=f"Delivery discrepancy on PO-{po.id:05d}",
                 message=(f"The Store Manager found that the delivery for PO-{po.id:05d} ({supplier}) "
                          f"does not match what was ordered. Please open the order and add a comment "
-                         f"explaining why the goods are not complete."),
+                         f"explaining why the goods are not complete — it then goes to the Admin."),
                 url='/inventory/purchase-orders/',
                 level='warning',
             )
@@ -326,21 +406,133 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             )
 
         return Response({
-            'detail': ('Cross-check saved. Discrepancy flagged — Afisa Ugavi has been notified.'
-                       if mismatch else 'Cross-check saved. Delivery matches the order; stock updated.'),
-            'status': po.status, 'has_discrepancy': mismatch,
+            'detail': ('Cross-check saved. Shortfall flagged — Afisa Ugavi has been asked to comment. '
+                       'Nothing has been added to stock yet.'
+                       if mismatch else
+                       'Cross-check saved. Delivery matches the order; stock updated.'),
+            'status': po.status, 'has_discrepancy': mismatch, 'round': check.round_number,
         }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, IsAfisaUgavi])
     def comment(self, request, pk=None):
-        """Afisa Ugavi explains why a flagged delivery is incomplete."""
+        """Afisa Ugavi explains why a flagged delivery is incomplete, which sends
+        it on to an Admin to confirm or reject."""
+        from django.utils import timezone
         po = self.get_object()
+        if po.status != 'discrepancy':
+            return Response({'detail': 'This order is not waiting for your comment.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         text = (request.data.get('comment') or '').strip()
         if not text:
             return Response({'detail': 'Comment is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        po.afisa_comment = text
-        po.save(update_fields=['afisa_comment'])
-        return Response({'detail': 'Comment saved.', 'status': po.status}, status=status.HTTP_200_OK)
+
+        check = po.latest_check
+        if check is None:
+            return Response({'detail': 'This order has not been cross-checked yet.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            check.afisa_comment = text
+            check.commented_at = timezone.now()
+            check.decision = 'pending_admin'
+            check.save(update_fields=['afisa_comment', 'commented_at', 'decision'])
+            po.afisa_comment = text
+            po.status = 'awaiting_admin'
+            po.save(update_fields=['afisa_comment', 'status'])
+
+        supplier = po.supplier.name if po.supplier else 'supplier'
+        for admin in _admin_recipients():
+            notify(
+                admin,
+                title=f"Short delivery to approve: PO-{po.id:05d}",
+                message=(f"PO-{po.id:05d} ({supplier}) arrived incomplete. Afisa Ugavi has explained why. "
+                         f"Confirm to take the delivered goods into stock and keep the balance owing, "
+                         f"or reject to send it back for a better explanation."),
+                url='/inventory/deliveries/approvals/',
+                level='warning',
+            )
+        return Response({'detail': 'Comment saved and sent to the Admin for a decision.',
+                         'status': po.status}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['POST'], url_path='admin-decision',
+            permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def admin_decision(self, request, pk=None):
+        """Admin confirms or rejects a short delivery.
+
+        Confirm — what arrived is fine: only the delivered quantity goes into
+        stock, and any balance stays owing on the order, back with Afisa Ugavi
+        as 'partial' until the rest turns up.
+        Reject — back to Afisa Ugavi for a better explanation; no stock moves.
+        """
+        from django.utils import timezone
+        po = self.get_object()
+        if po.status != 'awaiting_admin':
+            return Response({'detail': 'This order is not awaiting an admin decision.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        decision = (request.data.get('decision') or '').strip().lower()
+        if decision not in ('confirm', 'reject'):
+            return Response({'detail': "Decision must be 'confirm' or 'reject'."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        admin_note = (request.data.get('note') or '').strip()
+        if decision == 'reject' and not admin_note:
+            return Response({'detail': 'A reason is required when rejecting.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        check = po.latest_check
+        if check is None:
+            return Response({'detail': 'This order has not been cross-checked yet.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        supplier = po.supplier.name if po.supplier else 'supplier'
+        with transaction.atomic():
+            check.decided_by = request.user
+            check.decided_at = timezone.now()
+            check.admin_note = admin_note
+            po.decided_by = request.user
+            po.decided_at = timezone.now()
+            po.admin_note = admin_note
+
+            if decision == 'confirm':
+                check.decision = 'approved'
+                _receive_delivery(check)
+                po.status = 'received' if po.is_fully_received else 'partial'
+            else:
+                check.decision = 'rejected'
+                po.status = 'discrepancy'
+
+            check.save(update_fields=['decision', 'decided_by', 'decided_at', 'admin_note'])
+            po.save(update_fields=['status', 'decided_by', 'decided_at', 'admin_note'])
+
+        if decision == 'confirm':
+            outstanding = po.outstanding_items()
+            if outstanding:
+                owed = ', '.join(f"{it.product.name} ({it.outstanding})" for it in outstanding)
+                message = (f"The Admin confirmed the delivery on PO-{po.id:05d} ({supplier}). What arrived "
+                           f"has been added to stock. Still owed: {owed}. Confirm the order again when the "
+                           f"balance is delivered.")
+            else:
+                message = (f"The Admin confirmed the final delivery on PO-{po.id:05d} ({supplier}). "
+                           f"The order is now fully received.")
+            level = 'success'
+            title = f"Delivery confirmed: PO-{po.id:05d}"
+            activity = f"Admin confirmed the short delivery on PO-{po.id:05d}"
+            icon = 'bi-check2-circle'
+        else:
+            message = (f"The Admin rejected the explanation for the short delivery on PO-{po.id:05d} "
+                       f"({supplier}): {admin_note} Please review the order and comment again.")
+            level = 'danger'
+            title = f"Delivery explanation rejected: PO-{po.id:05d}"
+            activity = f"Admin rejected the short delivery explanation on PO-{po.id:05d}"
+            icon = 'bi-x-octagon'
+
+        notify(po.created_by, title=title, message=message,
+               url='/inventory/purchase-orders/', level=level)
+        SystemActivity.objects.create(
+            user=request.user, activity_type='purchase', description=activity, icon_class=icon,
+        )
+
+        return Response({'detail': message, 'status': po.status}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['GET'])
     def pdf(self, request, pk=None):
@@ -692,9 +884,41 @@ class PurchaseOrderListView(LoginRequiredMixin, TemplateView):
 class PurchaseOrderCreateView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/purchase_order_form.html'
 
-class PurchaseOrderCheckView(LoginRequiredMixin, TemplateView):
-    """Store Manager screen: cross-check deliveries against confirmed POs."""
+class PurchaseOrderCheckView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Store Manager screen: the list of confirmed deliveries waiting to be
+    verified. Each one is opened on its own page and checked item by item."""
     template_name = 'inventory/po_cross_check.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.is_admin_role or u.is_store_manager
+
+
+class PurchaseOrderCheckDetailView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """One purchase order, checked one item at a time."""
+    template_name = 'inventory/po_cross_check_detail.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.is_admin_role or u.is_store_manager
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        po = get_object_or_404(PurchaseOrder, pk=kwargs['pk'])
+        context['po'] = po
+        context['pending_items'] = po.outstanding_items()
+        context['history'] = po.checks.prefetch_related('lines__item__product')
+        return context
+
+
+class DeliveryApprovalView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Admin screen: confirm or reject short deliveries that Afisa Ugavi has
+    explained. Confirming is what actually moves the goods into stock."""
+    template_name = 'inventory/po_delivery_approvals.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or u.is_admin_role
 
 class TruckListView(LoginRequiredMixin, TemplateView):
     template_name = 'inventory/truck_list.html'

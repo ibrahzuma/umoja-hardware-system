@@ -43,6 +43,14 @@
         fetchData();
     });
 
+    // Shared by the table and the details dialog, so they cannot drift apart.
+    const BADGE = { draft: 'secondary', sent: 'info', awaiting_check: 'warning',
+                    discrepancy: 'danger', awaiting_admin: 'primary', partial: 'warning',
+                    received: 'success', cancelled: 'dark' };
+    const LABEL = { draft: 'Draft', sent: 'Sent', awaiting_check: 'Awaiting Store Check',
+                    discrepancy: 'Discrepancy', awaiting_admin: 'With Admin', partial: 'Partially Received',
+                    received: 'Received', cancelled: 'Cancelled' };
+
     async function fetchData() {
         try {
             const response = await fetch('/api/purchase-orders/');
@@ -62,10 +70,6 @@
             return;
         }
 
-        const BADGE = { draft: 'secondary', sent: 'info', awaiting_check: 'warning',
-                        discrepancy: 'danger', received: 'success', cancelled: 'dark' };
-        const LABEL = { draft: 'Draft', sent: 'Sent', awaiting_check: 'Awaiting Store Check',
-                        discrepancy: 'Discrepancy', received: 'Received', cancelled: 'Cancelled' };
 
         data.forEach(po => {
             const tr = document.createElement('tr');
@@ -82,7 +86,15 @@
             } else if (po.status === 'awaiting_check') {
                 actions += `<span class="badge bg-warning-subtle text-warning ms-1"><i class="bi bi-hourglass-split"></i> With Store Manager</span>`;
             } else if (po.status === 'discrepancy') {
-                actions += `<button class="btn btn-sm btn-warning ms-1" onclick="addComment(${po.id})" title="Delivery incomplete — add your comment"><i class="bi bi-chat-left-text"></i> ${po.afisa_comment ? 'Edit Comment' : 'Add Comment'}</button>`;
+                const rejected = (po.checks || [])[0] && (po.checks || [])[0].decision === 'rejected';
+                actions += `<button class="btn btn-sm btn-warning ms-1" onclick="addComment(${po.id})" title="${rejected ? 'The Admin rejected your explanation — comment again' : 'Delivery incomplete — add your comment'}"><i class="bi bi-chat-left-text"></i> ${rejected ? 'Re-comment' : (po.afisa_comment ? 'Edit Comment' : 'Add Comment')}</button>`;
+            } else if (po.status === 'awaiting_admin') {
+                actions += `<span class="badge bg-primary-subtle text-primary ms-1"><i class="bi bi-hourglass-split"></i> Awaiting Admin</span>`;
+            } else if (po.status === 'partial') {
+                const owed = (po.items || []).filter(it => (it.outstanding || 0) > 0)
+                                             .map(it => `${it.product_name} (${it.outstanding})`).join(', ');
+                actions += `<button class="btn btn-sm btn-success ms-1" onclick="confirmOrder(${po.id}, true)" title="Balance delivered — send to the Store Manager to check"><i class="bi bi-send-check"></i> Confirm Balance</button>
+                            <div class="small text-muted mt-1">Still owed: ${owed || '—'}</div>`;
             } else if (po.status === 'received') {
                 actions += `<span class="badge bg-success-subtle text-success ms-1"><i class="bi bi-check2-circle"></i> Received</span>`;
             }
@@ -114,10 +126,13 @@
         } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
-    async function confirmOrder(id) {
+    async function confirmOrder(id, isBalance = false) {
         const result = await Swal.fire({
-            icon: 'question', title: 'Confirm this order?',
-            text: 'It will be sent to the Store Manager to cross-check the delivered goods against what was ordered.',
+            icon: 'question',
+            title: isBalance ? 'Confirm the balance delivery?' : 'Confirm this order?',
+            text: isBalance
+                ? 'The Store Manager will check the outstanding items against what has now arrived.'
+                : 'It will be sent to the Store Manager to cross-check the delivered goods against what was ordered.',
             showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Yes, confirm'
         });
         if (!result.isConfirmed) return;
@@ -137,24 +152,32 @@
         try { po = await (await fetch(`/api/purchase-orders/${id}/`)).json(); }
         catch (e) { Swal.fire('Error', 'Could not load the order.', 'error'); return; }
 
-        const rows = (po.items || []).map(it => {
-            const d = (it.delivered_quantity == null) ? '—' : it.delivered_quantity;
-            const short = it.delivered_quantity != null && it.delivered_quantity !== it.quantity;
+        // Show the round that was flagged — on a balance delivery "owed" is what
+        // was still outstanding for that round, not the original order quantity.
+        const check = (po.checks || [])[0] || {};
+        const rows = (check.lines || []).map(l => {
+            const short = l.delivered_quantity !== l.expected_quantity;
             return `<tr class="${short ? 'table-danger' : ''}">
-                <td style="text-align:left;">${it.product_name || it.product}</td>
-                <td>${it.quantity}</td><td>${d}</td></tr>`;
+                <td style="text-align:left;">${l.product_name}</td>
+                <td>${l.expected_quantity}</td><td>${l.delivered_quantity}</td>
+                <td style="text-align:left;font-size:.8rem;">${l.note || ''}</td></tr>`;
         }).join('');
 
+        const rejected = check.decision === 'rejected';
         const { value: comment } = await Swal.fire({
-            title: `PO-${String(po.id).padStart(5, '0')} — Discrepancy`,
+            title: `PO-${String(po.id).padStart(5, '0')} — Short delivery`,
             html: `
+                ${rejected ? `<div class="alert alert-danger py-2 small text-start">
+                    <strong>The Admin rejected your explanation:</strong><br>${check.admin_note || ''}</div>` : ''}
                 <table class="table table-sm" style="font-size:.85rem;">
-                    <thead><tr><th style="text-align:left;">Product</th><th>Ordered</th><th>Delivered</th></tr></thead>
+                    <thead><tr><th style="text-align:left;">Product</th><th>Owed</th><th>Arrived</th>
+                        <th style="text-align:left;">Store note</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
-                ${po.store_note ? `<div class="text-muted small mb-2">Store note: ${po.store_note}</div>` : ''}
-                <textarea id="afisaComment" class="form-control" rows="3" placeholder="Explain why the goods are not complete…">${po.afisa_comment || ''}</textarea>`,
-            showCancelButton: true, confirmButtonText: 'Save comment',
+                ${check.store_note ? `<div class="text-muted small mb-2">Store note: ${check.store_note}</div>` : ''}
+                <div class="small text-muted mb-1 text-start">Your comment goes to the Admin, who confirms or rejects the delivery.</div>
+                <textarea id="afisaComment" class="form-control" rows="3" placeholder="Explain why the goods are not complete…">${check.afisa_comment || ''}</textarea>`,
+            showCancelButton: true, confirmButtonText: 'Send to Admin',
             preConfirm: () => {
                 const v = document.getElementById('afisaComment').value.trim();
                 if (!v) { Swal.showValidationMessage('A comment is required.'); }
@@ -169,14 +192,56 @@
                 body: JSON.stringify({ comment })
             });
             const data = await res.json();
-            if (res.ok) { Swal.fire({ icon: 'success', title: 'Comment saved', timer: 1600, showConfirmButton: false }); fetchData(); }
+            if (res.ok) { Swal.fire({ icon: 'success', title: 'Sent to the Admin', text: data.detail, timer: 2400, showConfirmButton: false }); fetchData(); }
             else { Swal.fire('Error', data.detail || 'Failed.', 'error'); }
         } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 
-    function viewDetails(id) {
-        // Implement view details logic (e.g., modal or redirection)
-        alert('View details for PO #' + id);
+    async function viewDetails(id) {
+        let po;
+        try { po = await (await fetch(`/api/purchase-orders/${id}/`)).json(); }
+        catch (e) { Swal.fire('Error', 'Could not load the order.', 'error'); return; }
+
+        const rows = (po.items || []).map(it => {
+            const owed = it.outstanding != null ? it.outstanding : it.quantity;
+            return `<tr class="${owed > 0 ? '' : 'table-success'}">
+                <td style="text-align:left;">${it.product_name || it.product}</td>
+                <td>${it.quantity} ${it.unit || ''}</td>
+                <td>${it.received_quantity || 0}</td>
+                <td class="${owed > 0 ? 'text-danger fw-bold' : 'text-muted'}">${owed || '—'}</td>
+                <td style="text-align:right;">${Math.round(Number(it.total_cost)).toLocaleString()}</td>
+            </tr>`;
+        }).join('');
+
+        const history = (po.checks || []).map(c => `
+            <li class="text-start">Round ${c.round_number} — ${c.decision_label || c.decision}
+                ${c.checked_by_name ? `<span class="text-muted">(${c.checked_by_name})</span>` : ''}</li>`).join('');
+
+        Swal.fire({
+            title: `PO-${String(po.id).padStart(5, '0')}`,
+            width: 720,
+            html: `
+                <div class="text-start small mb-2">
+                    <div><strong>Supplier:</strong> ${po.supplier_name || '—'}</div>
+                    <div><strong>Branch:</strong> ${po.branch_name || '—'}</div>
+                    <div><strong>Status:</strong> ${LABEL[po.status] || po.status}</div>
+                    <div><strong>Raised by:</strong> ${po.created_by_name || '—'}</div>
+                </div>
+                <table class="table table-sm" style="font-size:.85rem;">
+                    <thead><tr>
+                        <th style="text-align:left;">Product</th><th>Ordered</th>
+                        <th>Received</th><th>Owed</th><th style="text-align:right;">Cost</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot><tr><th colspan="4" style="text-align:right;">Total</th>
+                        <th style="text-align:right;">TZS ${Math.round(Number(po.total_amount)).toLocaleString()}</th>
+                    </tr></tfoot>
+                </table>
+                ${history ? `<div class="text-start small"><strong>Deliveries:</strong><ul class="mb-0">${history}</ul></div>` : ''}
+                ${po.afisa_comment ? `<div class="text-start small mt-2"><strong>Afisa Ugavi:</strong> ${po.afisa_comment}</div>` : ''}
+                ${po.admin_note ? `<div class="text-start small"><strong>Admin:</strong> ${po.admin_note}</div>` : ''}`,
+            confirmButtonText: 'Close'
+        });
     }
 </script>
 {% endblock %}

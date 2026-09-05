@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Administration</div>
+        <h2>Delivery Approvals</h2>
+        <p class="subtitle">Short deliveries the Store Manager flagged and Afisa Ugavi has explained.</p>
+    </div>
+    <button class="btn btn-secondary" onclick="loadPending()"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-light border d-flex gap-2 align-items-start">
+    <i class="bi bi-info-circle text-primary mt-1"></i>
+    <div class="small">
+        <strong>Confirm</strong> — what arrived is fine: only the delivered quantity is added to stock and the
+        balance stays owing on the order, back with Afisa Ugavi until the rest is delivered.<br>
+        <strong>Reject</strong> — sends it back to Afisa Ugavi for a better explanation. Nothing is added to stock.
+    </div>
+</div>
+
+<div id="pendingContainer">
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border text-primary"></div>
+        <p class="mt-2">Loading deliveries awaiting your decision…</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', loadPending);
+
+    async function loadPending() {
+        const box = document.getElementById('pendingContainer');
+        try {
+            const res = await fetch('/api/purchase-orders/');
+            const data = await res.json();
+            const pos = (Array.isArray(data) ? data : data.results).filter(p => p.status === 'awaiting_admin');
+            box.innerHTML = '';
+
+            if (!pos.length) {
+                box.innerHTML = `<div class="card shadow-sm"><div class="card-body text-center text-muted py-5">
+                    <i class="bi bi-check2-circle display-4 text-success opacity-50"></i>
+                    <p class="mt-3 mb-0">Nothing waiting for a decision.</p></div></div>`;
+                return;
+            }
+            pos.forEach(po => box.appendChild(cardFor(po)));
+        } catch (e) {
+            console.error(e);
+            box.innerHTML = '<div class="alert alert-danger">Failed to load deliveries.</div>';
+        }
+    }
+
+    function cardFor(po) {
+        // The round awaiting a decision is the latest one (checks come newest first).
+        const check = (po.checks || [])[0] || {};
+        const lines = (check.lines || []).map(l => {
+            const short = Math.max(l.expected_quantity - l.delivered_quantity, 0);
+            return `
+                <tr class="${short ? 'table-warning' : ''}">
+                    <td>${l.product_name}</td>
+                    <td class="text-center">${l.expected_quantity}</td>
+                    <td class="text-center fw-semibold">${l.delivered_quantity}</td>
+                    <td class="text-center ${short ? 'text-danger fw-bold' : 'text-muted'}">${short || '—'}</td>
+                    <td class="small text-muted">${l.note || ''}</td>
+                </tr>`;
+        }).join('');
+
+        const wrap = document.createElement('div');
+        wrap.className = 'card shadow-sm mb-4';
+        wrap.innerHTML = `
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="fw-bold">PO-${String(po.id).padStart(5, '0')}</span>
+                    <span class="text-muted ms-2">${po.supplier_name || '—'} · ${po.branch_name || ''}</span>
+                </div>
+                <span class="badge bg-warning-subtle text-warning">
+                    <i class="bi bi-hourglass-split"></i> Round ${check.round_number || 1} · awaiting your decision
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="text-muted small text-uppercase">
+                            <tr>
+                                <th>Item</th><th class="text-center">Owed</th>
+                                <th class="text-center">Arrived</th><th class="text-center">Short</th>
+                                <th>Store note</th>
+                            </tr>
+                        </thead>
+                        <tbody>${lines}</tbody>
+                    </table>
+                </div>
+                ${check.store_note ? `<p class="mb-2 small"><strong>Store Manager:</strong> ${check.store_note}</p>` : ''}
+                <div class="alert alert-warning py-2 mb-3">
+                    <strong>Afisa Ugavi's explanation:</strong><br>${check.afisa_comment || '—'}
+                </div>
+                <div class="d-flex justify-content-end gap-2">
+                    <button class="btn btn-outline-danger" onclick="decide(${po.id}, 'reject', this)">
+                        <i class="bi bi-x-circle"></i> Reject
+                    </button>
+                    <button class="btn btn-success" onclick="decide(${po.id}, 'confirm', this)">
+                        <i class="bi bi-check2-circle"></i> Confirm &amp; add to stock
+                    </button>
+                </div>
+            </div>`;
+        return wrap;
+    }
+
+    async function decide(poId, decision, btn) {
+        const isReject = decision === 'reject';
+        const { value: note, isConfirmed } = await Swal.fire({
+            icon: isReject ? 'warning' : 'question',
+            title: isReject ? 'Reject this explanation?' : 'Confirm this delivery?',
+            html: isReject
+                ? 'It goes back to Afisa Ugavi to explain again. Nothing is added to stock.'
+                : 'What arrived will be added to stock. Any balance stays owing on the order '
+                  + 'until Afisa Ugavi confirms the rest has been delivered.',
+            input: 'textarea',
+            inputLabel: isReject ? 'Reason (required)' : 'Note (optional)',
+            inputPlaceholder: isReject ? 'Why is this explanation not acceptable?' : 'Anything to record…',
+            showCancelButton: true,
+            confirmButtonText: isReject ? 'Reject' : 'Confirm',
+            confirmButtonColor: isReject ? '#dc3545' : '#198754',
+            inputValidator: v => (isReject && !(v || '').trim()) ? 'A reason is required when rejecting.' : undefined
+        });
+        if (!isConfirmed) return;
+
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/purchase-orders/${poId}/admin-decision/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ decision, note: note || '' })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                await Swal.fire({
+                    icon: isReject ? 'info' : 'success',
+                    title: isReject ? 'Sent back to Afisa Ugavi' : 'Delivery confirmed',
+                    text: data.detail
+                });
+                loadPending();
+            } else {
+                btn.disabled = false;
+                Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed.'), 'error');
+            }
+        } catch (e) {
+            btn.disabled = false;
+            Swal.fire('Error', 'Network error — please try again.', 'error');
+        }
+    }
+</script>
+{% endblock %}

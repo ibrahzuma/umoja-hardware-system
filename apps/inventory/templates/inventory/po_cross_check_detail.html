@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+
+{% block title %}Verify PO-{{ po.id|stringformat:"05d" }}{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Store Manager · Delivery check</div>
+        <h2>PO-{{ po.id|stringformat:"05d" }}</h2>
+        <p class="subtitle">
+            {{ po.supplier.name|default:"—" }} · {{ po.branch.name }} ·
+            {% if history %}Round {{ po.next_round_number }} (balance delivery){% else %}First delivery{% endif %}
+        </p>
+    </div>
+    <a href="{% url 'inventory:po_cross_check' %}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left"></i> Back to list
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if po.status != 'awaiting_check' %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    This order is not waiting for a store check right now (status:
+    <strong>{{ po.get_status_display }}</strong>).
+</div>
+{% endif %}
+
+<div class="alert alert-light border d-flex gap-2 align-items-start">
+    <i class="bi bi-info-circle text-primary mt-1"></i>
+    <div class="small">
+        Check <strong>one item at a time</strong>. Mark each item as fully arrived, or record how much
+        actually came and why. Nothing is saved until every item has been checked and you submit.
+        <br>If anything is short, the order goes to Afisa Ugavi for an explanation and then to the Admin —
+        <strong>no stock is added until the Admin confirms it</strong>.
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Items to check</span>
+        <span class="badge bg-primary-subtle text-primary" id="progressBadge">
+            0 of {{ pending_items|length }} items checked
+        </span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0" id="itemsTable">
+                <thead class="bg-light text-muted small text-uppercase">
+                    <tr>
+                        <th class="ps-4">Item</th>
+                        <th class="text-center">Ordered</th>
+                        <th class="text-center">Already received</th>
+                        <th class="text-center">Owed now</th>
+                        <th style="width: 320px;">This delivery</th>
+                        <th class="text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pending_items %}
+                    <tr class="item-row" data-item="{{ item.id }}" data-expected="{{ item.outstanding }}">
+                        <td class="ps-4">
+                            <div class="fw-semibold">{{ item.product.name }}</div>
+                            <div class="text-muted small">{{ item.get_unit_display }}</div>
+                        </td>
+                        <td class="text-center">{{ item.quantity }}</td>
+                        <td class="text-center text-muted">{{ item.received_quantity }}</td>
+                        <td class="text-center fw-bold">{{ item.outstanding }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                                <button type="button" class="btn btn-outline-success btn-all"
+                                        onclick="markAll(this)">
+                                    <i class="bi bi-check2"></i> All {{ item.outstanding }} arrived
+                                </button>
+                                <button type="button" class="btn btn-outline-warning btn-short"
+                                        onclick="markShort(this)">
+                                    <i class="bi bi-exclamation-triangle"></i> Short
+                                </button>
+                            </div>
+                            <div class="short-box d-none">
+                                <div class="input-group input-group-sm mb-1">
+                                    <span class="input-group-text">Arrived</span>
+                                    <input type="number" class="form-control delivered-input text-center"
+                                           min="0" max="{{ item.outstanding }}" value="0"
+                                           oninput="onDeliveredChange(this)">
+                                    <span class="input-group-text">of {{ item.outstanding }}</span>
+                                </div>
+                                <input type="text" class="form-control form-control-sm item-note"
+                                       maxlength="255" placeholder="What is missing and why?">
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary-subtle text-secondary status-chip">
+                                Not checked
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted py-4">
+                        Every item on this order has already been received.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if pending_items %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <label class="form-label small text-muted">Note on this delivery (optional)</label>
+        <textarea class="form-control" id="storeNote" rows="2"
+                  placeholder="Anything worth recording about the delivery as a whole…"></textarea>
+        <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-primary" id="submitBtn" disabled onclick="submitCheck()">
+                <i class="bi bi-clipboard-check"></i> Submit cross-check
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if history %}
+<div class="card shadow-sm">
+    <div class="card-header bg-white fw-semibold">Delivery history</div>
+    <div class="card-body">
+        {% for check in history %}
+        <div class="border-start border-3 ps-3 mb-3
+                    {% if check.decision == 'rejected' %}border-danger
+                    {% elif check.decision == 'approved' or check.decision == 'complete' %}border-success
+                    {% else %}border-warning{% endif %}">
+            <div class="d-flex justify-content-between">
+                <span class="fw-semibold">Round {{ check.round_number }}</span>
+                <span class="text-muted small">{{ check.checked_at|date:"d M Y H:i" }} ·
+                    {{ check.checked_by.username|default:"—" }}</span>
+            </div>
+            <div class="small text-muted mb-1">{{ check.get_decision_display }}</div>
+            <ul class="small mb-1">
+                {% for line in check.lines.all %}
+                <li>{{ line.item.product.name }}: {{ line.delivered_quantity }} of {{ line.expected_quantity }}
+                    {% if line.shortfall %}<span class="text-danger">(short {{ line.shortfall }}){% if line.note %} — {{ line.note }}{% endif %}</span>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% if check.store_note %}<div class="small"><strong>Store note:</strong> {{ check.store_note }}</div>{% endif %}
+            {% if check.afisa_comment %}<div class="small"><strong>Afisa Ugavi:</strong> {{ check.afisa_comment }}</div>{% endif %}
+            {% if check.admin_note %}<div class="small"><strong>Admin:</strong> {{ check.admin_note }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const PO_ID = {{ po.id }};
+
+    function markAll(btn) {
+        const row = btn.closest('.item-row');
+        const expected = parseInt(row.dataset.expected);
+        row.dataset.delivered = expected;
+        row.dataset.checked = '1';
+        row.querySelector('.short-box').classList.add('d-none');
+        row.querySelector('.btn-all').classList.replace('btn-outline-success', 'btn-success');
+        row.querySelector('.btn-short').classList.replace('btn-warning', 'btn-outline-warning');
+        setChip(row, 'success', `Confirmed ${expected}`);
+        refreshProgress();
+    }
+
+    function markShort(btn) {
+        const row = btn.closest('.item-row');
+        row.querySelector('.short-box').classList.remove('d-none');
+        row.querySelector('.btn-short').classList.replace('btn-outline-warning', 'btn-warning');
+        row.querySelector('.btn-all').classList.replace('btn-success', 'btn-outline-success');
+        row.dataset.checked = '1';
+        onDeliveredChange(row.querySelector('.delivered-input'));
+        row.querySelector('.delivered-input').focus();
+    }
+
+    function onDeliveredChange(input) {
+        const row = input.closest('.item-row');
+        const expected = parseInt(row.dataset.expected);
+        let delivered = parseInt(input.value);
+        if (isNaN(delivered) || delivered < 0) delivered = 0;
+        if (delivered > expected) { delivered = expected; input.value = expected; }
+        row.dataset.delivered = delivered;
+
+        if (delivered === expected) {
+            setChip(row, 'success', `Confirmed ${expected}`);
+        } else {
+            setChip(row, 'warning', `Short ${expected - delivered}`);
+        }
+        refreshProgress();
+    }
+
+    function setChip(row, tone, text) {
+        const chip = row.querySelector('.status-chip');
+        chip.className = `badge bg-${tone}-subtle text-${tone} status-chip`;
+        chip.textContent = text;
+    }
+
+    function refreshProgress() {
+        const rows = Array.from(document.querySelectorAll('.item-row'));
+        const done = rows.filter(r => r.dataset.checked === '1');
+        document.getElementById('progressBadge').textContent =
+            `${done.length} of ${rows.length} items checked`;
+        const btn = document.getElementById('submitBtn');
+        if (btn) btn.disabled = done.length !== rows.length;
+    }
+
+    async function submitCheck() {
+        const rows = Array.from(document.querySelectorAll('.item-row'));
+        const items = rows.map(r => ({
+            item: parseInt(r.dataset.item),
+            delivered_quantity: parseInt(r.dataset.delivered || 0),
+            note: (r.querySelector('.item-note') || {}).value || ''
+        }));
+        const shortItems = rows.filter(r =>
+            parseInt(r.dataset.delivered || 0) !== parseInt(r.dataset.expected));
+
+        if (shortItems.length) {
+            const missingNote = shortItems.some(r => !(r.querySelector('.item-note').value || '').trim());
+            if (missingNote) {
+                const proceed = await Swal.fire({
+                    icon: 'question', title: 'No note on a short item',
+                    text: 'A short item without a note makes it harder for Afisa Ugavi to explain. Submit anyway?',
+                    showCancelButton: true, confirmButtonText: 'Submit anyway'
+                }).then(r => r.isConfirmed);
+                if (!proceed) return;
+            }
+            const ok = await Swal.fire({
+                icon: 'warning', title: `${shortItems.length} item(s) short`,
+                html: 'This goes to <strong>Afisa Ugavi</strong> to explain, then to the <strong>Admin</strong>.'
+                      + '<br>Nothing will be added to stock until the Admin confirms it.',
+                showCancelButton: true, confirmButtonText: 'Yes, report the shortfall'
+            }).then(r => r.isConfirmed);
+            if (!ok) return;
+        }
+
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/purchase-orders/${PO_ID}/cross_check/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ items, store_note: document.getElementById('storeNote').value })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                await Swal.fire({
+                    icon: data.has_discrepancy ? 'warning' : 'success',
+                    title: data.has_discrepancy ? 'Shortfall reported' : 'Delivery verified',
+                    text: data.detail
+                });
+                window.location.href = "{% url 'inventory:po_cross_check' %}";
+            } else {
+                btn.disabled = false;
+                Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed to save.'), 'error');
+            }
+        } catch (e) {
+            btn.disabled = false;
+            Swal.fire('Error', 'Network error — please try again.', 'error');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', refreshProgress);
+</script>
+{% endblock %}

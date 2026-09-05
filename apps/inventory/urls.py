@@ -26,7 +26,6 @@ urlpatterns = [
     path('transfer/', views.InventoryTransferView.as_view(), name='inventory_transfer'),
     path('health/', views.InventoryHealthView.as_view(), name='inventory_health'),
     path('aging/', views.InventoryAgingView.as_view(), name='inventory_aging'),
-    path('aging/', views.InventoryAgingView.as_view(), name='inventory_aging'),
     path('abc/', views.ABCAnalysisView.as_view(), name='abc_analysis'),
     path('profitability/', views.ProfitabilityReportView.as_view(), name='profitability_report'),
     path('stock/adjustment/', views.StockAdjustmentView.as_view(), name='stock_adjustment'),
@@ -56,6 +55,8 @@ urlpatterns = [
     path('purchase-orders/', views.PurchaseOrderListView.as_view(), name='purchase_order_list'),
     path('purchase-orders/create/', views.PurchaseOrderCreateView.as_view(), name='purchase_order_create'),
     path('deliveries/verify/', views.PurchaseOrderCheckView.as_view(), name='po_cross_check'),
+    path('deliveries/verify/<int:pk>/', views.PurchaseOrderCheckDetailView.as_view(), name='po_cross_check_detail'),
+    path('deliveries/approvals/', views.DeliveryApprovalView.as_view(), name='po_delivery_approvals'),
 
     path('grns/', views.GRNListView.as_view(), name='grn_list'),
     path('grns/create/', views.GRNCreateView.as_view(), name='grn_create'),

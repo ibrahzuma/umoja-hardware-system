@@ -100,11 +100,30 @@ class Purchase(models.Model):
         return f"Purchase {self.product.name} ({self.quantity})"
 
 class PurchaseOrder(models.Model):
+    """An order raised by Afisa Ugavi and delivered against, possibly in parts.
+
+    Delivery lifecycle (see DeliveryCheck for one round of it):
+
+        draft/sent --confirm--> awaiting_check      (with the Store Manager)
+        awaiting_check --all arrived--> received
+        awaiting_check --short--> discrepancy       (Afisa Ugavi must comment)
+        discrepancy --comment--> awaiting_admin     (Admin confirms or rejects)
+        awaiting_admin --reject--> discrepancy      (back for a better comment)
+        awaiting_admin --confirm--> received        (nothing outstanding)
+                                 \\-> partial       (balance still owed;
+                                                     Afisa Ugavi confirms again
+                                                     when the rest arrives)
+
+    Nothing reaches stock on a short delivery until the Admin confirms it, and
+    only the quantity that actually arrived is added.
+    """
     STATUS_CHOICES = (
         ('draft', 'Draft'),
         ('sent', 'Sent'),
         ('awaiting_check', 'Awaiting Store Check'),
         ('discrepancy', 'Discrepancy'),
+        ('awaiting_admin', 'Awaiting Admin Decision'),
+        ('partial', 'Partially Received'),
         ('received', 'Received'),
         ('cancelled', 'Cancelled'),
     )
@@ -125,8 +144,33 @@ class PurchaseOrder(models.Model):
     store_note = models.TextField(blank=True, help_text="Store Manager's note during cross-check")
     afisa_comment = models.TextField(blank=True, help_text="Afisa Ugavi's explanation for a discrepancy")
 
+    # Admin decision on a short delivery. These mirror the latest DeliveryCheck
+    # so the order list can show the current state without a second query.
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='decided_purchase_orders')
+    decided_at = models.DateTimeField(null=True, blank=True)
+    admin_note = models.TextField(blank=True, help_text="Admin's reason for confirming or rejecting a short delivery")
+
     def __str__(self):
         return f"PO #{self.id} - {self.supplier}"
+
+    @property
+    def latest_check(self):
+        """The most recent delivery round, or None before the first check."""
+        return self.checks.first()
+
+    @property
+    def next_round_number(self):
+        return self.checks.count() + 1
+
+    @property
+    def is_fully_received(self):
+        return all(it.outstanding == 0 for it in self.items.all())
+
+    def outstanding_items(self):
+        """Line items still owed by the supplier — what the next delivery round
+        is checked against."""
+        return [it for it in self.items.all() if it.outstanding > 0]
 
 class PurchaseOrderItem(models.Model):
     UNIT_CHOICES = [
@@ -139,7 +183,11 @@ class PurchaseOrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     delivered_quantity = models.PositiveIntegerField(null=True, blank=True,
-                                                     help_text="Quantity actually delivered (set at store cross-check)")
+                                                     help_text="Quantity delivered in the latest cross-check round")
+    received_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Cumulative quantity accepted into stock across all delivery rounds",
+    )
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='pcs')
     unit_cost = models.DecimalField(max_digits=10, decimal_places=2)
     total_cost = models.DecimalField(max_digits=12, decimal_places=2)
@@ -149,8 +197,78 @@ class PurchaseOrderItem(models.Model):
         super().save(*args, **kwargs)
         # Assuming we update the PO total in a signal or manual method, keeping it simple here.
 
+    @property
+    def outstanding(self):
+        """Still owed by the supplier. Only ever reaches 0 — over-delivery is
+        clamped at cross-check so the balance loop always terminates."""
+        return max(self.quantity - (self.received_quantity or 0), 0)
+
     def __str__(self):
         return f"{self.product.name} x {self.quantity}"
+
+
+class DeliveryCheck(models.Model):
+    """One round of the Store Manager's cross-check against a purchase order.
+
+    A short delivery does not go straight to stock: the round travels to Afisa
+    Ugavi for an explanation, then to an Admin who confirms (accept what
+    arrived, keep the balance owing) or rejects (back to Afisa Ugavi). Each
+    round is its own row, so an order delivered in three instalments keeps all
+    three counts, comments and decisions.
+    """
+    DECISION_CHOICES = (
+        ('complete', 'Delivered in full'),
+        ('pending_comment', 'Awaiting Afisa Ugavi comment'),
+        ('pending_admin', 'Awaiting admin decision'),
+        ('approved', 'Confirmed by admin'),
+        ('rejected', 'Rejected by admin'),
+    )
+    purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='checks')
+    round_number = models.PositiveSmallIntegerField(default=1)
+
+    checked_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='delivery_checks')
+    checked_at = models.DateTimeField(auto_now_add=True)
+    store_note = models.TextField(blank=True, help_text="Store Manager's note on this delivery")
+    has_discrepancy = models.BooleanField(default=False)
+
+    afisa_comment = models.TextField(blank=True, help_text="Afisa Ugavi's explanation for the shortfall")
+    commented_at = models.DateTimeField(null=True, blank=True)
+
+    decision = models.CharField(max_length=20, choices=DECISION_CHOICES, default='pending_comment')
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='delivery_decisions')
+    decided_at = models.DateTimeField(null=True, blank=True)
+    admin_note = models.TextField(blank=True, help_text="Admin's reason for confirming or rejecting")
+
+    class Meta:
+        ordering = ['-round_number']
+        unique_together = ('purchase_order', 'round_number')
+        verbose_name = 'Delivery Check'
+
+    def __str__(self):
+        return f"PO-{self.purchase_order_id:05d} round {self.round_number}"
+
+
+class DeliveryCheckItem(models.Model):
+    """What the Store Manager counted for one line item in one round."""
+    # Named `delivery_check`, not `check`: a field called `check` would shadow
+    # Django's Model.check() classmethod (models.E020).
+    delivery_check = models.ForeignKey(DeliveryCheck, on_delete=models.CASCADE, related_name='lines')
+    item = models.ForeignKey(PurchaseOrderItem, on_delete=models.CASCADE, related_name='check_lines')
+    expected_quantity = models.PositiveIntegerField(help_text="What was still owed when this round was checked")
+    delivered_quantity = models.PositiveIntegerField(default=0)
+    note = models.CharField(max_length=255, blank=True, help_text="Store Manager's note on this item")
+
+    class Meta:
+        ordering = ['id']
+
+    @property
+    def shortfall(self):
+        return max(self.expected_quantity - self.delivered_quantity, 0)
+
+    def __str__(self):
+        return f"{self.item.product.name}: {self.delivered_quantity}/{self.expected_quantity}"
 
 class GoodsReceivedNote(models.Model):
     purchase_order = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='grns', null=True, blank=True)
