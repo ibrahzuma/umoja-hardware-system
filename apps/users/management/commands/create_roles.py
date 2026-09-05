@@ -63,7 +63,10 @@ class Command(BaseCommand):
                 'finance.view_paymentreceipt', 'finance.add_paymentreceipt', 'finance.change_paymentreceipt',
                 'finance.view_bankaccount', 'finance.add_bankaccount', 'finance.change_bankaccount', 'finance.delete_bankaccount',
                 'finance.view_expensecategory', 'finance.add_expensecategory', 'finance.change_expensecategory', 'finance.delete_expensecategory',
-                'sales.view_transaction',
+                # Recording money received against a credit sale is an accountant
+                # task — it is the "Record Payment" action on the Debtors screen,
+                # which lives in their own workspace.
+                'sales.view_transaction', 'sales.add_transaction',
                 # CRM customer register is an admin + finance screen
                 'crm.view_customerrecord', 'crm.add_customerrecord',
                 'crm.change_customerrecord', 'crm.delete_customerrecord',

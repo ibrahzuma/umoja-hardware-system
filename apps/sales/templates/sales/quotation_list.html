@@ -78,8 +78,8 @@
     }
 
     function viewQuote(id) {
-        // Implement view or print logic
-        alert('View/Print logic to be implemented for Quote #' + id);
+        // The branded quotation PDF is served by QuotationViewSet.pdf
+        window.open(`/api/quotations/${id}/pdf/`, '_blank', 'noopener');
     }
 </script>
 {% endblock %}

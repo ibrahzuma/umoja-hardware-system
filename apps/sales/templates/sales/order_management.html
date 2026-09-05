@@ -198,19 +198,6 @@
 
     // ... (other functions)
 
-    async function confirmApproval() {
-        const id = document.getElementById('approveSaleId').value;
-        try {
-            await api.post(`/api/sales/${id}/approve/`, {});
-            approveModal.hide();
-            Swal.fire('Approved!', 'Order has been approved and sent to Store Managers.', 'success');
-            loadOrders();
-        } catch (e) {
-            console.error(e);
-            Swal.fire('Error', 'Failed to approve order: ' + (e.error || 'Unknown error'), 'error');
-        }
-    }
-
     async function loadUsers() {
         try {
             const data = await api.get('/api/users/');
@@ -449,6 +436,36 @@
         } catch (e) {
             console.error(e);
             Swal.fire('Error', 'Failed to dispatch: ' + (e.message || 'Check stock levels'), 'error');
+        }
+    }
+
+    async function deleteSale(id) {
+        const result = await Swal.fire({
+            title: 'Delete Order?',
+            text: 'This will permanently delete the order. If it was dispatched, stock will be restored.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            const response = await fetch(`/api/sales/${id}/`, {
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                Swal.fire('Deleted!', 'Order has been deleted.', 'success');
+                loadOrders();
+            } else {
+                let msg = 'Failed to delete order.';
+                try { msg = (await response.json()).detail || msg; } catch (_) {}
+                Swal.fire('Error', response.status === 403 ? "You don't have permission." : msg, 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Network error — please try again.', 'error');
         }
     }
 

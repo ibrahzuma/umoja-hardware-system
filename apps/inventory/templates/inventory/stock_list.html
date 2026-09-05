@@ -13,8 +13,8 @@
                 <i class="bi bi-download"></i> Export
             </button>
             <ul class="dropdown-menu" aria-labelledby="exportDropdown">
-                <li><a class="dropdown-item" href="#">Export to CSV</a></li>
-                <li><a class="dropdown-item" href="#">Export to PDF</a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportCSV(); return false;">Export to CSV</a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportPDF(); return false;">Export to PDF</a></li>
             </ul>
         </div>
     </div>
@@ -227,6 +227,47 @@
         });
     }
 
+    // Rows currently shown, kept for the Export menu.
+    let lastFiltered = [];
+
+    function exportCSV() {
+        if (!lastFiltered.length) {
+            Swal.fire('Nothing to export', 'No stock rows match the current filters.', 'info');
+            return;
+        }
+        const header = ['Product', 'SKU', 'Branch', 'Quantity', 'Low stock threshold', 'Status'];
+        const cell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+        const lines = [header.map(cell).join(',')];
+        lastFiltered.forEach(item => {
+            lines.push([
+                getProductName(item.product),
+                getProductSku(item.product),
+                getBranchName(item.branch),
+                item.quantity,
+                item.low_stock_threshold,
+                item.quantity <= item.low_stock_threshold ? 'Low stock' : 'In stock'
+            ].map(cell).join(','));
+        });
+
+        // BOM so Excel opens the file as UTF-8 rather than mangling it.
+        const blob = new Blob(['﻿' + lines.join('
+')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `stock-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function exportPDF() {
+        // The browser's print dialog offers "Save as PDF" everywhere; there is no
+        // server-side stock PDF endpoint to hit.
+        window.print();
+    }
+
     function renderTable(data) {
         const tbody = document.getElementById('stockTableBody');
         tbody.innerHTML = '';
@@ -246,6 +287,9 @@
 
             return matchesTerm && matchesBranch && matchesLowStock;
         });
+
+        // Export works off exactly what the filters left on screen.
+        lastFiltered = filtered;
 
         if (filtered.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No stock items found</td></tr>';
@@ -372,7 +416,7 @@
         }
 
         try {
-            const response = await fetch('/api/stock-transfers/', {
+            const response = await fetch('/api/transfers/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

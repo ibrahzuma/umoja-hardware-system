@@ -4,30 +4,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Umoja Hardware System** — a Django 6 (Channels/ASGI) ERP for a Tanzanian hardware retailer. Handles multi-branch inventory, sales/quotations, vehicle dispatch, finance (expenses/income/taxes/supplier payments), and role-based user management. Serves both server-rendered Django templates and a REST API consumed by a mobile app.
+**Umoja Hardware System** — a Django 6 (Channels/ASGI) ERP for a Tanzanian hardware retailer. Covers multi-branch
+inventory, procurement (purchase orders → delivery cross-check → GRN), POS/sales/quotations with an approval →
+dispatch flow, vehicle & truck fleets, finance (expenses/income/taxes/supplier payments/banks), HR (employees,
+leave, attendance, payroll), a standalone CRM customer register, and role-based user management.
+
+Three front-ends share one backend:
+- **Server-rendered Django templates** — the primary UI (every role works here).
+- **REST API** (`/api/`) — consumed by the templates' JavaScript *and* by the mobile app.
+- **Flutter app** in `mobile/` — Android field-sales companion (login, POS, stock, customers, quotations) plus a
+  desktop build that just hosts the production site in a WebView (`mobile/lib/screens/desktop_webview.dart`).
 
 ## Common Commands
 
-All commands assume the project venv is active and `.env` is configured (copy from `.env.example`; Postgres is required — `sms_project/settings.py` has no SQLite fallback).
+All commands assume the project venv is active and `.env` is configured (copy from `.env.example`; Postgres is
+required — `sms_project/settings.py` has no SQLite fallback).
 
 ```powershell
 # Run the dev server (ASGI — required because Channels/WebSockets are wired in)
 python manage.py runserver
-# For production-style local run:
+# Production-style local run:
 daphne -b 127.0.0.1 -p 8000 sms_project.asgi:application
 
 # Migrations
 python manage.py makemigrations
 python manage.py migrate
 
-# Seed role groups + permissions (must run after first migrate)
+# Seed role groups + permissions (must run after first migrate AND after any role/permission edit)
 python manage.py create_roles
 
-# Tests — pytest is configured via pytest.ini (uses --reuse-db)
-pytest                                    # full suite
-pytest tests/test_sales_flow.py           # one file
-pytest apps/inventory/tests.py::ClassName::test_name   # one test
-python manage.py test apps.sales          # Django test runner alternative
+# Tests — pytest is configured via pytest.ini (uses --reuse-db, needs Postgres)
+pytest                                       # full suite
+pytest apps/crm/tests.py                     # one file
+pytest apps/crm/tests.py::CrmAccessTest::test_other_roles_are_blocked   # one test
+python manage.py test apps.crm               # Django test runner alternative
 
 # Static files (needed before collectstatic in prod; WhiteNoise serves them)
 python manage.py collectstatic --noinput
@@ -36,50 +46,191 @@ python manage.py collectstatic --noinput
 # /api/docs/  (Swagger UI)   |   /api/schema/  (raw OpenAPI)
 ```
 
-Production deploy is automated via `./deploy.sh` on the Linode host (`/var/www/app`); it pulls main, installs deps, migrates, collects static, and restarts the `django_app` systemd unit + nginx. See `DEPLOYMENT.md` for one-time server setup.
+**Deploy.** `./deploy.sh` runs *on* the Linode host (`/var/www/app`): pulls main, installs deps, migrates, collects
+static, restarts the `django_app` systemd unit + nginx. From a dev machine, drive it over SSH with
+`python scripts/ssh_deploy.py exec "<command>"` / `put <local> <remote>` (reads `SSH_HOST`/`SSH_USER`/`SSH_PASS`
+from env; needs `paramiko`). `deploy.sh` does **not** run `create_roles` — run it yourself after changing roles.
+See `DEPLOYMENT.md` for one-time server setup.
 
 ## Architecture
 
 ### Project layout
 - `sms_project/` — Django project (settings, root URLs, ASGI/WSGI, WebSocket routing).
-- `apps/` — domain apps, each a standard Django app (`models.py`, `views.py`, `serializers.py`, `urls.py`, `admin.py`, plus optional `signals.py`, `consumers.py`, `permissions.py`).
-  - `core` — dashboard, `SystemSettings` (singleton: company name, currency=TZS, tax rate), `SystemActivity` audit log, shared DRF permissions (`IsStoreManager`, `IsSalesManager`, `IsAdminRole`).
-  - `users` — custom `AUTH_USER_MODEL = users.User` with a `role` field **and** Django auth Groups. Role properties (`is_manager`, `is_sales_rep`, etc.) check both. Each user is bound to a `Branch`.
-  - `inventory` — `Branch`, `Category` (carries `commission_percentage`), `Product` (auto-generated SKU on save), `Stock` (per-product-per-branch with `low_stock_threshold`), `Supplier`, `Purchase`, full `PurchaseOrder`/`GoodsReceivedNote` flow, `StockTransfer`, `StockAdjustment`, and a fleet sub-domain (`Truck`, `Driver`, `TruckMaintenance`, `TruckAllocation`).
-  - `sales` — `Customer`, `Vehicle` (sales-side delivery fleet, separate from inventory `Truck`), `Sale` (status flow: `pending → approved → dispatched`/`cancelled`) with `SaleItem` (commission auto-calculated from category % at save time and frozen), `Transaction` (payment per sale), `Quotation`/`QuotationItem`.
-  - `finance` — `Expense` (with receipt image upload), `Income`, `SupplierPayment`, `TaxPayment` (VAT/PAYE/SDL/etc.), `ExpenseCategory`.
+- `apps/` — domain apps, each a standard Django app (`models.py`, `views.py`, `serializers.py`, `urls.py`,
+  `admin.py`, `templates/`, plus optional `signals.py`, `consumers.py`, `permissions.py`).
+  - `core` — dashboard (role-scoped, see below), `SystemSettings` (singleton: company name/logo/TIN/VRN,
+    currency=TZS, tax rate), `SystemActivity` audit feed, `Notification` inbox + `notify()` helper,
+    legacy DRF permissions (`IsStoreManager`, `IsSalesManager`, `IsAdminRole`), APK download endpoint.
+  - `users` — custom `AUTH_USER_MODEL = users.User` with a `role` field **and** Django auth Groups; the
+    `is_*` role properties; `apps/users/permissions.py` — the current DRF role-permission classes.
+  - `inventory` — `Branch`, `Category` (carries `commission_percentage`), `Product` (auto-SKU on save), `Stock`
+    (per-product-per-branch, `low_stock_threshold`), `Supplier`, `Purchase`, the `PurchaseOrder` delivery flow
+    (`DeliveryCheck`/`DeliveryCheckItem`, see below), `GoodsReceivedNote`, `StockTransfer`, `StockAdjustment`,
+    and a fleet sub-domain (`Truck`, `Driver`, `DriverIssue`, `TruckMaintenance`, `TruckAllocation`, `TruckCost`).
+  - `sales` — `Customer`, `Vehicle` (outbound delivery fleet), `Sale` (`pending → approved → dispatched`/`cancelled`)
+    with `SaleItem` (commission frozen at save), `Transaction` (payments against a sale), `Quotation`/`QuotationItem`,
+    plus `utils.py` (PDF rendering) and `views_report.py`.
+  - `finance` — `ExpenseCategory`, `Expense` (receipt image, paid-from `BankAccount`), `Income`, `BankAccount`,
+    `SupplierPayment`, `TaxPayment` (VAT/PAYE/SDL/…), `PaymentReceipt` (customer payment tracking / debtors).
+  - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
+    `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
+    `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.
+  - `crm` — a **standalone** customer register (`CustomerRecord`, `CrmPayment`, `CrmCredit`) with Excel/CSV bulk
+    import (`imports.py`), reportlab PDF statements (`reports.py`), pagination and per-customer drill-down.
 
 ### Dual routing — server-rendered + REST API
-`sms_project/urls.py` mounts a single `DefaultRouter` at `/api/` registering every ViewSet across apps. Server-rendered template views live under per-app URL includes (`/inventory/`, `/sales/`, `/finance/`, plus `apps.core.urls` and `apps.users.urls` mounted at `/`). When adding a new resource you typically touch **both** the app's `views.py` (a `ModelViewSet` for the API and a template view for the UI) and register the ViewSet in `sms_project/urls.py`.
+`sms_project/urls.py` mounts a single `DefaultRouter` at `/api/` registering **every** ViewSet across all apps.
+Server-rendered template views live under per-app URL includes (`/inventory/`, `/sales/`, `/finance/`, `/hr/`,
+`/crm/`, plus `apps.core.urls` and `apps.users.urls` mounted at `/`). Adding a resource typically means touching
+**both** the app's `views.py` (a `ModelViewSet` for the API *and* a `TemplateView` for the UI) **and** registering
+the ViewSet in `sms_project/urls.py`.
+
+`apps/inventory/urls.py` and `apps/finance/urls.py` each keep a *second* local router under `<app>/api/`. The
+central `/api/` router is the one the frontend and mobile app use — register new ViewSets there.
+
+The Django admin path is obscured: `ADMIN_URL` env var (defaults to `admin/` only when `DEBUG=True`, else
+`manage-panel/`).
 
 ### Authentication
-- DRF defaults: `TokenAuthentication` + `SessionAuthentication`, `IsAuthenticated` required globally (`sms_project/settings.py`).
+- DRF defaults: `TokenAuthentication` + `SessionAuthentication`, `IsAuthenticated` globally. The browsable API
+  renderer is enabled **only** in DEBUG (stack fingerprinting); production serves JSON only.
 - Mobile app obtains a token at `POST /api-token-auth/` (wired in `apps/users/urls.py`).
-- Browser sessions: `LOGIN_URL=/login/`, 20-minute rolling sessions (`SESSION_COOKIE_AGE=1200`, `SESSION_SAVE_EVERY_REQUEST=True`), expire on browser close.
-- `CORS_ALLOW_ALL_ORIGINS = True` is intentional (mobile clients) — don't tighten without coordinating with the mobile app.
+- Browser sessions: `LOGIN_URL=/login/`, 20-minute rolling sessions (`SESSION_COOKIE_AGE=1200`,
+  `SESSION_SAVE_EVERY_REQUEST=True`), expire on browser close. Cookies are renamed (`umoja_sid`, `umoja_csrf`),
+  HttpOnly and SameSite=Lax — the CSRF token reaches JS via the `CSRF_TOKEN` global in `base.html`, not the cookie.
+- `CORS_ALLOW_ALL_ORIGINS = True` is intentional (mobile clients) — don't tighten without coordinating with mobile.
 
-### Roles & permissions
-Roles live in two places that must stay in sync: `User.ROLE_CHOICES` (the `role` CharField) and Django auth `Group`s seeded by `python manage.py create_roles`. The `is_*` properties on `User` (`apps/users/models.py`) check **both** the role field and group membership — when adding a new role, update both `ROLE_CHOICES` and the `ROLE_MAP`/`PERMISSIONS` dict in `apps/users/management/commands/create_roles.py`, then run the command.
+### Roles & permissions (three layers — keep them in sync)
+1. **`User.ROLE_CHOICES`** (`apps/users/models.py`) — admin, manager, staff, afisa_ugavi (procurement),
+   stock_controller, sales_rep, store_manager, accountant, store_keeper, hr_officer, hr_manager,
+   sales_credit_manager.
+2. **Django auth Groups + permissions**, seeded by `python manage.py create_roles` (`ROLE_MAP` + `PERMISSIONS`
+   dicts). Most ViewSets use `permissions.DjangoModelPermissions`, so these grants are what actually gates the API.
+3. **Role properties** on `User` (`is_manager`, `is_sales_rep`, `is_accountant`, `is_hr`, …) that check the `role`
+   field **and** group membership — this is how a user can effectively hold multiple roles.
 
-### Realtime (Channels)
-- `ASGI_APPLICATION = sms_project.asgi.application`; WebSocket routes in `sms_project/routing.py` (`ws/stock/`, `ws/inventory/`).
-- `apps/inventory/consumers.py` joins clients to the `stock_updates` group.
-- **`apps/inventory/signals.py`** broadcasts `stock_update` and `low_stock_alert` events on every `Stock.save()`.
-- **`apps/sales/signals.py`** reuses the same `stock_updates` group to push `sales_notification` events on sale create/update.
-- Channel layer is `InMemoryChannelLayer` (single-process). A `channels_redis` config is commented out in settings for when scaling out — switching requires a running Redis.
+`apps/users/permissions.py` is the current home of DRF role classes (`_RolePermission` base; `is_privileged()`
+gives superusers and the `admin` role blanket access so specialists never lock admins out). Use these
+(`CanApproveSales`, `CanManageFleet`, `CanHandleGRN`, `CanManagePurchaseOrders`, `CanManageVehicles`,
+`CanRecordSupplierPayment`, …) for anything role-gated rather than the older `apps/core/permissions.py` trio.
+
+Template views gate with `UserPassesTestMixin` (`test_func`); the sidebar (`core/templates/partials/sidebar_content.html`)
+gates on `perms.*` and the `user.is_*` properties. **When adding a role or screen, update all of: `ROLE_CHOICES`,
+`create_roles.py` (`ROLE_MAP` + `PERMISSIONS`), the `is_*` property, the sidebar, and the view's permission class —
+then re-run `create_roles` locally and on prod.** Mismatches here are the historical source of 403 bugs.
+
+### Purchase order delivery flow (three roles, and stock waits for the Admin)
+A PO can be delivered in instalments, and each round is a `DeliveryCheck` row with a `DeliveryCheckItem` per line:
+
+```
+draft/sent --confirm (Afisa Ugavi)--> awaiting_check --everything arrived--> received  (stock updated)
+                                            |
+                                            +--short--> discrepancy   (Afisa Ugavi comments)
+                                                            |
+                                                            v
+                                                      awaiting_admin
+                                          reject <-------+       +-------> confirm
+                                     (back to discrepancy,        (delivered qty -> stock;
+                                      no stock moves)              balance still owed)
+                                                                          |
+                                                            received <----+----> partial
+                                                          (nothing owed)   (Afisa Ugavi confirms
+                                                                            again when the rest
+                                                                            arrives -> next round)
+```
+
+- **Nothing reaches stock on a short delivery until an Admin confirms it** — not even the lines that arrived in
+  full. A complete delivery skips the Admin and is received immediately.
+- `PurchaseOrderItem.received_quantity` is the cumulative accepted quantity; `outstanding` (= `quantity −
+  received_quantity`) is what the next round is checked against. Over-delivery is clamped at cross-check so the
+  balance loop always terminates.
+- `_receive_delivery()` in `apps/inventory/views.py` is the single place stock is credited from a delivery — call
+  it once per round, inside a transaction.
+- Screens: Store Manager `/inventory/deliveries/verify/` (list) → `/inventory/deliveries/verify/<pk>/` (one order,
+  checked item by item); Admin `/inventory/deliveries/approvals/`; Afisa Ugavi acts from the PO list.
+- The flow is covered end-to-end in `apps/inventory/tests.py`.
+
+### Role-scoped dashboards
+`apps/core/views.py::DashboardView` branches on role: accountant, procurement (Afisa Ugavi), sales rep, stock
+controller and store keeper each get a self-contained dashboard that **returns early**; admins/managers get the full
+operations dashboard. Each has its own partial under `core/templates/partials/dashboard_*.html`. HR-only users are
+redirected to the HR dashboard.
+
+### Realtime (Channels) and notifications
+- `ASGI_APPLICATION = sms_project.asgi.application`; WebSocket routes in `sms_project/routing.py`
+  (`ws/stock/`, `ws/inventory/`), both served by `apps/inventory/consumers.py::StockConsumer` (group `stock_updates`).
+- `apps/inventory/signals.py` broadcasts `stock_update` + `low_stock_alert` on every `Stock.save()`.
+- `apps/sales/signals.py` pushes `sales_notification` on sale create/update to the same group.
+- `apps/core/signals.py` writes `SystemActivity` rows (sales, stock adjustments, transfers, expenses) and broadcasts
+  `activity_update` for the live activity feed.
+- **Persistent inbox:** `apps.core.notify.notify(user, title, message, url=, level=)` creates a `Notification`
+  (e.g. PO delivery discrepancy → notifies the Afisa Ugavi who raised it). Exposed at `/api/notifications/`.
+- Channel layer is `InMemoryChannelLayer` (single-process). A `channels_redis` config is commented out in settings
+  for scaling out — switching requires a running Redis.
+
+### Documents: PDF & Excel
+- **Invoices, delivery notes, quotations, purchase orders** → `apps/sales/utils.py::render_to_pdf` (xhtml2pdf over a
+  Django template; `link_callback` resolves `{% static %}`/media URIs so the logo and approval stamp embed).
+  Templates: `sales/pdf_document.html`, `sales/pdf_invoice.html`, `sales/pdf_delivery_note.html`.
+  `apps/inventory/views.py` imports this same helper for PO PDFs.
+- **Tabular reports** (expense report, purchase report, CRM statements) → **reportlab**, built inline in
+  `apps/finance/views.py::_export_pdf`, `apps/inventory/views.py` and `apps/crm/reports.py`.
+- **Excel exports/imports** → **openpyxl**, imported lazily inside the view functions.
 
 ### History / audit
-`django-simple-history` is installed and `HistoricalRecords()` is attached to `Product`, `Stock`, `Purchase`, and `Sale`. `HistoryRequestMiddleware` is in `MIDDLEWARE`, so historical rows record the acting user automatically — preserve this when adding new tracked models.
+`django-simple-history` is installed and `HistoricalRecords()` is attached to `Product`, `Stock`, `Purchase`, and
+`Sale`. `HistoryRequestMiddleware` is in `MIDDLEWARE`, so historical rows record the acting user automatically —
+preserve this when adding new tracked models.
 
-### Static & media
-WhiteNoise serves static in all envs (`CompressedManifestStaticFilesStorage`). Media uploads (receipt images, company logo) go under `MEDIA_ROOT=BASE_DIR/media`; in DEBUG, `sms_project/urls.py` serves them, in prod nginx aliases `/media/` directly.
+### Frontend conventions
+- Every page extends `apps/core/templates/base.html`, which defines the `CSRF_TOKEN` JS global and loads
+  `static/js/loading_overlay.js`, `socket_service.js`, `notification_handler.js`. Blocks: `title`, `extra_css`,
+  `page_header`, `content`, `extra_js`.
+- `static/js/api_service.js` wraps `fetch` against `/api` with the CSRF header and unwraps DRF error payloads
+  (`error` / `detail`). Page JS talks to the REST API rather than posting forms, in most screens.
+- Bootstrap 5 (CDN) + Bootstrap Icons; money is rendered in whole TZS with thousands separators.
+- **Template namespacing is inconsistent:** `apps/core/templates/` holds *unnamespaced* templates
+  (`dashboard.html`, `product_list.html`, `inventory_*.html`, `settings.html`, …) while every other app namespaces
+  under `templates/<app>/`. Follow the namespaced pattern for new templates.
+
+### Docs & screenshots
+`docs/` holds the generated training/user guide (`Umoja_Training_Guide.{md,html,pdf}`, `Umoja_User_Guide.pptx`) and
+`docs/screens/*.png`. The `scripts/capture_*.py` scripts drive **Playwright against the live production site** to
+re-capture screenshots; `scripts/build_user_guide.py` / `build_guide_pdf.py` rebuild the documents from them. These
+are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so don't wire them into anything automatic.
 
 ## Conventions and gotchas
 
-- **Postgres-only by config.** `DATABASES` reads `DB_*` env vars and uses `django.db.backends.postgresql`. There is no SQLite fallback — local dev needs Postgres running (see `.env.example`).
-- **Two fleet models exist.** `inventory.Truck`/`Driver` (procurement/inbound) and `sales.Vehicle` (outbound dispatch). They are deliberately separate — don't merge them.
-- **SaleItem commission is frozen at save time.** `SaleItem.save()` only computes `commission_amount` when it's `0`, so historical sales retain their commission even if `Category.commission_percentage` later changes. Preserve this behavior.
-- **`Sale.total_amount` is duplicated in the model** (`models.py:66-67` declares the same field twice). This is a known quirk — the second declaration wins; don't "fix" it as a no-op cleanup without checking migration history.
-- **`SystemSettings` is a singleton.** Its `save()` blocks creation of a second row. Read it via `SystemSettings.objects.first()`.
-- **One-off scripts live in `scripts/`.** Mostly `verify_*.py` / `reproduce_*.py` debugging aids — not part of the runtime. Don't import from them.
-- **Security scan artifacts live in `reports/security/`** (Bandit, Safety). Treat as outputs; regenerate rather than hand-edit.
+- **Postgres-only by config.** `DATABASES` reads `DB_*` env vars and uses `django.db.backends.postgresql`. There is
+  no SQLite fallback — local dev and pytest both need Postgres running (see `.env.example`).
+- **Two fleet models exist.** `inventory.Truck`/`Driver` (procurement/inbound, with `TruckCost` transport
+  accounting) and `sales.Vehicle` (outbound dispatch). Deliberately separate — don't merge them.
+- **CRM is deliberately disconnected from sales.** `crm.CustomerRecord` has *no* FK to `sales.Customer`/`Sale`; the
+  link back is plain text in `source_invoice`. It is hand-maintained (or seeded once from sales) and must stay
+  editable without touching transactional data. Access is admin + accountant only — one predicate,
+  `apps/crm/views.py::can_use_crm`, is used by the template view, the API and the sidebar.
+- **CRM balances are derived, never stored.** `amount_paid`/`balance`/`payment_status` come from the payments table;
+  list views annotate `paid_total` so a page costs one query. Customer credit = credits in − `CrmPayment`s with
+  `from_credit=True` (`crm/models.py::credit_balances`).
+- **`SaleItem` commission is frozen at save time.** `SaleItem.save()` only computes `commission_amount` when it's
+  `0`, so historical sales keep their commission if `Category.commission_percentage` later changes. Preserve this.
+- **Stock is deducted at dispatch, not at sale creation** (`SaleViewSet.dispatch_order`), and restored in
+  `perform_destroy` only for dispatched sales. Back-orders are therefore possible by design.
+- **Credit sales take an optional deposit** in the POS (`apps/sales/templates/sales/pos.html`), recorded as a
+  `Transaction`; the "credit" filter on `/api/sales/?status=credit` annotates paid totals and returns underpaid sales.
+- **`Sale.total_amount` is declared twice in the model** (`apps/sales/models.py`). Known quirk — the second
+  declaration wins; don't "fix" it as a no-op cleanup without checking migration history.
+- **`SystemSettings` is a singleton.** Its `save()` blocks creation of a second row. Read it via
+  `SystemSettings.objects.first()`.
+- **The live POS is `apps/sales/templates/sales/pos.html`** (`POSView.template_name`). A dead
+  `core/templates/sales_pos.html` stub used to shadow it in searches; it has been deleted.
+- **Test coverage is thin and uneven.** `apps/crm/tests.py` (~840 lines) and `apps/inventory/tests.py` (the PO
+  delivery flow) are the real suites and the model to copy. The other apps' `tests.py` are empty stubs, and
+  `tests/test_sales_flow.py` is a smoke test.
+- **`apps.crm.tests.CrmPaginationTest.test_paging_walks_the_whole_set_without_repeats` is a known flake** — it
+  fails with a varying count on an untouched tree. Don't read it as fallout from your change.
+- **One-off scripts live in `scripts/`.** Mostly `verify_*.py` / `reproduce_*.py` debugging aids, server
+  provisioning/hardening shell scripts, seeders, and the docs capture tooling — not part of the runtime.
+  Don't import from them.
+- **Security scan artifacts live in `reports/security/`** (Bandit, Safety). Treat as outputs; regenerate rather
+  than hand-edit.

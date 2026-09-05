@@ -24,7 +24,7 @@
                         <th class="ps-3">Date</th>
                         <th>Invoice #</th>
                         <th>Customer</th>
-                        <th>Total Amount</th>
+                        <th>Outstanding</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -41,6 +41,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         fetchCreditSales();
@@ -48,28 +49,18 @@
 
     async function fetchCreditSales() {
         try {
-            // Using existing sales API, filtering by ?status=credit logic or just fetching all and filtering here
-            // Assuming sales API returns status. ideally backend should have filtered endpoint
-            // For now, let's fetch recent sales and filter client side or use a dedicated endpoint if created
-            // Re-using sales/templates/sales/credit_sales.html logic effectively but for Accountant view
-
-            const response = await fetch('/api/sales/');
+            // ?status=credit is what makes this a debtors list: SaleViewSet annotates
+            // each sale with what has been paid and returns only those still short.
+            // Fetching plain /api/sales/ listed every sale, settled ones included, and
+            // totalled them all as "outstanding".
+            const response = await fetch('/api/sales/?status=credit');
             const data = await response.json();
-
-            // Filter strictly for credit/pending if needed, or if API returns all
-            // Ideally, we want sales where payment_status != paid. 
-            // Since we don't have explicit payment_status on Sale model in this snippet history 
-            // (checked apps/sales/models.py earlier, saw status=pending/approved etc, but not payment)
-            // I'll assume for now 'pending' or specific status implies need for payment or 'credit'
-            // NOTE: The user implementation plan mentions 'CreditSaleListView'. 
-            // I will reuse the logic corresponding to Credit Sales.
-
-            // Filter for simplicity: assuming 'status' or 'payment_status' field exists or we filter by convention.
-            // Let's assume we show all 'approved' sales that haven't been marked 'paid' (logic pending).
-            // For this MVP, I will show ALL sales, but highlight those that might be credit.
-
-            renderTable(data);
-        } catch (error) { console.error(error); }
+            renderTable(Array.isArray(data) ? data : (data.results || []));
+        } catch (error) {
+            console.error(error);
+            document.getElementById('debtorTableBody').innerHTML =
+                '<tr><td colspan="6" class="text-center py-4 text-danger">Failed to load debtors.</td></tr>';
+        }
     }
 
     function renderTable(data) {
@@ -83,21 +74,28 @@
         }
 
         data.forEach(s => {
-            // Logic to identify Debtors: For now, all sales. 
-            // In a real app, we'd filter d.payment_status == 'credit'
-
-            total += parseFloat(s.total_amount);
+            // The debt is what is still unpaid, not the invoice total.
+            const owed = Number(s.balance != null ? s.balance : s.total_amount);
+            total += owed;
+            const paid = Number(s.amount_paid || 0);
+            const customer = (s.customer_name || 'Walk-in').replace(/'/g, "\\'");
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="ps-3 text-muted">${new Date(s.created_at).toLocaleDateString()}</td>
                 <td class="fw-bold">${s.invoice_number}</td>
                 <td>${s.customer_name || 'Walk-in'}</td>
-                <td class="fw-bold text-danger">${Math.round(Number(s.total_amount)).toLocaleString()}</td>
-                <td><span class="badge bg-warning text-dark">${s.status}</span></td>
+                <td>
+                    <div class="fw-bold text-danger">${Math.round(owed).toLocaleString()}</div>
+                    <div class="small text-muted">of ${Math.round(Number(s.total_amount)).toLocaleString()}
+                        ${paid > 0 ? `· paid ${Math.round(paid).toLocaleString()}` : ''}</div>
+                </td>
+                <td><span class="badge bg-${paid > 0 ? 'info' : 'warning'} text-dark">
+                    ${paid > 0 ? 'Part paid' : 'Unpaid'}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewInvoice(${s.id})">View</button>
-                    <button class="btn btn-sm btn-outline-success">Record Payment</button>
+                    <button class="btn btn-sm btn-outline-success"
+                            onclick="recordPayment(${s.id}, '${customer}', ${owed})">Record Payment</button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -107,7 +105,62 @@
     }
 
     function viewInvoice(id) {
-        alert('View Invoice #' + id);
+        window.open(`/api/sales/${id}/receipt/`, '_blank', 'noopener');
+    }
+
+    // Records money received against a credit sale — the same Transaction the
+    // Credit Follow-up screen writes, so both screens agree on what is owed.
+    async function recordPayment(id, customer, outstanding) {
+        const { value: form, isConfirmed } = await Swal.fire({
+            title: `Record payment — ${customer}`,
+            html: `
+                <div class="text-start small text-muted mb-2">
+                    Outstanding: <strong>TZS ${Math.round(outstanding).toLocaleString()}</strong>
+                </div>
+                <input id="payAmount" type="number" min="1" step="1" class="form-control mb-2"
+                       placeholder="Amount received" value="${Math.round(outstanding)}">
+                <select id="payMethod" class="form-select mb-2">
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="mobile">Mobile Money</option>
+                </select>
+                <input id="payRef" type="text" class="form-control" placeholder="Reference (optional)">`,
+            showCancelButton: true,
+            confirmButtonText: 'Record payment',
+            preConfirm: () => {
+                const amount = parseFloat(document.getElementById('payAmount').value);
+                if (!amount || amount <= 0) {
+                    Swal.showValidationMessage('Enter an amount greater than zero.');
+                    return false;
+                }
+                return {
+                    sale: id,
+                    amount,
+                    payment_method: document.getElementById('payMethod').value,
+                    reference: document.getElementById('payRef').value
+                };
+            }
+        });
+        if (!isConfirmed || !form) return;
+
+        try {
+            const res = await fetch('/api/transactions/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(form)
+            });
+            if (res.ok) {
+                Swal.fire('Recorded', 'The payment has been recorded.', 'success');
+                fetchCreditSales();
+            } else {
+                let msg = 'Failed to record the payment.';
+                try { msg = (await res.json()).detail || msg; } catch (_) {}
+                Swal.fire('Error', res.status === 403 ? "You don't have permission." : msg, 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Network error — please try again.', 'error');
+        }
     }
 </script>
 {% endblock %}

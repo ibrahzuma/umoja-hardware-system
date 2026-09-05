@@ -37,6 +37,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         fetchGRNs();
@@ -78,9 +79,37 @@
         });
     }
 
-    function viewDetails(id) {
-        // Implement details view (modal or page)
-        alert('View GRN #' + id);
+    async function viewDetails(id) {
+        let grn;
+        try { grn = await (await fetch(`/api/grns/${id}/`)).json(); }
+        catch (e) { Swal.fire('Error', 'Could not load the GRN.', 'error'); return; }
+
+        const rows = (grn.items || []).map(it => `
+            <tr>
+                <td style="text-align:left;">${it.product_name || it.product}</td>
+                <td>${it.quantity_received}</td>
+                <td style="text-align:left;">${it.remarks || ''}</td>
+            </tr>`).join('');
+
+        Swal.fire({
+            title: `GRN #${grn.id}`,
+            width: 640,
+            html: `
+                <div class="text-start small mb-2">
+                    <div><strong>Receipt No:</strong> ${grn.receipt_number || '—'}</div>
+                    <div><strong>Branch:</strong> ${grn.branch_name || '—'}</div>
+                    <div><strong>Purchase order:</strong> ${grn.po_ref || '—'}</div>
+                    <div><strong>Received:</strong> ${new Date(grn.received_date).toLocaleString()}
+                        by ${grn.created_by_name || '—'}</div>
+                </div>
+                <table class="table table-sm" style="font-size:.85rem;">
+                    <thead><tr><th style="text-align:left;">Product</th><th>Received</th>
+                        <th style="text-align:left;">Remarks</th></tr></thead>
+                    <tbody>${rows || '<tr><td colspan="3">No items recorded.</td></tr>'}</tbody>
+                </table>
+                ${grn.notes ? `<div class="text-start small"><strong>Notes:</strong> ${grn.notes}</div>` : ''}`,
+            confirmButtonText: 'Close'
+        });
     }
 </script>
 {% endblock %}

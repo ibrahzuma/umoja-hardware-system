@@ -94,14 +94,29 @@
                 <td>${d.phone || '-'}</td>
                 <td><span class="badge bg-${d.status === 'active' ? 'success' : 'secondary'}">${d.status}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-secondary">Edit</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick='editDriver(${JSON.stringify(d)})'>Edit</button>
                 </td>
             `;
             tbody.appendChild(tr);
         });
     }
 
+    // The same modal serves both add and edit; editingDriverId decides which.
+    let editingDriverId = null;
+
     function openDriverModal() {
+        editingDriverId = null;
+        const form = document.getElementById('driverForm');
+        if (form) form.reset();
+        new bootstrap.Modal(document.getElementById('driverModal')).show();
+    }
+
+    function editDriver(driver) {
+        editingDriverId = driver.id;
+        const form = document.getElementById('driverForm');
+        form.name.value = driver.name || '';
+        form.license_number.value = driver.license_number || '';
+        form.phone.value = driver.phone || '';
         new bootstrap.Modal(document.getElementById('driverModal')).show();
     }
 
@@ -115,14 +130,16 @@
         };
 
         try {
-            const response = await fetch('/api/drivers/', {
-                method: 'POST',
+            const response = await fetch(
+                editingDriverId ? `/api/drivers/${editingDriverId}/` : '/api/drivers/', {
+                method: editingDriverId ? 'PATCH' : 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
                 body: JSON.stringify(data)
             });
 
             if (response.ok) {
-                Swal.fire('Success', 'Driver added', 'success');
+                Swal.fire('Success', editingDriverId ? 'Driver updated' : 'Driver added', 'success');
+                editingDriverId = null;
                 fetchDrivers();
                 bootstrap.Modal.getInstance(document.getElementById('driverModal')).hide();
                 form.reset();
