@@ -29,6 +29,20 @@ def sale_saved(sender, instance, created, **kwargs):
         logger.exception('CRM sync failed for sale %s', instance.pk)
 
 
+@receiver(post_delete, sender='sales.Sale', dispatch_uid='crm_drop_sale')
+def sale_deleted(sender, instance, **kwargs):
+    """A deleted sale leaves the register with it.
+
+    Django has already cascaded the sale's transactions away by this point, so
+    the mirrored payments are gone and what remains on the row is only what a
+    person put there. drop_sale keeps the row if there is any such work on it.
+    """
+    try:
+        sync.drop_sale(instance)
+    except Exception:
+        logger.exception('CRM sync failed removing sale %s', instance.pk)
+
+
 @receiver(post_save, sender='sales.Transaction', dispatch_uid='crm_sync_transaction')
 def transaction_saved(sender, instance, created, **kwargs):
     try:

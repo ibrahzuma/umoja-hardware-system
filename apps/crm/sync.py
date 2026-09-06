@@ -7,9 +7,11 @@ as money comes in against it.
 Two things keep the two sides from fighting each other:
 
 * The link is **by invoice number, not a foreign key.** `CustomerRecord.source_invoice`
-  holds the sale's invoice number as plain text, so a CRM row survives the sale
-  being amended or deleted. This register is a trading history (EFD receipts, TIN
-  numbers); it must not disappear because someone tidied up a sale.
+  holds the sale's invoice number as plain text. Nothing here cascades: what
+  leaves the register does so because `drop_sale` decided it should, not because
+  the database took it away. That is what lets a row a person has worked on —
+  their own payment entry, an EFD receipt number, a TIN — outlive the sale it
+  came from, while a sale deleted as a mistake takes its row with it.
 * Every mirrored payment records the transaction it came from
   (`CrmPayment.source_transaction`), so re-running the sync never double-counts and
   a payment typed into the CRM by hand is never mistaken for one from the POS.
@@ -53,7 +55,7 @@ def sync_sale(sale, *, user=None):
         return None
 
     if sale.status == 'cancelled':
-        _drop_cancelled(sale)
+        drop_sale(sale)
         return None
 
     record = CustomerRecord.objects.filter(source_invoice=sale.invoice_number).first()
@@ -123,24 +125,31 @@ def sync_transaction(txn):
     sync_payments(sale, record)
 
 
-def _drop_cancelled(sale):
-    """Take a cancelled sale back out of the register — but never destroy work.
+def drop_sale(sale):
+    """Take a sale back out of the register when it is cancelled or deleted.
 
-    A row is removed only while it is still purely a mirror of the sale. Once
-    somebody has recorded a payment against it by hand or filled in the EFD /
-    TIN details, it is left in place for a human to deal with.
+    A sale that never really happened should not linger in the register as a
+    debt or a figure in the totals, so the row goes with it.
+
+    The one exception is work a person has done on that row by hand: their own
+    payment entry, or the EFD receipt number / TIN they typed in. Those are
+    filed records, not a mirror of the sale, so the row is left for a human to
+    deal with rather than deleted from under them.
+
+    Returns True when the row was removed.
     """
     record = CustomerRecord.objects.filter(source_invoice=sale.invoice_number).first()
     if record is None:
-        return
+        return False
     touched_by_hand = (
         record.payments.filter(source_transaction__isnull=True).exists()
         or bool(record.tin)
         or bool(record.efd_receipt_number)
     )
     if touched_by_hand:
-        return
+        return False
     record.delete()
+    return True
 
 
 def sync_all(queryset=None, *, user=None):

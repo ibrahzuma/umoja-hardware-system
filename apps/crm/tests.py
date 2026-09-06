@@ -1139,3 +1139,83 @@ class CrmSummaryMatchesTheTableTest(TestCase):
 
         rows = self.client.get('/api/crm-records/customers/?status=paid').json()
         self.assertEqual(summary['customers'], rows['count'])
+
+
+class CrmSaleDeletionTest(TestCase):
+    """Deleting a sale takes it out of the CRM register too.
+
+    A sale deleted as a mistake must not linger in the register as a debt or as
+    a figure in the totals.
+    """
+
+    def setUp(self):
+        self.branch = Branch.objects.create(name='Del Branch')
+        self.customer = Customer.objects.create(name='Tanga Traders')
+        # Superuser: deleting a sale through the API is gated by Django model
+        # permissions, which come from the seeded groups rather than the role field.
+        self.admin = User.objects.create_superuser(
+            username='del_admin', password='pw', email='del@example.com')
+
+    def make_sale(self, invoice, total='100000'):
+        return Sale.objects.create(
+            invoice_number=invoice, branch=self.branch, customer=self.customer,
+            total_amount=Decimal(total), status='pending',
+        )
+
+    def record_for(self, invoice):
+        return CustomerRecord.objects.filter(source_invoice=invoice).first()
+
+    def test_deleting_a_sale_removes_its_crm_row(self):
+        sale = self.make_sale('INV-DEL')
+        self.assertIsNotNone(self.record_for('INV-DEL'))
+        sale.delete()
+        self.assertIsNone(self.record_for('INV-DEL'))
+
+    def test_deleting_a_paid_sale_removes_the_row_and_its_payments(self):
+        sale = self.make_sale('INV-DELPAID')
+        Transaction.objects.create(sale=sale, amount=Decimal('100000'))
+        record = self.record_for('INV-DELPAID')
+        self.assertEqual(record.payment_status, 'paid')
+
+        sale.delete()
+        self.assertIsNone(self.record_for('INV-DELPAID'))
+        self.assertFalse(CrmPayment.objects.filter(record_id=record.id).exists())
+
+    def test_deleting_through_the_api_removes_it_too(self):
+        sale = self.make_sale('INV-DELAPI')
+        self.client.force_login(self.admin)
+        response = self.client.delete(f'/api/sales/{sale.id}/')
+        self.assertIn(response.status_code, (204, 200), response.content[:200])
+        self.assertIsNone(self.record_for('INV-DELAPI'))
+
+    def test_a_row_someone_has_filed_is_kept(self):
+        """EFD receipt numbers and TINs are filed records, not a mirror of the
+        sale — they are not deleted from under the person who entered them."""
+        sale = self.make_sale('INV-DELEFD')
+        record = self.record_for('INV-DELEFD')
+        record.efd_receipt_number = '35EFD7777'
+        record.save()
+
+        sale.delete()
+        kept = self.record_for('INV-DELEFD')
+        self.assertIsNotNone(kept, 'a row carrying an EFD number must survive')
+        self.assertEqual(kept.efd_receipt_number, '35EFD7777')
+
+    def test_a_row_with_a_hand_entered_payment_is_kept(self):
+        sale = self.make_sale('INV-DELMANUAL')
+        record = self.record_for('INV-DELMANUAL')
+        CrmPayment.objects.create(record=record, amount=Decimal('5000'), paid_on=date(2026, 9, 1))
+
+        sale.delete()
+        self.assertIsNotNone(self.record_for('INV-DELMANUAL'))
+
+    def test_deleting_a_sale_leaves_other_customers_alone(self):
+        self.make_sale('INV-KEEP1')
+        sale = self.make_sale('INV-KEEP2')
+        manual = CustomerRecord.objects.create(
+            date=date(2026, 8, 1), customer_name='Hand written', sales_amount=Decimal('900'))
+
+        sale.delete()
+
+        self.assertIsNotNone(self.record_for('INV-KEEP1'))
+        self.assertTrue(CustomerRecord.objects.filter(pk=manual.pk).exists())

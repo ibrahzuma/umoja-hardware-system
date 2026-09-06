@@ -207,9 +207,11 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   accounting) and `sales.Vehicle` (outbound dispatch). Deliberately separate — don't merge them.
 - **CRM mirrors sales, but is never upstream of them.** Every POS sale syncs into the register automatically
   (`apps/crm/signals.py` -> `apps/crm/sync.py`), carrying its payment state: paid / part paid / on credit.
-  Recording a payment anywhere on the sales side updates the same CRM row. The link is still **by invoice
-  number, not a FK** (`CustomerRecord.source_invoice`), so CRM history survives a sale being amended or
-  deleted — this register holds EFD receipts and TINs and must not vanish with a tidied-up sale.
+  Recording a payment anywhere on the sales side updates the same CRM row, and cancelling or deleting a sale
+  takes its row back out. The link is **by invoice number, not a FK** (`CustomerRecord.source_invoice`), so
+  nothing cascades: rows leave the register because `sync.drop_sale()` decided they should. That is what lets
+  a row somebody has filed — a hand-entered payment, an EFD receipt number, a TIN — outlive the sale, while a
+  sale deleted as a mistake takes its row with it.
   - Idempotency: mirrored payments carry `CrmPayment.source_transaction` (the sales `Transaction` id).
     Payments typed in by hand leave it null and the sync never touches them.
   - Fields people maintain (`tin`, `efd_receipt_number`, `receipt_number`) are written once on create and
