@@ -226,31 +226,38 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def summary(self, request):
-        qs = _filtered_records(request.query_params)
-        total = Decimal(str(qs.aggregate(total=Sum('sales_amount'))['total'] or 0))
-        paid = Decimal(str(
-            CrmPayment.objects.filter(record__in=qs.values('pk'))
-            .aggregate(total=Sum('amount'))['total'] or 0
-        ))
-        names = list(qs.values_list('customer_name', flat=True).distinct())
-        credit = sum(credit_balances(names).values(), Decimal('0'))
+        """The figures behind the CRM stat cards and the filter panel.
 
-        # How many customers sit in each state, so the filter panel can show the
-        # counts. Computed with the status filter itself removed — otherwise
-        # picking one state would report every other state as empty.
-        rows = _customer_rows(_filtered_records(_params_without_status(request.query_params)))
+        Every one of them is derived from the same grouped rows the table is
+        built from, so the cards cannot disagree with what is on screen. They
+        used to be computed straight off the record queryset, and the customer
+        count was wrong because of it: `.distinct()` on a queryset that carries
+        Meta.ordering quietly selects the ordering columns too, so the count of
+        distinct names came back as the number of records — 99 customers on a
+        register holding 3.
+        """
+        params = request.query_params
+        all_rows = _customer_rows(_filtered_records(_params_without_status(params)))
+
+        # Counts per state come from the unfiltered set: picking one state must
+        # not report the others as empty, or the panel could not be used to
+        # switch between them.
         by_status = {'paid': 0, 'partial': 0, 'unpaid': 0}
-        for row in rows:
+        for row in all_rows:
             by_status[row['payment_status']] += 1
 
+        rows = filter_rows_by_status(all_rows, (params.get('status') or '').strip())
+        total = sum((r['total_amount'] for r in rows), Decimal('0'))
+        paid = sum((r['amount_paid'] for r in rows), Decimal('0'))
+
         return Response({
-            'records': qs.count(),
-            'customers': len(names),
+            'records': sum(r['records'] for r in rows),
+            'customers': len(rows),
             'total_amount': total,
             'amount_paid': paid,
             'balance': total - paid,
-            'credit_available': credit,
-            'customers_total': len(rows),
+            'credit_available': sum((r['credit_available'] for r in rows), Decimal('0')),
+            'customers_total': len(all_rows),
             'by_status': by_status,
         })
 

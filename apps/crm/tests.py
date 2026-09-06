@@ -1096,3 +1096,46 @@ class CrmCustomerStatusFilterTest(TestCase):
         response = self.client.get('/crm/report/?status=unpaid')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
+
+
+class CrmSummaryMatchesTheTableTest(TestCase):
+    """The stat cards must report the same thing the table shows.
+
+    Regression: the customer count was computed with .distinct() on a queryset
+    carrying Meta.ordering, which selects the ordering columns as well — so it
+    counted records, not customers, and a register of 3 customers reported 99.
+    """
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_sum', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+        # One customer, many receipts — the case that exposed the bug.
+        for i in range(1, 8):
+            CustomerRecord.objects.create(date=date(2026, 8, i), customer_name='Busy Buyer',
+                                          receipt_number=f'RC-{i}', sales_amount=Decimal('100'))
+        other = CustomerRecord.objects.create(date=date(2026, 8, 9), customer_name='Second Buyer',
+                                              sales_amount=Decimal('500'))
+        CrmPayment.objects.create(record=other, amount=Decimal('500'), paid_on=date(2026, 8, 9))
+
+    def test_customer_count_counts_customers_not_records(self):
+        summary = self.client.get('/api/crm-records/summary/').json()
+        self.assertEqual(summary['customers'], 2)
+        self.assertEqual(summary['records'], 8)
+
+    def test_cards_agree_with_the_customer_table(self):
+        summary = self.client.get('/api/crm-records/summary/').json()
+        rows = self.client.get('/api/crm-records/customers/?page_size=100').json()
+        self.assertEqual(summary['customers'], rows['count'])
+        self.assertEqual(summary['records'], sum(r['records'] for r in rows['results']))
+        self.assertEqual(float(summary['total_amount']),
+                         sum(float(r['total_amount']) for r in rows['results']))
+
+    def test_cards_follow_the_selected_state(self):
+        summary = self.client.get('/api/crm-records/summary/?status=paid').json()
+        self.assertEqual(summary['customers'], 1)
+        self.assertEqual(summary['records'], 1)
+        self.assertEqual(float(summary['total_amount']), 500.0)
+        self.assertEqual(float(summary['balance']), 0.0)
+
+        rows = self.client.get('/api/crm-records/customers/?status=paid').json()
+        self.assertEqual(summary['customers'], rows['count'])
