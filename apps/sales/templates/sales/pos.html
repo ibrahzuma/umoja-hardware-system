@@ -173,9 +173,19 @@
 
                     <div class="mb-3">
                         <label class="form-label">Customer (Optional)</label>
-                        <select class="form-select" id="customerSelect">
-                            <option value="">Walk-in Customer</option>
-                        </select>
+                        <!-- Type to filter the customers already on the system; type a
+                             name that is not there and it is registered on submit. -->
+                        <input type="text" class="form-control" id="customerName"
+                               list="customerOptions" autocomplete="off"
+                               placeholder="Type a name — or leave blank for Walk-in Customer">
+                        <datalist id="customerOptions"></datalist>
+                        <div class="form-text" id="customerHint">
+                            Leave blank for a walk-in sale.
+                        </div>
+                        <div class="mt-2 d-none" id="newCustomerFields">
+                            <input type="text" class="form-control form-control-sm" id="customerPhone"
+                                   placeholder="Phone number (optional)">
+                        </div>
                     </div>
 
                     <div class="d-grid mt-4">
@@ -229,6 +239,8 @@
         document.getElementById('cartDiscount').addEventListener('input', updateCartUI);
         document.querySelectorAll('input[name="payment_method"]').forEach(r => r.addEventListener('change', toggleDepositSection));
         document.getElementById('depositAmount').addEventListener('input', updateCreditBalance);
+        document.getElementById('customerName').addEventListener('input', onCustomerTyped);
+        document.getElementById('customerName').addEventListener('change', onCustomerTyped);
     });
 
     // --- Credit deposit (partial payment now, rest on credit) ---
@@ -323,15 +335,7 @@
                 categorySelect.appendChild(opt);
             });
 
-            // Setup Customers
-            const custSelect = document.getElementById('customerSelect');
-            custSelect.innerHTML = '<option value="">Select Customer (Optional)</option>';
-            customers.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.text = `${c.name} (${c.phone || 'No phone'})`;
-                custSelect.appendChild(opt);
-            });
+            renderCustomerOptions();
 
         } catch (e) {
             console.error(e);
@@ -480,6 +484,12 @@
         cart = [];
         const disc = document.getElementById('cartDiscount');
         if (disc) disc.value = 0;
+        const custName = document.getElementById('customerName');
+        if (custName) {
+            custName.value = '';
+            document.getElementById('customerPhone').value = '';
+            onCustomerTyped();
+        }
         updateCartUI();
     }
 
@@ -505,11 +515,77 @@
         paymentModal.show();
     }
 
+    // --- Customer box: filter what exists, register what doesn't -----------
+
+    function renderCustomerOptions() {
+        const list = document.getElementById('customerOptions');
+        list.innerHTML = '';
+        customers.forEach(c => {
+            const opt = document.createElement('option');
+            // The browser filters on the value as the cashier types, so the value
+            // is the bare name; the phone rides along as the hint on the right.
+            opt.value = c.name;
+            if (c.phone) opt.label = c.phone;
+            list.appendChild(opt);
+        });
+    }
+
+    function findCustomerByName(name) {
+        const wanted = (name || '').trim().toLowerCase();
+        if (!wanted) return null;
+        return customers.find(c => (c.name || '').trim().toLowerCase() === wanted) || null;
+    }
+
+    function onCustomerTyped() {
+        const typed = document.getElementById('customerName').value.trim();
+        const hint = document.getElementById('customerHint');
+        const extra = document.getElementById('newCustomerFields');
+        const match = findCustomerByName(typed);
+
+        if (!typed) {
+            hint.textContent = 'Leave blank for a walk-in sale.';
+            hint.className = 'form-text';
+            extra.classList.add('d-none');
+        } else if (match) {
+            hint.textContent = `Existing customer${match.phone ? ' · ' + match.phone : ''}`;
+            hint.className = 'form-text text-success';
+            extra.classList.add('d-none');
+        } else {
+            hint.textContent = 'New customer — will be registered when you confirm the sale.';
+            hint.className = 'form-text text-primary';
+            extra.classList.remove('d-none');
+        }
+    }
+
+    /** Resolve the typed name to a customer id, registering them if new.
+     *  Returns {id, name} — id is null for a walk-in sale. */
+    async function resolveCustomer() {
+        const name = document.getElementById('customerName').value.trim();
+        if (!name) return { id: null, name: 'Walk-in Customer' };
+
+        const match = findCustomerByName(name);
+        if (match) return { id: match.id, name: match.name };
+
+        const phone = (document.getElementById('customerPhone').value || '').trim();
+        const res = await fetch('/api/customers/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ name, phone })
+        });
+        if (!res.ok) {
+            if (res.status === 403) {
+                throw new Error("You do not have permission to add a customer. Pick an existing one, or leave it blank for a walk-in sale.");
+            }
+            throw new Error('Could not register the new customer.');
+        }
+        const created = await res.json();
+        customers.push(created);          // available immediately for the next sale
+        renderCustomerOptions();
+        return { id: created.id, name: created.name };
+    }
+
     async function processSale(e) {
         e.preventDefault();
-
-        const custSelect = document.getElementById('customerSelect');
-        const selectedOption = custSelect.selectedIndex >= 0 ? custSelect.options[custSelect.selectedIndex] : null;
 
         if (!currentBranch) {
             Swal.fire('Error', 'No branch selected', 'error');
@@ -531,10 +607,20 @@
             payMethod = method;
         }
 
+        // Registers the customer first if the cashier typed a new name, so the
+        // sale is filed against a real customer record rather than loose text.
+        let customer;
+        try {
+            customer = await resolveCustomer();
+        } catch (err) {
+            Swal.fire('Customer', err.message, 'error');
+            return;
+        }
+
         const saleData = {
             branch: currentBranch,
-            customer: custSelect.value || null,
-            customer_name: selectedOption ? selectedOption.text : "Walk-in Customer",
+            customer: customer.id,
+            customer_name: customer.name,
             discount: getDiscount(),
             items: cart.map(i => ({
                 product: i.id,

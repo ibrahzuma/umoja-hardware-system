@@ -154,7 +154,9 @@ class CrmCustomerListTest(TestCase):
 
     def test_customers_are_grouped_with_totals(self):
         rows = self.client.get('/api/crm-records/customers/').json()['results']
-        self.assertEqual([r['customer_name'] for r in rows], ['Mwanza Const', 'Kibo Traders'])
+        # Most recently traded first: Kibo last bought on the 5th, Mwanza on the
+        # 3rd — even though Mwanza has spent more.
+        self.assertEqual([r['customer_name'] for r in rows], ['Kibo Traders', 'Mwanza Const'])
 
         kibo = next(r for r in rows if r['customer_name'] == 'Kibo Traders')
         self.assertEqual(kibo['records'], 2)

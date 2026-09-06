@@ -119,7 +119,9 @@ def _customer_rows(qs):
             last_transaction=Max('date'),
             first_transaction=Min('date'),
         )
-        .order_by('-total_amount', 'customer_name')
+        # Most recently traded first — the register reads as a timeline, so the
+        # customer who bought today is at the top, not the biggest spender.
+        .order_by('-last_transaction', '-total_amount', 'customer_name')
     )
 
     # Latest non-blank TIN per customer, in one pass rather than per row.

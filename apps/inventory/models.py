@@ -10,6 +10,9 @@ class Branch(models.Model):
     address = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['name']
+
     def __str__(self):
         return self.name
 
@@ -20,6 +23,7 @@ class Category(models.Model):
 
 
     class Meta:
+        ordering = ['name']
         verbose_name_plural = "Categories"
 
     def __str__(self):
@@ -76,6 +80,9 @@ class Supplier(models.Model):
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
 
+    class Meta:
+        ordering = ['name']
+
     def __str__(self):
         return self.name
 
@@ -95,6 +102,9 @@ class Purchase(models.Model):
     def save(self, *args, **kwargs):
         self.total_cost = self.quantity * self.unit_cost
         super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ['-date_purchased', '-id']
 
     def __str__(self):
         return f"Purchase {self.product.name} ({self.quantity})"
@@ -150,6 +160,9 @@ class PurchaseOrder(models.Model):
                                    blank=True, related_name='decided_purchase_orders')
     decided_at = models.DateTimeField(null=True, blank=True)
     admin_note = models.TextField(blank=True, help_text="Admin's reason for confirming or rejecting a short delivery")
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
     def __str__(self):
         return f"PO #{self.id} - {self.supplier}"
@@ -277,6 +290,9 @@ class GoodsReceivedNote(models.Model):
     receipt_number = models.CharField(max_length=50, unique=True, help_text="Delivery Note / Receipt Number from Supplier")
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        ordering = ['-received_date', '-id']
 
     def __str__(self):
         return f"GRN #{self.id} - {self.receipt_number}"
@@ -406,7 +422,10 @@ class StockTransfer(models.Model):
     to_branch = models.ForeignKey(Branch, related_name='transfers_in', on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     date = models.DateTimeField(auto_now_add=True)
-    
+
+    class Meta:
+        ordering = ['-date', '-id']
+
     def __str__(self):
         return f"Transfer {self.product.name} ({self.quantity}) from {self.from_branch} to {self.to_branch}"
 

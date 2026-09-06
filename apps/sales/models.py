@@ -9,6 +9,9 @@ class Customer(models.Model):
     address = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['name']
+
     def __str__(self):
         return self.name
 
@@ -70,6 +73,9 @@ class Sale(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     history = HistoricalRecords()
 
+    class Meta:
+        ordering = ['-created_at', '-id']
+
     def __str__(self):
         return f"Invoice #{self.invoice_number}"
 
@@ -110,6 +116,9 @@ class Transaction(models.Model):
     # Can also be used for generic income/outcome if we expand
     transaction_type = models.CharField(max_length=10, default='income', choices=(('income', 'Income'), ('expense', 'Expense')))
 
+    class Meta:
+        ordering = ['-created_at', '-id']
+
     def __str__(self):
         return f"{self.payment_method} - {self.amount}"
 
@@ -128,6 +137,9 @@ class Quotation(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     branch = models.ForeignKey('inventory.Branch', on_delete=models.CASCADE)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
     def __str__(self):
         return f"Quote #{self.id} - {self.customer_name}"
