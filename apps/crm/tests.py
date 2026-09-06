@@ -3,13 +3,14 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
 from apps.crm.models import CrmCredit, CrmPayment, CustomerRecord, credit_balance
 from apps.inventory.models import Branch
-from apps.sales.models import Customer, Sale
+from apps.sales.models import Customer, Sale, Transaction
 from apps.users.models import User
 
 
@@ -88,7 +89,32 @@ class CrmImportFromSalesTest(TestCase):
             status='approved', total_amount=500000,
         )
 
-    def test_import_creates_editable_records_and_skips_duplicates(self):
+    def test_a_sale_reaches_the_register_without_being_imported(self):
+        """Sales sync themselves now, so there is nothing left to pull in by hand."""
+        record = CustomerRecord.objects.get()
+        self.assertEqual(record.customer_name, 'Kibo Traders')
+        self.assertEqual(record.receipt_number, 'INV-CRM-1')
+        self.assertEqual(record.sales_amount, 500000)
+
+        self.assertEqual(self.client.get('/api/crm-records/available_sales/').json(), [],
+                         'an already-synced sale must not be offered for import')
+
+    def test_editing_a_record_never_writes_back_to_the_sale(self):
+        """The register is downstream of sales, never upstream."""
+        record = CustomerRecord.objects.get()
+        record.customer_name = 'Kibo Traders Ltd'
+        record.sales_amount = 600000
+        record.save()
+
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.total_amount, 500000)
+        self.assertEqual(self.sale.customer.name, 'Kibo Traders')
+
+    def test_a_removed_record_can_be_pulled_back_in(self):
+        """What import_sales is still for: sales that predate the sync, or a row
+        somebody deleted."""
+        CustomerRecord.objects.all().delete()
+
         available = self.client.get('/api/crm-records/available_sales/').json()
         self.assertEqual([s['invoice_number'] for s in available], ['INV-CRM-1'])
 
@@ -98,21 +124,9 @@ class CrmImportFromSalesTest(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['created'], 1)
+        self.assertEqual(CustomerRecord.objects.count(), 1)
 
-        record = CustomerRecord.objects.get()
-        self.assertEqual(record.customer_name, 'Kibo Traders')
-        self.assertEqual(record.receipt_number, 'INV-CRM-1')
-        self.assertEqual(record.sales_amount, 500000)
-
-        # Imported rows are plain CRM data: editing one leaves the sale alone
-        record.customer_name = 'Kibo Traders Ltd'
-        record.sales_amount = 600000
-        record.save()
-        self.sale.refresh_from_db()
-        self.assertEqual(self.sale.total_amount, 500000)
-
-        # The same sale is not offered or imported twice
-        self.assertEqual(self.client.get('/api/crm-records/available_sales/').json(), [])
+        # and never twice
         again = self.client.post(
             '/api/crm-records/import_sales/',
             {'invoices': ['INV-CRM-1']}, content_type='application/json',
@@ -834,3 +848,160 @@ class CrmBulkUploadTest(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(CustomerRecord.objects.count(), 0)
         self.assertEqual(self.client.get(reverse('crm:import_template')).status_code, 403)
+
+
+class CrmSalesSyncTest(TestCase):
+    """A sale made at the POS lands in the CRM register carrying its payment
+    state — paid in full, part paid, or wholly on credit — and keeps up as
+    money comes in against it."""
+
+    def setUp(self):
+        self.branch = Branch.objects.create(name='Sync Branch')
+        self.cashier = User.objects.create_user(username='sync_rep', password='pw', role='sales_rep')
+        self.customer = Customer.objects.create(name='Mbeya Traders', phone='0700111222')
+
+    def make_sale(self, total, invoice, customer=None, status='pending'):
+        return Sale.objects.create(
+            invoice_number=invoice, branch=self.branch, user=self.cashier,
+            customer=customer, customer_name='' if customer else 'Walk-in Customer',
+            total_amount=Decimal(total), status=status,
+        )
+
+    def record_for(self, sale):
+        return CustomerRecord.objects.filter(source_invoice=sale.invoice_number).first()
+
+    def pay(self, sale, amount, method='cash', reference=''):
+        return Transaction.objects.create(
+            sale=sale, amount=Decimal(amount), payment_method=method, reference=reference)
+
+    # --- the three states the register must show -------------------------
+
+    def test_credit_sale_appears_unpaid(self):
+        sale = self.make_sale('500000', 'INV-CREDIT', self.customer)
+        record = self.record_for(sale)
+        self.assertIsNotNone(record, 'the sale should have created a CRM row')
+        self.assertEqual(record.customer_name, 'Mbeya Traders')
+        self.assertEqual(record.sales_amount, Decimal('500000'))
+        self.assertEqual(record.amount_paid, Decimal('0'))
+        self.assertEqual(record.payment_status, 'unpaid')
+
+    def test_deposit_makes_it_partial(self):
+        sale = self.make_sale('500000', 'INV-PART', self.customer)
+        self.pay(sale, '200000', 'mobile')
+        record = self.record_for(sale)
+        self.assertEqual(record.amount_paid, Decimal('200000'))
+        self.assertEqual(record.balance, Decimal('300000'))
+        self.assertEqual(record.payment_status, 'partial')
+
+    def test_full_payment_makes_it_paid(self):
+        sale = self.make_sale('120000', 'INV-PAID')
+        self.pay(sale, '120000')
+        record = self.record_for(sale)
+        self.assertEqual(record.payment_status, 'paid')
+        self.assertEqual(record.customer_name, 'Walk-in Customer')
+
+    def test_later_payment_moves_it_from_credit_to_paid(self):
+        """Collections recorded on the Debtors screen reach the register."""
+        sale = self.make_sale('80000', 'INV-COLLECT', self.customer)
+        self.assertEqual(self.record_for(sale).payment_status, 'unpaid')
+        self.pay(sale, '30000', 'bank', reference='SLIP-9')
+        self.assertEqual(self.record_for(sale).payment_status, 'partial')
+        self.pay(sale, '50000', 'cash')
+        record = self.record_for(sale)
+        self.assertEqual(record.payment_status, 'paid')
+        self.assertEqual(record.balance, Decimal('0'))
+
+    def test_payment_method_and_reference_carry_across(self):
+        sale = self.make_sale('10000', 'INV-METHOD', self.customer)
+        self.pay(sale, '10000', 'bank', reference='SLIP-42')
+        payment = self.record_for(sale).payments.get()
+        self.assertEqual(payment.method, 'bank')
+        self.assertEqual(payment.reference, 'SLIP-42')
+
+    # --- it must not double count ----------------------------------------
+
+    def test_resaving_the_sale_does_not_duplicate_anything(self):
+        sale = self.make_sale('90000', 'INV-RESAVE', self.customer)
+        self.pay(sale, '40000')
+        for _ in range(3):
+            sale.save()
+        self.assertEqual(CustomerRecord.objects.filter(source_invoice='INV-RESAVE').count(), 1)
+        record = self.record_for(sale)
+        self.assertEqual(record.payments.count(), 1)
+        self.assertEqual(record.amount_paid, Decimal('40000'))
+
+    def test_backfill_command_is_repeatable(self):
+        sale = self.make_sale('75000', 'INV-BACKFILL', self.customer)
+        self.pay(sale, '25000')
+        for _ in range(2):
+            call_command('sync_crm_from_sales', verbosity=0)
+        self.assertEqual(CustomerRecord.objects.filter(source_invoice='INV-BACKFILL').count(), 1)
+        self.assertEqual(self.record_for(sale).amount_paid, Decimal('25000'))
+
+    def test_amount_follows_the_sale_total(self):
+        sale = self.make_sale('100000', 'INV-AMEND', self.customer)
+        sale.total_amount = Decimal('85000')
+        sale.save()
+        self.assertEqual(self.record_for(sale).sales_amount, Decimal('85000'))
+
+    # --- hand-kept work is never trampled --------------------------------
+
+    def test_hand_entered_details_survive_a_resync(self):
+        sale = self.make_sale('60000', 'INV-HAND', self.customer)
+        record = self.record_for(sale)
+        record.tin = '109-882-441'
+        record.efd_receipt_number = '35EFD9921'
+        record.save()
+
+        sale.save()
+        call_command('sync_crm_from_sales', verbosity=0)
+
+        record.refresh_from_db()
+        self.assertEqual(record.tin, '109-882-441')
+        self.assertEqual(record.efd_receipt_number, '35EFD9921')
+
+    def test_a_hand_typed_payment_is_left_alone(self):
+        sale = self.make_sale('70000', 'INV-MANUAL', self.customer)
+        record = self.record_for(sale)
+        CrmPayment.objects.create(record=record, amount=Decimal('10000'), paid_on=date(2026, 9, 1))
+        self.pay(sale, '20000')
+        call_command('sync_crm_from_sales', verbosity=0)
+
+        record.refresh_from_db()
+        self.assertEqual(record.payments.count(), 2)
+        self.assertEqual(record.amount_paid, Decimal('30000'))
+
+    def test_reversing_a_payment_reverses_it_here(self):
+        sale = self.make_sale('50000', 'INV-REVERSE', self.customer)
+        txn = self.pay(sale, '50000')
+        self.assertEqual(self.record_for(sale).payment_status, 'paid')
+        txn.delete()
+        self.assertEqual(self.record_for(sale).payment_status, 'unpaid')
+
+    # --- cancelled sales --------------------------------------------------
+
+    def test_cancelled_sale_drops_out_of_the_register(self):
+        sale = self.make_sale('40000', 'INV-CANCEL', self.customer)
+        self.assertIsNotNone(self.record_for(sale))
+        sale.status = 'cancelled'
+        sale.save()
+        self.assertIsNone(self.record_for(sale))
+
+    def test_cancelled_sale_is_kept_once_someone_has_worked_on_it(self):
+        sale = self.make_sale('40000', 'INV-CANCEL2', self.customer)
+        record = self.record_for(sale)
+        record.efd_receipt_number = '35EFD0001'
+        record.save()
+        sale.status = 'cancelled'
+        sale.save()
+        self.assertIsNotNone(self.record_for(sale), 'a row with EFD details must not vanish')
+
+    def test_manual_records_are_untouched_by_the_sync(self):
+        manual = CustomerRecord.objects.create(
+            date=date(2026, 8, 1), customer_name='Walk-in cash buyer',
+            sales_amount=Decimal('15000'))
+        self.make_sale('40000', 'INV-OTHER', self.customer)
+        call_command('sync_crm_from_sales', verbosity=0)
+        manual.refresh_from_db()
+        self.assertEqual(manual.sales_amount, Decimal('15000'))
+        self.assertEqual(manual.source_invoice, '')

@@ -205,10 +205,18 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   no SQLite fallback — local dev and pytest both need Postgres running (see `.env.example`).
 - **Two fleet models exist.** `inventory.Truck`/`Driver` (procurement/inbound, with `TruckCost` transport
   accounting) and `sales.Vehicle` (outbound dispatch). Deliberately separate — don't merge them.
-- **CRM is deliberately disconnected from sales.** `crm.CustomerRecord` has *no* FK to `sales.Customer`/`Sale`; the
-  link back is plain text in `source_invoice`. It is hand-maintained (or seeded once from sales) and must stay
-  editable without touching transactional data. Access is admin + accountant only — one predicate,
-  `apps/crm/views.py::can_use_crm`, is used by the template view, the API and the sidebar.
+- **CRM mirrors sales, but is never upstream of them.** Every POS sale syncs into the register automatically
+  (`apps/crm/signals.py` -> `apps/crm/sync.py`), carrying its payment state: paid / part paid / on credit.
+  Recording a payment anywhere on the sales side updates the same CRM row. The link is still **by invoice
+  number, not a FK** (`CustomerRecord.source_invoice`), so CRM history survives a sale being amended or
+  deleted — this register holds EFD receipts and TINs and must not vanish with a tidied-up sale.
+  - Idempotency: mirrored payments carry `CrmPayment.source_transaction` (the sales `Transaction` id).
+    Payments typed in by hand leave it null and the sync never touches them.
+  - Fields people maintain (`tin`, `efd_receipt_number`, `receipt_number`) are written once on create and
+    never overwritten; `date`, `customer_name` and `sales_amount` follow the sale.
+  - Editing a CRM row never writes back to a sale. `python manage.py sync_crm_from_sales` backfills or repairs.
+  - Access is admin + accountant only — one predicate, `apps/crm/views.py::can_use_crm`, is used by the
+    template view, the API and the sidebar.
 - **CRM balances are derived, never stored.** `amount_paid`/`balance`/`payment_status` come from the payments table;
   list views annotate `paid_total` so a page costs one query. Customer credit = credits in − `CrmPayment`s with
   `from_credit=True` (`crm/models.py::credit_balances`).
@@ -227,8 +235,10 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
 - **Test coverage is thin and uneven.** `apps/crm/tests.py` (~840 lines) and `apps/inventory/tests.py` (the PO
   delivery flow) are the real suites and the model to copy. The other apps' `tests.py` are empty stubs, and
   `tests/test_sales_flow.py` is a smoke test.
-- **`apps.crm.tests.CrmPaginationTest.test_paging_walks_the_whole_set_without_repeats` is a known flake** — it
-  fails with a varying count on an untouched tree. Don't read it as fallout from your change.
+- **`annotate()` with an aggregate silently drops `Meta.ordering`.** The resulting queryset has *no* ORDER BY,
+  so paginating it returns rows in an arbitrary order per page — duplicates on one page, omissions on the next.
+  This bit the CRM list for real. Always `.order_by(...)` with a unique tiebreaker (id) after annotating
+  anything you intend to paginate; see `apps/crm/views.py::_with_payments`.
 - **One-off scripts live in `scripts/`.** Mostly `verify_*.py` / `reproduce_*.py` debugging aids, server
   provisioning/hardening shell scripts, seeders, and the docs capture tooling — not part of the runtime.
   Don't import from them.

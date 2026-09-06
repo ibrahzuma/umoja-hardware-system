@@ -19,6 +19,7 @@ from apps.users.permissions import IsAccountant
 
 from .imports import TEMPLATE_HEADERS, ImportError_, parse_upload
 from .models import CrmCredit, CrmPayment, CustomerRecord, credit_balance, credit_balances
+from . import sync
 from .reports import customer_statement, customers_report
 from .serializers import CrmCreditSerializer, CrmPaymentSerializer, CustomerRecordSerializer
 
@@ -74,11 +75,19 @@ def _filtered_records(params):
 
 
 def _with_payments(qs):
-    """Attach each record's paid total, so a page of rows costs one query."""
+    """Attach each record's paid total, so a page of rows costs one query.
+
+    The explicit order_by is load-bearing, not decoration: annotating with an
+    aggregate drops the model's Meta.ordering, which left the queryset with no
+    ORDER BY at all. Postgres was then free to return rows in a different order
+    for each LIMIT/OFFSET page, so paging through the register showed some
+    records twice and skipped others entirely. Ordering by a unique tiebreaker
+    (id) is what makes the pages line up.
+    """
     return qs.annotate(
         paid_total=Coalesce(Sum('payments__amount'), Value(Decimal('0')),
                             output_field=DecimalField(max_digits=14, decimal_places=2))
-    )
+    ).order_by('-date', '-id')
 
 
 def _paid_by_customer(qs):
@@ -405,20 +414,13 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
             .values_list('source_invoice', flat=True)
         )
         created = 0
+        # Goes through the same sync the POS uses, so an imported sale arrives
+        # with its payments — and its paid / part-paid / credit state — attached.
         for sale in Sale.objects.select_related('customer').filter(invoice_number__in=invoices):
             if sale.invoice_number in already:
                 continue
-            CustomerRecord.objects.create(
-                date=sale.created_at.date(),
-                receipt_number=sale.invoice_number,
-                efd_receipt_number='',
-                customer_name=sale.customer.name if sale.customer else (sale.customer_name or 'Walk-in Customer'),
-                tin='',
-                sales_amount=sale.total_amount,
-                source_invoice=sale.invoice_number,
-                created_by=request.user,
-            )
-            created += 1
+            if sync.sync_sale(sale, user=request.user) is not None:
+                created += 1
         return Response({
             'created': created,
             'skipped': len(invoices) - created,

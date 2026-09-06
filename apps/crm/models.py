@@ -92,6 +92,14 @@ class CrmPayment(models.Model):
         default=False,
         help_text="Settled from the customer's credit on account rather than new money received",
     )
+    # Set only on payments mirrored from a POS sale (see apps/crm/sync.py). It is
+    # the sales Transaction id, kept as a plain integer rather than a foreign key
+    # so CRM history outlives the sale. Payments typed in by hand leave it null,
+    # which is how the sync knows never to touch them.
+    source_transaction = models.PositiveIntegerField(
+        null=True, blank=True, unique=True, editable=False,
+        help_text="The sales transaction this payment was mirrored from",
+    )
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
                                    related_name='crm_payments')
     created_at = models.DateTimeField(auto_now_add=True)
