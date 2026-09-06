@@ -75,24 +75,61 @@
                 <label class="form-label small text-muted mb-1">To</label>
                 <input type="date" class="form-control" id="filterEnd">
             </div>
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-1">Payment</label>
-                <select class="form-select" id="filterStatus">
-                    <option value="">All</option>
-                    <option value="unpaid">Unpaid</option>
-                    <option value="partial">Partly paid</option>
-                    <option value="paid">Fully paid</option>
-                </select>
-            </div>
-            <div class="col-md-1 d-grid">
+            <div class="col-md-2 d-grid">
                 <button class="btn btn-outline-secondary" onclick="clearFilters()" title="Clear filters">
-                    <i class="bi bi-x-lg"></i>
+                    <i class="bi bi-x-lg"></i> Clear
                 </button>
             </div>
         </div>
     </div>
 </div>
 
+<div class="row g-3">
+    <!-- Payment-state panel: pick a state and the table shows only those
+         customers. The counts make it obvious where the money is sitting. -->
+    <div class="col-lg-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <label class="form-label small text-muted mb-1" for="filterStatus">Show customers</label>
+                <select class="form-select mb-3" id="filterStatus">
+                    <option value="">All customers</option>
+                    <option value="paid">Fully paid</option>
+                    <option value="partial">Partly paid</option>
+                    <option value="unpaid">Not yet paid</option>
+                </select>
+
+                <div class="list-group list-group-flush" id="statusCounts">
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-2"
+                            data-status="">
+                        <span><i class="bi bi-people text-secondary me-1"></i> All customers</span>
+                        <span class="badge bg-secondary rounded-pill" id="countAll">0</span>
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-2"
+                            data-status="paid">
+                        <span><i class="bi bi-check2-circle text-success me-1"></i> Fully paid</span>
+                        <span class="badge bg-success rounded-pill" id="countPaid">0</span>
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-2"
+                            data-status="partial">
+                        <span><i class="bi bi-hourglass-split text-warning me-1"></i> Partly paid</span>
+                        <span class="badge bg-warning text-dark rounded-pill" id="countPartial">0</span>
+                    </button>
+                    <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center px-2"
+                            data-status="unpaid">
+                        <span><i class="bi bi-exclamation-circle text-danger me-1"></i> Not yet paid</span>
+                        <span class="badge bg-danger rounded-pill" id="countUnpaid">0</span>
+                    </button>
+                </div>
+
+                <p class="small text-muted mt-3 mb-0">
+                    Based on each customer's whole account — everything they have bought,
+                    less everything they have paid.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-9">
 <div class="card shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -117,6 +154,8 @@
             </table>
         </div>
         {% include 'crm/_pagination.html' %}
+    </div>
+</div>
     </div>
 </div>
 
@@ -225,6 +264,9 @@
     let filterTimer = null;
 
     document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('#statusCounts [data-status]').forEach(btn => {
+            btn.addEventListener('click', () => selectStatus(btn.dataset.status));
+        });
         ['filterSearch', 'filterStart', 'filterEnd', 'filterStatus'].forEach(id => {
             document.getElementById(id).addEventListener('input', function () {
                 clearTimeout(filterTimer);
@@ -260,6 +302,7 @@
         document.getElementById('filterStart').value = '';
         document.getElementById('filterEnd').value = '';
         document.getElementById('filterStatus').value = '';
+        highlightStatus('');
         pageState.page = 1;
         fetchCustomers();
     }
@@ -288,6 +331,27 @@
         document.getElementById('statTotal').innerText = money(s.total_amount);
         document.getElementById('statPaid').innerText = money(s.amount_paid);
         document.getElementById('statBalance').innerText = money(s.balance);
+
+        // Counts per payment state, and which one is currently selected.
+        const counts = s.by_status || {};
+        document.getElementById('countAll').innerText = Number(s.customers_total || 0).toLocaleString();
+        document.getElementById('countPaid').innerText = Number(counts.paid || 0).toLocaleString();
+        document.getElementById('countPartial').innerText = Number(counts.partial || 0).toLocaleString();
+        document.getElementById('countUnpaid').innerText = Number(counts.unpaid || 0).toLocaleString();
+        highlightStatus(document.getElementById('filterStatus').value);
+    }
+
+    function highlightStatus(status) {
+        document.querySelectorAll('#statusCounts [data-status]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.status === status);
+        });
+    }
+
+    function selectStatus(status) {
+        document.getElementById('filterStatus').value = status;
+        pageState.page = 1;
+        highlightStatus(status);
+        fetchCustomers();
     }
 
     const STATUS_BADGE = {

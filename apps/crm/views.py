@@ -105,6 +105,27 @@ def _paid_by_customer(qs):
     return {row['record__customer_name']: row['paid'] or Decimal('0') for row in rows}
 
 
+def _params_without_status(params):
+    """The filter params with the payment status removed.
+
+    The customers screen groups by customer and then filters on the customer's
+    *overall* standing. Applying the status to individual records first would
+    both distort each customer's totals and list the same customer under two
+    states — one paid receipt and one unpaid receipt would put them in "fully
+    paid" and "not yet paid" at once.
+    """
+    plain = {k: v for k, v in params.items()}
+    plain.pop('status', None)
+    return plain
+
+
+def filter_rows_by_status(rows, status):
+    """Keep only the customers whose overall standing matches."""
+    if status not in ('paid', 'partial', 'unpaid'):
+        return rows
+    return [r for r in rows if r['payment_status'] == status]
+
+
 def _customer_rows(qs):
     """Group a record queryset into one row per customer.
 
@@ -213,6 +234,15 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         ))
         names = list(qs.values_list('customer_name', flat=True).distinct())
         credit = sum(credit_balances(names).values(), Decimal('0'))
+
+        # How many customers sit in each state, so the filter panel can show the
+        # counts. Computed with the status filter itself removed — otherwise
+        # picking one state would report every other state as empty.
+        rows = _customer_rows(_filtered_records(_params_without_status(request.query_params)))
+        by_status = {'paid': 0, 'partial': 0, 'unpaid': 0}
+        for row in rows:
+            by_status[row['payment_status']] += 1
+
         return Response({
             'records': qs.count(),
             'customers': len(names),
@@ -220,6 +250,8 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
             'amount_paid': paid,
             'balance': total - paid,
             'credit_available': credit,
+            'customers_total': len(rows),
+            'by_status': by_status,
         })
 
     @action(detail=True, methods=['post'])
@@ -364,7 +396,9 @@ class CustomerRecordViewSet(viewsets.ModelViewSet):
         # Deliberately NOT self.get_queryset(): that one is annotated with the
         # payments join, which would multiply each record by its payment count
         # and inflate the per-customer record counts and sales totals.
-        rows = _customer_rows(_filtered_records(request.query_params))
+        params = request.query_params
+        rows = _customer_rows(_filtered_records(_params_without_status(params)))
+        rows = filter_rows_by_status(rows, (params.get('status') or '').strip())
         # Paginated like the record list — a busy register has thousands of
         # customers and the landing screen must not fetch them all.
         page = self.paginate_queryset(rows)
@@ -643,7 +677,11 @@ class CrmReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
         return can_use_crm(self.request.user)
 
     def get(self, request, *args, **kwargs):
-        rows = _customer_rows(_filtered_records(request.GET))
+        # Grouped then filtered on the customer's overall standing, exactly as
+        # the screen does — otherwise the printout would list a different set of
+        # customers than the one the user was looking at when they clicked print.
+        rows = _customer_rows(_filtered_records(_params_without_status(request.GET)))
+        rows = filter_rows_by_status(rows, (request.GET.get('status') or '').strip())
         return customers_report(
             rows,
             filters=_filter_labels(request.GET),

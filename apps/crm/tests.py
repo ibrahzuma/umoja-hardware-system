@@ -1007,3 +1007,92 @@ class CrmSalesSyncTest(TestCase):
         manual.refresh_from_db()
         self.assertEqual(manual.sales_amount, Decimal('15000'))
         self.assertEqual(manual.source_invoice, '')
+
+
+class CrmCustomerStatusFilterTest(TestCase):
+    """The panel on the CRM screen filters customers by how much they still owe.
+
+    The state is the customer's WHOLE account, not one receipt — somebody with a
+    settled invoice and an unpaid one owes money, so they are 'partly paid' and
+    must appear under that alone.
+    """
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='crm_status', password='pw', role='accountant')
+        self.client.force_login(self.accountant)
+
+        # Settled in full
+        paid = CustomerRecord.objects.create(date=date(2026, 8, 1), customer_name='Paid Co',
+                                             sales_amount=Decimal('100'))
+        CrmPayment.objects.create(record=paid, amount=Decimal('100'), paid_on=date(2026, 8, 2))
+
+        # Something paid, something still owing
+        part = CustomerRecord.objects.create(date=date(2026, 8, 3), customer_name='Partial Co',
+                                             sales_amount=Decimal('200'))
+        CrmPayment.objects.create(record=part, amount=Decimal('50'), paid_on=date(2026, 8, 4))
+
+        # Nothing paid at all
+        CustomerRecord.objects.create(date=date(2026, 8, 5), customer_name='Unpaid Co',
+                                      sales_amount=Decimal('300'))
+
+        # One receipt settled, a later one not — the customer still owes.
+        mixed_paid = CustomerRecord.objects.create(date=date(2026, 8, 6), customer_name='Mixed Co',
+                                                   sales_amount=Decimal('100'))
+        CrmPayment.objects.create(record=mixed_paid, amount=Decimal('100'), paid_on=date(2026, 8, 6))
+        CustomerRecord.objects.create(date=date(2026, 8, 7), customer_name='Mixed Co',
+                                      sales_amount=Decimal('400'))
+
+    def names_for(self, status=''):
+        url = '/api/crm-records/customers/'
+        if status:
+            url += f'?status={status}'
+        return sorted(r['customer_name'] for r in self.client.get(url).json()['results'])
+
+    def test_no_filter_lists_everyone(self):
+        self.assertEqual(self.names_for(), ['Mixed Co', 'Paid Co', 'Partial Co', 'Unpaid Co'])
+
+    def test_fully_paid(self):
+        self.assertEqual(self.names_for('paid'), ['Paid Co'])
+
+    def test_partly_paid_includes_a_customer_with_one_settled_receipt(self):
+        self.assertEqual(self.names_for('partial'), ['Mixed Co', 'Partial Co'])
+
+    def test_not_yet_paid(self):
+        self.assertEqual(self.names_for('unpaid'), ['Unpaid Co'])
+
+    def test_a_customer_appears_under_exactly_one_state(self):
+        seen = []
+        for status in ('paid', 'partial', 'unpaid'):
+            seen.extend(self.names_for(status))
+        self.assertEqual(len(seen), len(set(seen)), 'a customer was listed under two states')
+        self.assertEqual(sorted(set(seen)), self.names_for())
+
+    def test_totals_are_the_customers_whole_account_not_just_matching_receipts(self):
+        """Mixed Co owes 400 of 500 — filtering must not hide the settled receipt
+        from their totals."""
+        row = next(r for r in self.client.get('/api/crm-records/customers/?status=partial').json()['results']
+                   if r['customer_name'] == 'Mixed Co')
+        self.assertEqual(float(row['total_amount']), 500.0)
+        self.assertEqual(float(row['amount_paid']), 100.0)
+        self.assertEqual(float(row['balance']), 400.0)
+        self.assertEqual(row['records'], 2)
+
+    def test_summary_reports_a_count_for_each_state(self):
+        summary = self.client.get('/api/crm-records/summary/').json()
+        self.assertEqual(summary['by_status'], {'paid': 1, 'partial': 2, 'unpaid': 1})
+        self.assertEqual(summary['customers_total'], 4)
+
+    def test_counts_stay_put_when_a_state_is_selected(self):
+        """Otherwise picking a state would report every other state as empty and
+        the panel could never be used to switch between them."""
+        summary = self.client.get('/api/crm-records/summary/?status=unpaid').json()
+        self.assertEqual(summary['by_status'], {'paid': 1, 'partial': 2, 'unpaid': 1})
+
+    def test_the_state_filter_combines_with_search(self):
+        rows = self.client.get('/api/crm-records/customers/?status=partial&search=Mixed').json()['results']
+        self.assertEqual([r['customer_name'] for r in rows], ['Mixed Co'])
+
+    def test_pdf_report_lists_the_same_customers_as_the_screen(self):
+        response = self.client.get('/crm/report/?status=unpaid')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
