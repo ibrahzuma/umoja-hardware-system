@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Stock In vs Out{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ledger-head { cursor: pointer; }
+    .ledger-head:hover { background-color: #f8f9fa; }
+    .ledger-head .bi-chevron-down { transition: transform .15s ease-in-out; }
+    .ledger-head[aria-expanded="true"] .bi-chevron-down { transform: rotate(180deg); }
+    .qty-in { color: #198754; font-weight: 600; }
+    .qty-out { color: #dc3545; font-weight: 600; }
+    .ref-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-arrow-left-right me-2"></i>Stock In vs Out</h2>
+        <p class="text-muted mb-0 small">
+            Every item on its own: what came in, what went out, and the balance left —
+            each movement with its date and its reference number.
+        </p>
+    </div>
+    <a class="btn btn-success" href="{% url 'inventory:stock_movement_export' %}{% if filter_querystring %}?{{ filter_querystring }}{% endif %}">
+        <i class="bi bi-file-earmark-excel"></i> Export Excel
+    </a>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ f.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ f.date_to }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Branch</label>
+                <select name="branch" class="form-select">
+                    <option value="">All branches</option>
+                    {% for br in branches %}
+                    <option value="{{ br.id }}" {% if f.branch == br.id|stringformat:'s' %}selected{% endif %}>{{ br.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Category</label>
+                <select name="category" class="form-select">
+                    <option value="">All categories</option>
+                    {% for c in categories %}
+                    <option value="{{ c.id }}" {% if f.category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Show</label>
+                <select name="direction" class="form-select">
+                    <option value="">In and out</option>
+                    <option value="in" {% if f.direction == 'in' %}selected{% endif %}>Goods in only</option>
+                    <option value="out" {% if f.direction == 'out' %}selected{% endif %}>Goods out only</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Search item</label>
+                <input type="text" name="q" class="form-control" placeholder="name or SKU…" value="{{ f.q }}">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Apply Filters</button>
+                <a href="{% url 'inventory:stock_movement_report' %}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Summary -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total In (this page)</h6>
+                <h3 class="fw-bold mb-0 text-success">{{ grand_in|floatformat:0|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Total Out (this page)</h6>
+                <h3 class="fw-bold mb-0 text-danger">{{ grand_out|floatformat:0|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small">Items that moved</h6>
+                <h3 class="fw-bold mb-0">{{ item_count|intcomma }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- One ledger per item -->
+{% for item in items %}
+<div class="card shadow-sm mb-2">
+    <div class="card-body py-3 ledger-head d-flex justify-content-between align-items-center flex-wrap gap-2"
+         data-bs-toggle="collapse" data-bs-target="#ledger{{ item.product.id }}"
+         aria-expanded="{% if item.expanded %}true{% else %}false{% endif %}">
+        <div>
+            <span class="fw-bold">{{ item.product.name }}</span>
+            {% if item.product.sku %}<span class="text-muted small ms-2 ref-cell">{{ item.product.sku }}</span>{% endif %}
+            <div class="text-muted small">{{ item.product.category.name }} · {{ item.rows|length }} movement{{ item.rows|length|pluralize }}</div>
+        </div>
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="text-end">
+                <div class="text-muted text-uppercase" style="font-size:.7rem;">In</div>
+                <div class="qty-in">{{ item.total_in|floatformat:0|intcomma }}</div>
+            </div>
+            <div class="text-end">
+                <div class="text-muted text-uppercase" style="font-size:.7rem;">Out</div>
+                <div class="qty-out">{{ item.total_out|floatformat:0|intcomma }}</div>
+            </div>
+            <div class="text-end">
+                <div class="text-muted text-uppercase" style="font-size:.7rem;">Balance</div>
+                <div class="fw-bold text-primary">{{ item.closing|floatformat:0|intcomma }}</div>
+            </div>
+            <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+    </div>
+    <div class="collapse {% if item.expanded %}show{% endif %}" id="ledger{{ item.product.id }}">
+        <div class="table-responsive border-top">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4" style="width: 110px;">Date</th>
+                        <th style="width: 140px;">Reference</th>
+                        <th style="width: 160px;">Movement</th>
+                        <th>Details</th>
+                        <th style="width: 130px;">Branch</th>
+                        <th class="text-end" style="width: 90px;">In</th>
+                        <th class="text-end" style="width: 90px;">Out</th>
+                        <th class="text-end pe-4" style="width: 110px;">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="table-light">
+                        <td class="ps-4 text-muted small" colspan="5"><em>Balance brought forward</em></td>
+                        <td></td>
+                        <td></td>
+                        <td class="text-end pe-4 fw-semibold">{{ item.opening|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% for mv in item.rows %}
+                    <tr>
+                        <td class="ps-4">{{ mv.date|date:'Y-m-d' }}</td>
+                        <td class="ref-cell">{{ mv.reference }}</td>
+                        <td>{{ mv.label }}</td>
+                        <td class="text-muted small">{{ mv.detail }}</td>
+                        <td class="small">{{ mv.branch }}</td>
+                        <td class="text-end">{% if mv.qty_in %}<span class="qty-in">+{{ mv.qty_in|floatformat:0|intcomma }}</span>{% endif %}</td>
+                        <td class="text-end">{% if mv.qty_out %}<span class="qty-out">−{{ mv.qty_out|floatformat:0|intcomma }}</span>{% endif %}</td>
+                        <td class="text-end pe-4 fw-semibold">
+                            {{ mv.balance|floatformat:0|intcomma }}
+                            {% if mv.is_correction %}<span class="badge bg-warning text-dark ms-1">set</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-center py-3 text-muted">No movements in this period.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-light">
+                    <tr>
+                        <th colspan="5" class="text-end">TOTAL</th>
+                        <th class="text-end qty-in">{{ item.total_in|floatformat:0|intcomma }}</th>
+                        <th class="text-end qty-out">{{ item.total_out|floatformat:0|intcomma }}</th>
+                        <th class="text-end pe-4 text-primary">{{ item.closing|floatformat:0|intcomma }}</th>
+                    </tr>
+                    {% if item.closing != item.on_hand %}
+                    <tr>
+                        <td colspan="8" class="text-muted small ps-4">
+                            <i class="bi bi-info-circle"></i>
+                            Stock on hand today: <strong>{{ item.on_hand|floatformat:0|intcomma }}</strong>
+                            (the balance above stops at the end of the period shown).
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% empty %}
+<div class="card shadow-sm">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-inbox display-6 d-block mb-2"></i>
+        Nothing moved in or out for these filters.
+    </div>
+</div>
+{% endfor %}
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+                <i class="bi bi-chevron-left"></i> Previous
+            </a>
+        </li>
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+        </li>
+        <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+                Next <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

@@ -1,7 +1,7 @@
 {% comment %}
 Sidebar order, top to bottom:
-  Overview -> My Workspace (role menus) -> Catalog -> Commerce -> CRM ->
-  Finance -> Human Resources -> Administration -> System
+  Overview -> My Workspace (role menus) -> Catalog -> Commerce -> Reports ->
+  CRM -> Finance -> Human Resources -> Administration -> System
 
 A role user's own workspace comes first: it is where their daily work lives, so
 it should not sit below the generic Catalog/Commerce/Finance sections. Inside
@@ -253,6 +253,21 @@ adding another duplicate will not make two menus spring open at once.
             <li><a href="{% url 'sales:customer_create' %}"><i class="bi bi-person-plus"></i> Add Customer</a></li>
             <li><a href="{% url 'sales:customer_import' %}"><i class="bi bi-file-earmark-arrow-up"></i> Import</a></li>
             {% endif %}
+        </ul>
+    </li>
+    {% endif %}
+
+    <!-- Reports -->
+    {% if user.can_view_reports %}
+    <li class="section-title">Reports</li>
+    <li>
+        <a href="#reportsSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-arrow-left-right"></i> Stock In vs Out
+        </a>
+        <ul class="collapse list-unstyled" id="reportsSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'inventory:stock_movement_report' %}"><i class="bi bi-list-columns-reverse"></i> In and Out</a></li>
+            <li><a href="{% url 'inventory:stock_movement_report' %}?direction=in"><i class="bi bi-box-arrow-in-down"></i> Goods In</a></li>
+            <li><a href="{% url 'inventory:stock_movement_report' %}?direction=out"><i class="bi bi-box-arrow-up"></i> Goods Out</a></li>
         </ul>
     </li>
     {% endif %}

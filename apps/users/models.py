@@ -63,5 +63,26 @@ class User(AbstractUser):
             name__in=['HR Officer', 'HR Manager']
         ).exists()
 
+    @property
+    def can_view_reports(self):
+        """Who may open the Reports section (stock in vs out, and friends).
+
+        Everyone who answers for goods or for money: the office, the people who
+        move the stock, and the people who account for it. One predicate, used
+        by both the sidebar and the report views, so the menu can never offer a
+        screen that then returns 403.
+        """
+        return (
+            self.is_superuser
+            or self.is_admin_role
+            or self.is_manager
+            or self.is_accountant
+            or self.is_stock_controller
+            or self.is_store_manager
+            or self.is_store_keeper
+            or self.is_procurement_officer
+            or self.is_sales_manager
+        )
+
     def __str__(self):
         return f"{self.username} ({self.role})"

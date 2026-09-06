@@ -9,8 +9,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.inventory.models import (
-    Branch, Category, DeliveryCheck, Product, PurchaseOrder, PurchaseOrderItem,
-    Stock, Supplier,
+    Branch, Category, DeliveryCheck, DeliveryCheckItem, Product, PurchaseOrder,
+    PurchaseOrderItem, Stock, Supplier,
 )
 from apps.users.models import User
 
@@ -272,3 +272,134 @@ class DeliveryPermissionTest(DeliveryFlowTestCase):
         self.client.force_login(self.store_manager)
         self.assertEqual(
             self.client.get(reverse('inventory:po_cross_check_detail', args=[self.po.id])).status_code, 200)
+
+
+class StockMovementReportTest(TestCase):
+    """Stock in vs out: one item, its documents, and the balance they leave.
+
+    The ledger is derived, so these tests build the paperwork (a delivery round,
+    a dispatched invoice) and the stock it left behind, then check the report
+    tells the same story back.
+    """
+
+    def setUp(self):
+        from apps.sales.models import Sale, SaleItem
+
+        self.branch = Branch.objects.create(name='Main Branch')
+        self.category = Category.objects.create(name='Construction')
+        self.supplier = Supplier.objects.create(name='Kibo Suppliers')
+        self.cement = Product.objects.create(
+            name='Cement 50kg', category=self.category, price=18000, cost=15000)
+
+        self.admin = User.objects.create_user(username='boss', password='pw', role='admin')
+        self.rep = User.objects.create_user(username='rep', password='pw', role='sales_rep')
+
+        # 100 bags ordered and delivered in full.
+        self.po = PurchaseOrder.objects.create(
+            supplier=self.supplier, branch=self.branch, status='received', created_by=self.admin)
+        item = PurchaseOrderItem.objects.create(
+            purchase_order=self.po, product=self.cement, quantity=100,
+            unit_cost=15000, received_quantity=100)
+        check = DeliveryCheck.objects.create(
+            purchase_order=self.po, round_number=1, decision='complete')
+        DeliveryCheckItem.objects.create(
+            delivery_check=check, item=item, expected_quantity=100, delivered_quantity=100)
+
+        # 30 of them sold and dispatched.
+        self.sale = Sale.objects.create(
+            invoice_number='INV-0001', branch=self.branch, status='dispatched',
+            customer_name='Juma Builders', total_amount=540000, user=self.rep)
+        SaleItem.objects.create(
+            sale=self.sale, product=self.cement, quantity=30,
+            price_at_sale=18000, subtotal=540000)
+
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=70)
+
+    def _report(self, user=None, **params):
+        self.client.force_login(user or self.admin)
+        return self.client.get(reverse('inventory:stock_movement_report'), params)
+
+    def test_ledger_shows_each_movement_with_its_reference_and_balance(self):
+        response = self._report()
+        self.assertEqual(response.status_code, 200)
+
+        items = response.context['items']
+        self.assertEqual(len(items), 1)
+        ledger = items[0]
+        self.assertEqual(ledger['product'], self.cement)
+
+        rows = ledger['rows']
+        self.assertEqual(len(rows), 2)
+
+        delivery, sale = rows
+        self.assertEqual(delivery.reference, f'PO-{self.po.id:05d}')
+        self.assertEqual(delivery.qty_in, 100)
+        self.assertEqual(delivery.qty_out, 0)
+        self.assertEqual(delivery.balance, 100)
+
+        self.assertEqual(sale.reference, 'INV-0001')
+        self.assertEqual(sale.qty_in, 0)
+        self.assertEqual(sale.qty_out, 30)
+        self.assertEqual(sale.balance, 70)
+
+        self.assertEqual(ledger['total_in'], 100)
+        self.assertEqual(ledger['total_out'], 30)
+        self.assertEqual(ledger['closing'], 70)
+        # Everything on hand is accounted for by the documents.
+        self.assertEqual(ledger['opening'], 0)
+
+    def test_stock_the_documents_do_not_explain_shows_as_opening_balance(self):
+        """20 bags that predate the records are brought forward, not lost."""
+        stock = Stock.objects.get(product=self.cement, branch=self.branch)
+        stock.quantity = 90
+        stock.save()
+
+        ledger = self._report().context['items'][0]
+        self.assertEqual(ledger['opening'], 20)
+        self.assertEqual(ledger['rows'][0].balance, 120)
+        self.assertEqual(ledger['closing'], 90)
+
+    def test_goods_in_only_hides_the_sale_but_keeps_the_balance(self):
+        ledger = self._report(direction='in').context['items'][0]
+        references = [row.reference for row in ledger['rows']]
+        self.assertEqual(references, [f'PO-{self.po.id:05d}'])
+        self.assertEqual(ledger['total_out'], 0)
+
+    def test_goods_out_only_hides_the_delivery(self):
+        ledger = self._report(direction='out').context['items'][0]
+        references = [row.reference for row in ledger['rows']]
+        self.assertEqual(references, ['INV-0001'])
+        self.assertEqual(ledger['total_in'], 0)
+        # The balance still knows what came in before it.
+        self.assertEqual(ledger['rows'][0].balance, 70)
+
+    def test_a_period_with_no_movement_lists_no_items(self):
+        response = self._report(date_from='2000-01-01', date_to='2000-01-31')
+        self.assertEqual(response.context['items'], [])
+
+    def test_undelivered_order_is_not_in_the_ledger(self):
+        """Nothing reaches stock — or the report — before it is signed off."""
+        DeliveryCheck.objects.filter(purchase_order=self.po).update(decision='pending_admin')
+
+        ledger = self._report().context['items'][0]
+        self.assertEqual([row.reference for row in ledger['rows']], ['INV-0001'])
+
+    def test_only_roles_that_answer_for_stock_can_open_the_report(self):
+        self.client.force_login(self.rep)
+        response = self.client.get(reverse('inventory:stock_movement_report'))
+        self.assertEqual(response.status_code, 403)
+
+        for role in ('accountant', 'stock_controller', 'store_manager', 'store_keeper',
+                     'afisa_ugavi', 'manager'):
+            user = User.objects.create_user(username=f'u_{role}', password='pw', role=role)
+            self.client.force_login(user)
+            self.assertEqual(
+                self.client.get(reverse('inventory:stock_movement_report')).status_code, 200,
+                f'{role} should be able to open the stock report')
+
+    def test_export_returns_a_workbook(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse('inventory:stock_movement_export'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('spreadsheetml', response['Content-Type'])
+        self.assertIn('stock_in_vs_out', response['Content-Disposition'])

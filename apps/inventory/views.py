@@ -24,6 +24,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 
 from apps.core.models import SystemActivity
 from apps.core.notify import notify
+from . import movements
 from apps.users.permissions import IsStoreManager, IsStoreKeeper, IsStockController, IsAfisaUgavi, CanManageFleet, CanHandleGRN, CanManagePurchaseOrders, IsAdminOrSuperUser
 
 class BranchViewSet(viewsets.ModelViewSet):
@@ -1433,3 +1434,241 @@ class TransportCostExportView(LoginRequiredMixin, TemplateView):
         if fmt == 'pdf':
             return _export_truck_costs_pdf(qs, request.GET)
         return _export_truck_costs_excel(qs, request.GET)
+
+
+# ---------------------------------------------------------------------------
+# Reports: stock in vs out
+# ---------------------------------------------------------------------------
+
+def _movement_filters(params):
+    """Read the report's filters off the querystring.
+
+    Dates come back as `date` objects (or None) so the same values can drive
+    both the database lookups and the in-memory window in `movements`.
+    """
+    def as_date(key):
+        raw = (params.get(key) or '').strip()
+        try:
+            return date.fromisoformat(raw) if raw else None
+        except ValueError:
+            return None
+
+    direction = (params.get('direction') or '').strip().lower()
+    return {
+        'date_from': as_date('date_from'),
+        'date_to': as_date('date_to'),
+        'branch_id': (params.get('branch') or '').strip() or None,
+        'category_id': (params.get('category') or '').strip() or None,
+        'q': (params.get('q') or '').strip(),
+        'direction': direction if direction in ('in', 'out') else '',
+    }
+
+
+def _movement_items(filters, product_ids):
+    """Build one balanced ledger per item, in the order the ids are given."""
+    scoped = list(product_ids)
+    if not scoped:
+        return []
+
+    branch_id = filters['branch_id']
+    rows = movements.collect_movements(scoped, branch_id=branch_id)
+    by_product = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+
+    stock_qs = Stock.objects.filter(product_id__in=scoped)
+    if branch_id:
+        stock_qs = stock_qs.filter(branch_id=branch_id)
+    on_hand = {r['product_id']: r['qty'] or 0 for r in
+               stock_qs.values('product_id').annotate(qty=Sum('quantity'))}
+
+    products = {p.id: p for p in Product.objects.filter(id__in=scoped).select_related('category')}
+
+    items = []
+    for pid in scoped:
+        product = products.get(pid)
+        if product is None:
+            continue
+        ledger = movements.build_ledger(
+            by_product.get(pid, []),
+            on_hand.get(pid, 0),
+            date_from=filters['date_from'],
+            date_to=filters['date_to'],
+            direction=filters['direction'],
+        )
+        ledger['product'] = product
+        items.append(ledger)
+    return items
+
+
+def _movement_products(filters):
+    """The items to report on, ordered for a stable, paginable list."""
+    ids = movements.moved_product_ids(
+        branch_id=filters['branch_id'],
+        date_from=filters['date_from'],
+        date_to=filters['date_to'],
+        direction=filters['direction'],
+    )
+    qs = Product.objects.filter(id__in=ids)
+    if filters['category_id']:
+        qs = qs.filter(category_id=filters['category_id'])
+    if filters['q']:
+        qs = qs.filter(Q(name__icontains=filters['q']) | Q(sku__icontains=filters['q']))
+    # A unique tiebreaker: name alone would shuffle same-named rows between pages.
+    return qs.select_related('category').order_by('name', 'id')
+
+
+class StockMovementReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Stock in vs out — every item's movements with a running balance."""
+
+    template_name = 'inventory/stock_movement_report.html'
+    paginate_by = 20
+
+    def test_func(self):
+        return self.request.user.can_view_reports
+
+    def get_context_data(self, **kwargs):
+        from django.core.paginator import Paginator
+        from urllib.parse import urlencode
+
+        ctx = super().get_context_data(**kwargs)
+        params = self.request.GET
+        filters = _movement_filters(params)
+
+        products = _movement_products(filters)
+        paginator = Paginator(products, self.paginate_by)
+        page = paginator.get_page(params.get('page'))
+        items = _movement_items(filters, [p.id for p in page.object_list])
+
+        # A handful of items reads better opened; twenty tables do not.
+        expanded = len(items) <= 3
+        for item in items:
+            item['expanded'] = expanded
+
+        clean = {k: v for k, v in params.items() if k not in ('page', 'format') and v}
+        ctx.update({
+            'items': items,
+            'page_obj': page,
+            'paginator': paginator,
+            'is_paginated': page.has_other_pages(),
+            'item_count': paginator.count,
+            'grand_in': sum(i['total_in'] for i in items),
+            'grand_out': sum(i['total_out'] for i in items),
+            'branches': Branch.objects.all().order_by('name'),
+            'categories': Category.objects.all().order_by('name'),
+            'filter_querystring': urlencode(clean),
+            'f': params,
+            'title': 'Stock In vs Out',
+        })
+        return ctx
+
+
+class StockMovementExportView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """The same report as an Excel workbook — every item, not just this page."""
+
+    def test_func(self):
+        return self.request.user.can_view_reports
+
+    def get(self, request, *args, **kwargs):
+        filters = _movement_filters(request.GET)
+        products = _movement_products(filters)
+        items = _movement_items(filters, list(products.values_list('id', flat=True)))
+        return _export_movements_excel(items, filters)
+
+
+def _movement_filter_labels(filters):
+    labels = []
+    if filters['date_from'] or filters['date_to']:
+        labels.append("Period: %s to %s" % (filters['date_from'] or 'start',
+                                            filters['date_to'] or 'today'))
+    if filters['branch_id']:
+        branch = Branch.objects.filter(id=filters['branch_id']).first()
+        labels.append("Branch: %s" % (branch.name if branch else filters['branch_id']))
+    if filters['category_id']:
+        category = Category.objects.filter(id=filters['category_id']).first()
+        labels.append("Category: %s" % (category.name if category else filters['category_id']))
+    if filters['q']:
+        labels.append("Search: %s" % filters['q'])
+    if filters['direction']:
+        labels.append("Showing: %s only" % ('goods in' if filters['direction'] == 'in' else 'goods out'))
+    return labels
+
+
+def _export_movements_excel(items, filters):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from django.utils import timezone
+    from apps.core.models import SystemSettings
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Stock In vs Out"
+
+    company = SystemSettings.objects.first()
+    ws['A1'] = company.company_name if company else 'Umoja Hardware'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A2'] = 'Stock In vs Out'
+    ws['A2'].font = Font(bold=True, size=12, color="555555")
+
+    row = 3
+    for line in _movement_filter_labels(filters):
+        ws.cell(row=row, column=1, value=line).font = Font(italic=True, color="666666")
+        row += 1
+    row += 1
+
+    headers = ['Item', 'Date', 'Reference', 'Movement', 'Details', 'Branch', 'In', 'Out', 'Balance']
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style='thin', color='DDDDDD')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    for col, head in enumerate(headers, start=1):
+        cell = ws.cell(row=row, column=col, value=head)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center')
+    row += 1
+
+    for item in items:
+        product = item['product']
+        name = "%s (%s)" % (product.name, product.sku) if product.sku else product.name
+
+        ws.cell(row=row, column=1, value=name).font = Font(bold=True)
+        ws.cell(row=row, column=4, value='Opening balance')
+        ws.cell(row=row, column=9, value=item['opening'])
+        row += 1
+
+        for mv in item['rows']:
+            moment = mv.date
+            if timezone.is_aware(moment):
+                moment = timezone.localtime(moment).replace(tzinfo=None)
+            cell = ws.cell(row=row, column=2, value=moment)
+            cell.number_format = 'YYYY-MM-DD'
+            ws.cell(row=row, column=3, value=mv.reference)
+            ws.cell(row=row, column=4, value=mv.label)
+            ws.cell(row=row, column=5, value=mv.detail)
+            ws.cell(row=row, column=6, value=mv.branch)
+            if mv.qty_in:
+                ws.cell(row=row, column=7, value=mv.qty_in)
+            if mv.qty_out:
+                ws.cell(row=row, column=8, value=mv.qty_out)
+            ws.cell(row=row, column=9, value=mv.balance)
+            row += 1
+
+        ws.cell(row=row, column=4, value='Total for item').font = Font(bold=True)
+        for col, value in ((7, item['total_in']), (8, item['total_out']), (9, item['closing'])):
+            ws.cell(row=row, column=col, value=value).font = Font(bold=True)
+        row += 2
+
+    widths = [34, 12, 18, 22, 34, 18, 10, 10, 12]
+    for col, width in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = width
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = 'attachment; filename="stock_in_vs_out_%s.xlsx"' % date.today().isoformat()
+    return resp
