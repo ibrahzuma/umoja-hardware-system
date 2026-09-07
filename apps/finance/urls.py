@@ -31,6 +31,8 @@ urlpatterns = [
 
     path('sales-ledger/', views.SalesLedgerView.as_view(), name='sales_ledger'),
     path('profit-loss/', views.ProfitLossView.as_view(), name='profit_loss'),
+    path('cash-flow/', views.CashFlowView.as_view(), name='cash_flow'),
+    path('balance-sheet/', views.BalanceSheetView.as_view(), name='balance_sheet'),
     path('taxes/', views.TaxPaymentListView.as_view(), name='tax_payment_list'),
     path('debtors/', views.DebtorListView.as_view(), name='debtors_list'),
     path('receipts/', views.PaymentReceiptListView.as_view(), name='payment_receipt_list'),

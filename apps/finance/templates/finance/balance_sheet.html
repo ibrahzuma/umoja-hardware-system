@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block title %}Balance Sheet{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Balance Sheet</h2>
+        <p class="text-muted mb-0 small">Where the business stands today — what it holds, what it owes, and what
+            is left.</p>
+    </div>
+    <div>
+        <span class="badge bg-light text-dark border me-2" id="asAt"></span>
+        <button class="btn btn-outline-secondary" onclick="window.print()">
+            <i class="bi bi-printer"></i> Print
+        </button>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Assets</h6>
+                <h3 class="fw-bold mb-0" id="statAssets">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Liabilities</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statLiabilities">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Net Assets</h6>
+                <h3 class="fw-bold mb-0" id="statNet">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-box-seam"></i> What the business holds</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table data-no-paginate class="table align-middle mb-0">
+                        <tbody id="assetBody">
+                            <tr><td colspan="3" class="text-center py-4">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-cash-stack"></i> What it owes</div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table data-no-paginate class="table align-middle mb-0">
+                        <tbody id="liabilityBody">
+                            <tr><td colspan="3" class="text-center py-4">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-white fw-bold">Where it came from</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table data-no-paginate class="table align-middle mb-0">
+                <tbody id="equityBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-warning mt-4">
+    <div class="fw-bold mb-2"><i class="bi bi-exclamation-triangle"></i> What this sheet cannot tell you</div>
+    <ul class="small mb-0" id="caveats"></ul>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', load);
+
+    function money(v) {
+        const n = Math.round(Number(v || 0));
+        return (n < 0 ? '-TZS ' : 'TZS ') + Math.abs(n).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function row(label, amount, source, opts) {
+        opts = opts || {};
+        const cls = opts.total ? 'fw-bold' : (opts.memo ? 'text-muted fst-italic' : '');
+        return `
+            <tr class="${opts.total ? 'table-light' : ''}">
+                <td class="ps-4 ${cls}">${escapeHtml(label)}</td>
+                <td><small class="text-muted">${escapeHtml(source || '')}</small></td>
+                <td class="text-end pe-4 ${cls}">${money(amount)}</td>
+            </tr>`;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/balance-sheet/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            render(await res.json());
+        } catch (e) {
+            console.error(e);
+            document.getElementById('assetBody').innerHTML =
+                '<tr><td colspan="3" class="text-center py-4 text-danger">Could not load the balance sheet.</td></tr>';
+        }
+    }
+
+    function render(d) {
+        document.getElementById('asAt').innerText = 'As at ' + d.as_at;
+        document.getElementById('statAssets').innerText = money(d.assets);
+        document.getElementById('statLiabilities').innerText = money(d.liabilities);
+        document.getElementById('statNet').innerText = money(d.net_assets);
+
+        document.getElementById('assetBody').innerHTML =
+            d.asset_lines.map(l => row(l.label, l.amount, l.source, { memo: l.kind === 'memo' })).join('')
+            + row('Total assets', d.assets, '', { total: true });
+
+        document.getElementById('liabilityBody').innerHTML =
+            d.liability_lines.map(l => row(l.label, l.amount, l.source)).join('')
+            + row('Total liabilities', d.liabilities, '', { total: true })
+            + row('Net assets', d.net_assets, 'What it holds, less what it owes', { total: true });
+
+        document.getElementById('equityBody').innerHTML =
+            row('Retained earnings', d.retained_earnings,
+                'Every posted sale less every recorded cost, since the books began')
+            + row('Not recorded in this system', d.unrecorded,
+                  'Capital put in, drawings taken out, fixed assets — none of which the system holds')
+            + row('Net assets', d.net_assets, '', { total: true });
+
+        document.getElementById('caveats').innerHTML =
+            (d.caveats || []).map(c => '<li>' + escapeHtml(c) + '</li>').join('');
+    }
+</script>
+{% endblock %}

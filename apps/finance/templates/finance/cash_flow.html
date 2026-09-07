@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+
+{% block title %}Cash Flow{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Cash Flow</h2>
+        <p class="text-muted mb-0 small">Money that actually moved. A sale counts here only once Accounts
+            confirmed the money — not when it was made.</p>
+    </div>
+    <button class="btn btn-outline-secondary" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print
+    </button>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">From</label>
+                <input type="date" id="dateFrom" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">To</label>
+                <input type="date" id="dateTo" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-6">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('month')">This month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('last')">Last month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('year')">This year</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Money In</h6>
+                <h3 class="fw-bold mb-0 text-success" id="statIn">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Money Out</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statOut">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Net Movement</h6>
+                <h3 class="fw-bold mb-0" id="statNet">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Invoiced, Not Collected</h6>
+                <h3 class="fw-bold mb-0" id="statUncollected">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold text-success">
+                <i class="bi bi-box-arrow-in-down"></i> Money in
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table data-no-paginate class="table align-middle mb-0">
+                        <tbody id="inBody">
+                            <tr><td colspan="3" class="text-center py-4">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white fw-bold text-danger">
+                <i class="bi bi-box-arrow-up"></i> Money out
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table data-no-paginate class="table align-middle mb-0">
+                        <tbody id="outBody">
+                            <tr><td colspan="3" class="text-center py-4">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-bold" id="netLabel">Net movement</span>
+            <span class="fs-4 fw-bold" id="netValue">TZS 0</span>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info mt-4">
+    <div class="fw-bold mb-2"><i class="bi bi-info-circle"></i> What is not counted here</div>
+    <ul class="small mb-0" id="notes"></ul>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () { setPeriod('month'); });
+
+    function money(v) {
+        const n = Math.round(Number(v || 0));
+        return (n < 0 ? '-TZS ' : 'TZS ') + Math.abs(n).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function iso(d) { return d.toISOString().slice(0, 10); }
+
+    function setPeriod(which) {
+        const now = new Date();
+        let from, to;
+        if (which === 'month') {
+            from = new Date(now.getFullYear(), now.getMonth(), 1);
+            to = now;
+        } else if (which === 'last') {
+            from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            to = new Date(now.getFullYear(), now.getMonth(), 0);
+        } else {
+            from = new Date(now.getFullYear(), 0, 1);
+            to = now;
+        }
+        document.getElementById('dateFrom').value = iso(from);
+        document.getElementById('dateTo').value = iso(to);
+        load();
+    }
+
+    function row(label, amount, source, opts) {
+        opts = opts || {};
+        const cls = opts.total ? 'fw-bold' : '';
+        return `
+            <tr class="${opts.total ? 'table-light' : ''}">
+                <td class="ps-4 ${cls}">${escapeHtml(label)}</td>
+                <td><small class="text-muted">${escapeHtml(source || '')}</small></td>
+                <td class="text-end pe-4 ${cls}">${money(amount)}</td>
+            </tr>`;
+    }
+
+    async function load() {
+        const from = document.getElementById('dateFrom').value;
+        const to = document.getElementById('dateTo').value;
+        try {
+            const res = await fetch('/api/cash-flow/?date_from=' + from + '&date_to=' + to);
+            if (!res.ok) throw new Error('status ' + res.status);
+            render(await res.json());
+        } catch (e) {
+            console.error(e);
+            document.getElementById('inBody').innerHTML =
+                '<tr><td colspan="3" class="text-center py-4 text-danger">Could not load the statement.</td></tr>';
+        }
+    }
+
+    function render(d) {
+        document.getElementById('statIn').innerText = money(d.money_in);
+        document.getElementById('statOut').innerText = money(d.money_out);
+        document.getElementById('statNet').innerText = money(d.net_movement);
+        document.getElementById('statUncollected').innerText = money(d.not_yet_collected);
+
+        document.getElementById('inBody').innerHTML =
+            d.in_lines.map(l => row(l.label, l.amount, l.source)).join('')
+            + row('Total in', d.money_in, '', { total: true });
+
+        document.getElementById('outBody').innerHTML =
+            d.out_lines.map(l => row(l.label, l.amount, l.source)).join('')
+            + row('Total out', d.money_out, '', { total: true });
+
+        const net = Number(d.net_movement);
+        document.getElementById('netLabel').innerText =
+            'Net movement, ' + d.date_from + ' to ' + d.date_to;
+        const value = document.getElementById('netValue');
+        value.innerText = money(net);
+        value.className = 'fs-4 fw-bold ' + (net < 0 ? 'text-danger' : 'text-success');
+
+        document.getElementById('notes').innerHTML =
+            (d.notes || []).map(n => '<li>' + escapeHtml(n) + '</li>').join('');
+    }
+</script>
+{% endblock %}

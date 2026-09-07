@@ -113,9 +113,20 @@ See `DEPLOYMENT.md` for one-time server setup.
     **and an attached invoice**, and only `confirmed_amount` counts as cash. The till's transactions are a claim,
     never a receipt, so never read `amount_paid` as money in hand. `cost_of_sales` and `commission_total` are
     frozen on the entry so a later change to a product's cost cannot move a posted profit.
-  - **`/api/profit-loss/`** and `/finance/profit-loss/` (`views.py::profit_and_loss`) — revenue from *posted*
-    entries only, less cost of sales, commission, `Expense`, petty cash payouts and `OtherPayment`, plus `Income`,
-    less `TaxPayment`. Cash confirmed is reported beside revenue, never instead of it.
+  - **The three statements live in `apps/finance/statements.py`** (`profit_and_loss`, `cash_flow`,
+    `balance_sheet`), each behind a read-only ViewSet and a page: `/finance/profit-loss/`, `/finance/cash-flow/`,
+    `/finance/balance-sheet/`.
+    - **P&L** — revenue from *posted* entries only, less cost of sales, commission, `Expense`, petty cash payouts
+      and `OtherPayment`, plus `Income`, less `TaxPayment`. Cash confirmed is reported beside revenue, never
+      instead of it.
+    - **Cash flow** — receipts dated by `confirmed_at`, not by the sale, and `from_credit=True` supplier payments
+      are excluded because no money moved. Petty cash top-ups are an internal transfer, counted in neither
+      direction and reported as a note.
+    - **Balance sheet** — today only, never backdated (stock has no history, so a past date would be a guess
+      wearing a date). Cash is *derived* as the cumulative cash flow since the books began: without that line,
+      confirming a customer payment would clear a debtor with nothing to replace it and net assets would fall.
+      The system holds no capital, drawings or fixed-asset records, so the gap between net assets and retained
+      earnings is shown as **unrecorded** rather than plugged into equity — do not "fix" that by balancing it.
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
     is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
     way — the ledger mirrors, it does not authorise.

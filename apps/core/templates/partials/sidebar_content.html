@@ -121,6 +121,8 @@ adding another duplicate will not make two menus spring open at once.
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
             <li><a href="{% url 'finance:profit_loss' %}"><i class="bi bi-graph-up"></i> Profit &amp; Loss</a></li>
+            <li><a href="{% url 'finance:balance_sheet' %}"><i class="bi bi-clipboard-data"></i> Balance Sheet</a></li>
+            <li><a href="{% url 'finance:cash_flow' %}"><i class="bi bi-arrow-left-right"></i> Cash Flow</a></li>
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
             <li><a href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph"></i> Expense Report</a></li>
             <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes &amp; Govt</a></li>
@@ -310,6 +312,8 @@ adding another duplicate will not make two menus spring open at once.
             {% if user.is_superuser or user.is_admin_role or user.is_accountant %}
             <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
             <li><a href="{% url 'finance:profit_loss' %}"><i class="bi bi-graph-up"></i> Profit &amp; Loss</a></li>
+            <li><a href="{% url 'finance:balance_sheet' %}"><i class="bi bi-clipboard-data"></i> Balance Sheet</a></li>
+            <li><a href="{% url 'finance:cash_flow' %}"><i class="bi bi-arrow-left-right"></i> Cash Flow</a></li>
             {% endif %}
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-journal-minus"></i> View Expenses</a></li>
             {% if user.is_superuser or perms.finance.add_expense %}

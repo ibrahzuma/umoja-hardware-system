@@ -19,6 +19,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from apps.core.notify import notify
 from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
+from .statements import profit_and_loss, cash_flow, balance_sheet, period_from
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -917,104 +918,51 @@ class SalesLedgerView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
 
 # ----------------------------------------------------------------------------
-# Profit & loss - built from what Accounts have posted, nothing else
+# The statements. The figures themselves live in apps/finance/statements.py.
 # ----------------------------------------------------------------------------
-
-def _period(params):
-    """The window the statement covers. Defaults to the month to date."""
-    today = date.today()
-    start = (params.get('date_from') or '').strip() or today.replace(day=1).isoformat()
-    end = (params.get('date_to') or '').strip() or today.isoformat()
-    return start, end
-
-
-def profit_and_loss(date_from, date_to):
-    """The statement itself, as plain figures.
-
-    Revenue is **posted sales only** - a sale the accountant has not taken up
-    is not in the books, whatever the till did with it. Cash confirmed is
-    reported beside it but never in place of it: the two answer different
-    questions, and conflating them is how a business talks itself into profit
-    it has not been paid.
-    """
-    posted = SalesLedgerEntry.objects.filter(
-        status='posted', sale_date__gte=date_from, sale_date__lte=date_to)
-
-    sales = posted.aggregate(
-        revenue=Sum('total_amount'),
-        discounts=Sum('discount'),
-        cost=Sum('cost_of_sales'),
-        commission=Sum('commission_total'),
-        confirmed=Sum('confirmed_amount'),
-    )
-    revenue = sales['revenue'] or Decimal('0')
-    cost = sales['cost'] or Decimal('0')
-    commission = sales['commission'] or Decimal('0')
-    confirmed = sales['confirmed'] or Decimal('0')
-
-    expenses = Expense.objects.filter(
-        date_incurred__gte=date_from, date_incurred__lte=date_to
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
-    petty = PettyCashTransaction.objects.filter(
-        entry_type='out', date__gte=date_from, date__lte=date_to
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
-    other_out = OtherPayment.objects.filter(
-        payment_date__gte=date_from, payment_date__lte=date_to
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
-    taxes = TaxPayment.objects.filter(
-        payment_date__gte=date_from, payment_date__lte=date_to
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
-    other_income = Income.objects.filter(
-        date_received__gte=date_from, date_received__lte=date_to
-    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
-
-    gross_profit = revenue - cost
-    operating_costs = expenses + petty + other_out + commission
-    operating_profit = gross_profit - operating_costs
-    net_profit = operating_profit + other_income - taxes
-
-    def row(label, amount, source, kind='cost'):
-        return {'label': label, 'amount': str(amount), 'source': source, 'kind': kind}
-
-    return {
-        'date_from': str(date_from),
-        'date_to': str(date_to),
-        'sales_count': posted.count(),
-        'revenue': str(revenue),
-        'discounts': str(sales['discounts'] or Decimal('0')),
-        'cost_of_sales': str(cost),
-        'gross_profit': str(gross_profit),
-        'operating_costs': str(operating_costs),
-        'operating_profit': str(operating_profit),
-        'other_income': str(other_income),
-        'taxes': str(taxes),
-        'net_profit': str(net_profit),
-        'cash_confirmed': str(confirmed),
-        'cash_outstanding': str(revenue - confirmed),
-        'lines': [
-            row('Revenue (posted sales)', revenue, 'Sales accounting, posted only', 'revenue'),
-            row('Cost of sales', cost, 'Product cost at the time of each sale'),
-            row('Sales commission', commission, 'Commission frozen on each sale line'),
-            row('Expenses', expenses, 'Finance > Expenses'),
-            row('Petty cash paid out', petty, 'Cashier > Petty Cash'),
-            row('Other payments', other_out, 'Cashier > Other Payments'),
-            row('Other income', other_income, 'Finance > Other Income', 'revenue'),
-            row('Taxes paid', taxes, 'Finance > Taxes & Govt'),
-        ],
-    }
-
 
 class ProfitLossViewSet(viewsets.ViewSet):
     """Read-only statement. Same gate as the sales ledger it is built from."""
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
 
     def list(self, request):
-        date_from, date_to = _period(request.query_params)
+        date_from, date_to = period_from(request.query_params)
         return Response(profit_and_loss(date_from, date_to))
+
+
+class CashFlowViewSet(viewsets.ViewSet):
+    """Money that actually moved, in the window it moved."""
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+
+    def list(self, request):
+        date_from, date_to = period_from(request.query_params)
+        return Response(cash_flow(date_from, date_to))
+
+
+class BalanceSheetViewSet(viewsets.ViewSet):
+    """Where the business stands today. No date: see statements.balance_sheet."""
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+
+    def list(self, request):
+        return Response(balance_sheet())
 
 
 class ProfitLossView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'finance/profit_loss.html'
+
+    def test_func(self):
+        return can_use_accounting(self.request.user)
+
+
+class CashFlowView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = 'finance/cash_flow.html'
+
+    def test_func(self):
+        return can_use_accounting(self.request.user)
+
+
+class BalanceSheetView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = 'finance/balance_sheet.html'
 
     def test_func(self):
         return can_use_accounting(self.request.user)
