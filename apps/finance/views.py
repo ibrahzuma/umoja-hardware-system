@@ -6,17 +6,24 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Sum
 from django.http import HttpResponse, Http404
-from apps.users.permissions import IsAccountant, CanRecordSupplierPayment
+from apps.users.permissions import IsAccountant, CanRecordSupplierPayment, CanHandleCash, is_privileged
 from apps.sales.models import Sale
-from apps.inventory.models import Branch
+from apps.inventory.models import Branch, PurchaseOrder
 from .models import Expense, ExpenseCategory
 from django.shortcuts import render
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from .forms import ExpenseForm
-from .models import Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt, BankAccount
-from .serializers import ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer, TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer
+from .models import (
+    Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
+    BankAccount, PettyCashTransaction, OtherPayment,
+)
+from .serializers import (
+    ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer,
+    TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer,
+    PettyCashTransactionSerializer, OtherPaymentSerializer,
+)
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/expense_list.html'
@@ -66,12 +73,58 @@ class IncomeViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.DjangoModelPermissions]
 
 class SupplierPaymentViewSet(viewsets.ModelViewSet):
-    queryset = SupplierPayment.objects.all().order_by('-payment_date')
+    queryset = SupplierPayment.objects.select_related(
+        'supplier', 'purchase_order', 'created_by'
+    ).order_by('-payment_date', '-id')
     serializer_class = SupplierPaymentSerializer
     permission_classes = [permissions.IsAuthenticated, CanRecordSupplierPayment]
+    filterset_fields = ['supplier', 'purchase_order', 'method']
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def payable_orders(self, request):
+        """The purchase orders a payment can be recorded against.
+
+        Every supplier the payer can choose comes from here: these are the
+        orders Afisa Ugavi raised and committed. Drafts and cancelled orders
+        are left out — nothing is owed on them — and each row carries what has
+        already been paid so the form can default to the balance.
+
+        GET ?settled=0 (the default) hides orders with nothing left to pay.
+        """
+        orders = (PurchaseOrder.objects
+                  .exclude(status__in=['draft', 'cancelled'])
+                  .filter(supplier__isnull=False)
+                  .select_related('supplier', 'created_by')
+                  .annotate(paid_total=Sum('payments__amount'))
+                  .order_by('-created_at', '-id'))
+
+        include_settled = (request.query_params.get('settled') or '').strip() in ('1', 'true', 'yes')
+
+        rows = []
+        for po in orders:
+            total = po.total_amount or Decimal('0')
+            paid = po.paid_total or Decimal('0')
+            balance = total - paid
+            if not include_settled and balance <= 0:
+                continue
+            raised_by = po.created_by
+            rows.append({
+                'id': po.id,
+                'label': f"PO #{po.id}",
+                'supplier': po.supplier_id,
+                'supplier_name': po.supplier.name,
+                'order_date': po.order_date,
+                'status': po.status,
+                'status_display': po.get_status_display(),
+                'total_amount': str(total),
+                'paid_amount': str(paid),
+                'balance': str(balance),
+                'raised_by': (raised_by.get_full_name() or raised_by.username) if raised_by else '',
+            })
+        return Response(rows)
 
 class SupplierPaymentListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/supplier_payment_list.html'
@@ -134,6 +187,76 @@ class PaymentReceiptViewSet(viewsets.ModelViewSet):
 
 class PaymentReceiptListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/payment_receipt_list.html'
+
+
+# ----------------------------------------------------------------------------
+# Cashier — petty cash, supplier payments (above) and other payments
+# ----------------------------------------------------------------------------
+
+def can_use_cashier(user):
+    """Who gets the Cashier desk. Same rule everywhere: the template views, the
+    API viewsets and the sidebar section all read from this, so the menu can
+    never offer a screen that then returns 403."""
+    return bool(
+        user and user.is_authenticated
+        and (is_privileged(user) or getattr(user, 'is_cashier', False)
+             or getattr(user, 'is_accountant', False))
+    )
+
+
+class CashierAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return can_use_cashier(self.request.user)
+
+
+class PettyCashViewSet(viewsets.ModelViewSet):
+    queryset = PettyCashTransaction.objects.select_related(
+        'branch', 'category', 'bank', 'created_by'
+    ).all()
+    serializer_class = PettyCashTransactionSerializer
+    permission_classes = [permissions.IsAuthenticated, CanHandleCash]
+    filterset_fields = ['entry_type', 'branch', 'category']
+
+    def perform_create(self, serializer):
+        # Default the branch to the cashier's own if they did not pick one.
+        branch = serializer.validated_data.get('branch') or getattr(self.request.user, 'branch', None)
+        serializer.save(created_by=self.request.user, branch=branch)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Float balance plus the in/out totals behind it, for the stat cards."""
+        qs = self.filter_queryset(self.get_queryset())
+        totals = {
+            row['entry_type']: row['total'] or Decimal('0')
+            for row in qs.values('entry_type').annotate(total=Sum('amount'))
+        }
+        cash_in = totals.get('in') or Decimal('0')
+        cash_out = totals.get('out') or Decimal('0')
+        return Response({
+            'cash_in': str(cash_in),
+            'cash_out': str(cash_out),
+            'balance': str(cash_in - cash_out),
+            'count': qs.count(),
+        })
+
+
+class PettyCashListView(CashierAccessMixin, TemplateView):
+    template_name = 'finance/petty_cash.html'
+
+
+class OtherPaymentViewSet(viewsets.ModelViewSet):
+    queryset = OtherPayment.objects.select_related('bank', 'branch', 'created_by').all()
+    serializer_class = OtherPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated, CanHandleCash]
+    filterset_fields = ['payment_type', 'method', 'branch']
+
+    def perform_create(self, serializer):
+        branch = serializer.validated_data.get('branch') or getattr(self.request.user, 'branch', None)
+        serializer.save(created_by=self.request.user, branch=branch)
+
+
+class OtherPaymentListView(CashierAccessMixin, TemplateView):
+    template_name = 'finance/other_payment_list.html'
 
 
 # ----------------------------------------------------------------------------

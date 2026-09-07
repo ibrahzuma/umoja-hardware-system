@@ -20,7 +20,7 @@ adding another duplicate will not make two menus spring open at once.
     <li><a href="{% url 'hr:my_attendance' %}"><i class="bi bi-clock-history"></i> My attendance</a></li>
 
     <!-- Role-specific workspaces -->
-    {% if user.is_superuser or user.is_procurement_officer or user.is_stock_controller or user.is_sales_rep or user.is_store_manager or user.is_accountant or user.is_store_keeper or user.is_sales_manager %}
+    {% if user.is_superuser or user.is_procurement_officer or user.is_stock_controller or user.is_sales_rep or user.is_store_manager or user.is_accountant or user.is_store_keeper or user.is_sales_manager or user.is_cashier %}
     <li class="section-title">My Workspace</li>
     {% endif %}
 
@@ -129,6 +129,19 @@ adding another duplicate will not make two menus spring open at once.
             <li><a href="{% url 'finance:debtors_list' %}"><i class="bi bi-exclamation-circle"></i> Debtors</a></li>
             <li><a href="{% url 'finance:bank_list' %}"><i class="bi bi-bank"></i> Banks</a></li>
             <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-eye"></i> Stock Balances</a></li>
+        </ul>
+    </li>
+    {% endif %}
+
+    {% if user.is_superuser or user.is_cashier or user.is_accountant or user.is_admin_role %}
+    <li>
+        <a href="#cashierSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
+            <i class="bi bi-cash-coin"></i> Cashier
+        </a>
+        <ul class="collapse list-unstyled" id="cashierSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:petty_cash' %}"><i class="bi bi-wallet2"></i> Petty Cash</a></li>
+            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payment</a></li>
+            <li><a href="{% url 'finance:other_payments' %}"><i class="bi bi-arrow-right-circle"></i> Other Payments</a></li>
         </ul>
     </li>
     {% endif %}

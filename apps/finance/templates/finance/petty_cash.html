@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+
+{% block title %}Petty Cash{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-primary fw-bold">Petty Cash</h2>
+    <div>
+        <button class="btn btn-success me-2" onclick="openEntry('in')">
+            <i class="bi bi-plus-circle"></i> Top Up Float
+        </button>
+        <button class="btn btn-primary" onclick="openEntry('out')">
+            <i class="bi bi-cash"></i> Record Payment
+        </button>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Float Balance</h6>
+                <h3 class="fw-bold mb-0" id="statBalance">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Cash In</h6>
+                <h3 class="fw-bold mb-0 text-success" id="statIn">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Cash Out</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statOut">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <input type="text" id="searchInput" class="form-control"
+                    placeholder="Search voucher, description or payee..." onkeyup="render()">
+            </div>
+            <div class="col-md-3">
+                <select id="typeFilter" class="form-select" onchange="render()">
+                    <option value="">All movements</option>
+                    <option value="in">Cash in (top-ups)</option>
+                    <option value="out">Cash out (payments)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <select id="branchFilter" class="form-select" onchange="render()">
+                    <option value="">All branches</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Voucher</th>
+                        <th>Description</th>
+                        <th>Payee</th>
+                        <th>Category</th>
+                        <th class="text-end">Cash In</th>
+                        <th class="text-end">Cash Out</th>
+                        <th class="pe-4">Recorded By</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="8" class="text-center py-4">Loading petty cash...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Entry Modal -->
+<div class="modal fade" id="entryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="entryModalTitle">Record Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="entryForm">
+                    <input type="hidden" id="entryType" value="out">
+                    <div class="mb-3">
+                        <label class="form-label">Amount (TZS)</label>
+                        <input type="number" step="0.01" min="1" class="form-control" id="amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" class="form-control" id="date" required>
+                    </div>
+                    <div class="mb-3" id="payeeGroup">
+                        <label class="form-label">Paid To</label>
+                        <input type="text" class="form-control" id="payee" placeholder="Who received the cash">
+                    </div>
+                    <div class="mb-3" id="bankGroup" style="display:none;">
+                        <label class="form-label">Drawn From</label>
+                        <select class="form-select" id="bank">
+                            <option value="">Cash from office / none</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="categoryGroup">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="category">
+                            <option value="">Uncategorized</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="branch">
+                            <option value="">My branch</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="description" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" class="form-control" id="reference" placeholder="Receipt no, slip no">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary" id="entrySubmit">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let entries = [];
+    let entryModal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        entryModal = new bootstrap.Modal(document.getElementById('entryModal'));
+        document.getElementById('entryForm').addEventListener('submit', handleSubmit);
+        loadData();
+    });
+
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    async function loadData() {
+        try {
+            const [entryRes, branchRes, catRes, bankRes] = await Promise.all([
+                fetch('/api/petty-cash/'),
+                fetch('/api/branches/'),
+                fetch('/api/expense-categories/'),
+                fetch('/api/bank-accounts/')
+            ]);
+
+            if (!entryRes.ok) throw new Error('Could not load petty cash (' + entryRes.status + ')');
+
+            entries = await entryRes.json();
+            populate('branchFilter', await branchRes.json(), 'All branches');
+            populate('branch', null, null, 'branchFilter');
+            populate('category', await catRes.json(), 'Uncategorized');
+            populate('bank', await bankRes.json(), 'Cash from office / none');
+
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load petty cash.</td></tr>';
+        }
+    }
+
+    // Fill a <select> from a list of {id, name}. Passing `copyFrom` clones the
+    // options of another select instead (the branch filter and the branch field
+    // hold the same list).
+    function populate(id, items, placeholder, copyFrom) {
+        const select = document.getElementById(id);
+        if (copyFrom) {
+            const src = document.getElementById(copyFrom);
+            select.innerHTML = '<option value="">My branch</option>';
+            Array.from(src.options).slice(1).forEach(o => {
+                select.innerHTML += '<option value="' + o.value + '">' + o.text + '</option>';
+            });
+            return;
+        }
+        select.innerHTML = '<option value="">' + placeholder + '</option>';
+        (items || []).forEach(i => {
+            select.innerHTML += '<option value="' + i.id + '">' + i.name + '</option>';
+        });
+    }
+
+    function visible() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const type = document.getElementById('typeFilter').value;
+        const branch = document.getElementById('branchFilter').value;
+
+        return entries.filter(e => {
+            const haystack = [e.voucher_number, e.description, e.payee, e.reference]
+                .map(v => (v || '').toLowerCase()).join(' ');
+            const matchesTerm = haystack.includes(term);
+            const matchesType = type ? e.entry_type === type : true;
+            const matchesBranch = branch ? String(e.branch) === branch : true;
+            return matchesTerm && matchesType && matchesBranch;
+        });
+    }
+
+    function render() {
+        const rows = visible();
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        let totalIn = 0, totalOut = 0;
+        rows.forEach(e => {
+            if (e.entry_type === 'in') totalIn += Number(e.amount || 0);
+            else totalOut += Number(e.amount || 0);
+        });
+        document.getElementById('statIn').innerText = money(totalIn);
+        document.getElementById('statOut').innerText = money(totalOut);
+        document.getElementById('statBalance').innerText = money(totalIn - totalOut);
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No petty cash entries yet</td></tr>';
+            return;
+        }
+
+        rows.forEach(e => {
+            const isIn = e.entry_type === 'in';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${e.date ? new Date(e.date).toLocaleDateString() : '-'}</td>
+                <td><span class="badge bg-light text-dark border">${e.voucher_number || '-'}</span></td>
+                <td class="fw-medium">${escapeHtml(e.description || '')}</td>
+                <td>${escapeHtml(e.payee || '-')}</td>
+                <td><small class="text-muted">${escapeHtml(e.category_name || (isIn ? 'Top-up' : 'Uncategorized'))}</small></td>
+                <td class="text-end text-success fw-bold">${isIn ? money(e.amount) : ''}</td>
+                <td class="text-end text-danger fw-bold">${isIn ? '' : money(e.amount)}</td>
+                <td class="pe-4"><small class="text-muted">${escapeHtml(e.created_by_name || '-')}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function openEntry(type) {
+        document.getElementById('entryForm').reset();
+        document.getElementById('entryType').value = type;
+        const topUp = type === 'in';
+        document.getElementById('entryModalTitle').innerText = topUp ? 'Top Up the Float' : 'Record a Petty Cash Payment';
+        document.getElementById('entrySubmit').innerText = topUp ? 'Save Top-up' : 'Save Payment';
+        document.getElementById('bankGroup').style.display = topUp ? '' : 'none';
+        document.getElementById('payeeGroup').style.display = topUp ? 'none' : '';
+        document.getElementById('categoryGroup').style.display = topUp ? 'none' : '';
+        document.getElementById('date').valueAsDate = new Date();
+        entryModal.show();
+    }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        const type = document.getElementById('entryType').value;
+        const payload = {
+            entry_type: type,
+            amount: document.getElementById('amount').value,
+            date: document.getElementById('date').value,
+            description: document.getElementById('description').value,
+            reference: document.getElementById('reference').value,
+            payee: type === 'in' ? '' : document.getElementById('payee').value,
+            category: type === 'in' ? null : (document.getElementById('category').value || null),
+            bank: type === 'in' ? (document.getElementById('bank').value || null) : null,
+            branch: document.getElementById('branch').value || null
+        };
+
+        try {
+            const res = await fetch('/api/petty-cash/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                entryModal.hide();
+                Swal.fire('Saved', type === 'in' ? 'Float topped up' : 'Payment recorded', 'success');
+                loadData();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || JSON.stringify(err), 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            Swal.fire('Error', 'Could not save the entry', 'error');
+        }
+    }
+</script>
+{% endblock %}

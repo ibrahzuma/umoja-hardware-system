@@ -250,8 +250,7 @@
         });
 
         // BOM so Excel opens the file as UTF-8 rather than mangling it.
-        const blob = new Blob(['﻿' + lines.join('
-')], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;

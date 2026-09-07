@@ -88,9 +88,18 @@ class CanHandleGRN(_RolePermission):
 
 
 class CanRecordSupplierPayment(_RolePermission):
-    """Supplier payments appear in both the Accountant and the Afisa Ugavi
-    (procurement) workspaces, so either role may record them."""
-    allowed = ('is_accountant', 'is_procurement_officer')
+    """Supplier payments appear in the Accountant, Afisa Ugavi (procurement)
+    and Cashier workspaces, so any of those roles may record them."""
+    allowed = ('is_accountant', 'is_procurement_officer', 'is_cashier')
+
+
+class CanHandleCash(_RolePermission):
+    """The cashier's own registers — petty cash and other payments.
+
+    The accountant is included because they reconcile the float and answer for
+    the money; the cashier only ever holds it. One class for both registers so
+    the Cashier menu can never offer a screen that then returns 403."""
+    allowed = ('is_cashier', 'is_accountant')
 
 
 class CanManagePurchaseOrders(_ReadAnyWriteRole):

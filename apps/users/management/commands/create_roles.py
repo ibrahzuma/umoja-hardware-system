@@ -20,6 +20,7 @@ class Command(BaseCommand):
             'accountant': 'Accountant',
             'store_keeper': 'Store Keeper',
             'sales_credit_manager': 'Sales & Credit Manager',
+            'cashier': 'Cashier',
         }
         # Define permissions for each role
         # Format: 'app_label.action_model'
@@ -63,6 +64,11 @@ class Command(BaseCommand):
                 'finance.view_paymentreceipt', 'finance.add_paymentreceipt', 'finance.change_paymentreceipt',
                 'finance.view_bankaccount', 'finance.add_bankaccount', 'finance.change_bankaccount', 'finance.delete_bankaccount',
                 'finance.view_expensecategory', 'finance.add_expensecategory', 'finance.change_expensecategory', 'finance.delete_expensecategory',
+                # The accountant reconciles the cashier's float and payouts.
+                'finance.view_pettycashtransaction', 'finance.add_pettycashtransaction',
+                'finance.change_pettycashtransaction', 'finance.delete_pettycashtransaction',
+                'finance.view_otherpayment', 'finance.add_otherpayment',
+                'finance.change_otherpayment', 'finance.delete_otherpayment',
                 # Recording money received against a credit sale is an accountant
                 # task — it is the "Record Payment" action on the Debtors screen,
                 # which lives in their own workspace.
@@ -78,6 +84,21 @@ class Command(BaseCommand):
             'Store Keeper': [
                 'inventory.view_stock',
                 'sales.view_sale',
+            ],
+            'Cashier': [
+                # The cash desk: the float, the catch-all payouts, and paying
+                # suppliers over the counter. Writing to any of these is also
+                # gated on the role (CanHandleCash / CanRecordSupplierPayment).
+                'finance.view_pettycashtransaction', 'finance.add_pettycashtransaction',
+                'finance.change_pettycashtransaction',
+                'finance.view_otherpayment', 'finance.add_otherpayment',
+                'finance.change_otherpayment',
+                'finance.view_supplierpayment', 'finance.add_supplierpayment',
+                # Read-only context for the payment forms.
+                'finance.view_expensecategory',
+                'finance.view_bankaccount',
+                'inventory.view_supplier',
+                'inventory.view_branch',
             ],
             'Sales & Credit Manager': [
                 # Approves orders (gated by role, see CanApproveSales) and tracks

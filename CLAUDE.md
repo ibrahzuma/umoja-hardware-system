@@ -71,7 +71,12 @@ See `DEPLOYMENT.md` for one-time server setup.
     with `SaleItem` (commission frozen at save), `Transaction` (payments against a sale), `Quotation`/`QuotationItem`,
     plus `utils.py` (PDF rendering) and `views_report.py`.
   - `finance` — `ExpenseCategory`, `Expense` (receipt image, paid-from `BankAccount`), `Income`, `BankAccount`,
-    `SupplierPayment`, `TaxPayment` (VAT/PAYE/SDL/…), `PaymentReceipt` (customer payment tracking / debtors).
+    `SupplierPayment` (hangs off the `PurchaseOrder` it settles — the supplier is derived from the order, never
+    picked freely; `/api/supplier-payments/payable_orders/` is the list the form is built from),
+    `TaxPayment` (VAT/PAYE/SDL/…), `PaymentReceipt` (customer payment tracking / debtors),
+    plus the **Cashier desk**: `PettyCashTransaction` (the counter float — 'in' top-ups vs 'out' vouchers, balance
+    derived) and `OtherPayment` (payouts that are neither a supplier invoice nor a tax). One predicate,
+    `apps/finance/views.py::can_use_cashier`, gates the template views, the API and the sidebar section.
   - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
     `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
     `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.
@@ -103,7 +108,7 @@ The Django admin path is obscured: `ADMIN_URL` env var (defaults to `admin/` onl
 ### Roles & permissions (three layers — keep them in sync)
 1. **`User.ROLE_CHOICES`** (`apps/users/models.py`) — admin, manager, staff, afisa_ugavi (procurement),
    stock_controller, sales_rep, store_manager, accountant, store_keeper, hr_officer, hr_manager,
-   sales_credit_manager.
+   sales_credit_manager, cashier.
 2. **Django auth Groups + permissions**, seeded by `python manage.py create_roles` (`ROLE_MAP` + `PERMISSIONS`
    dicts). Most ViewSets use `permissions.DjangoModelPermissions`, so these grants are what actually gates the API.
 3. **Role properties** on `User` (`is_manager`, `is_sales_rep`, `is_accountant`, `is_hr`, …) that check the `role`

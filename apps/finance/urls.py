@@ -20,7 +20,12 @@ urlpatterns = [
     path('income/create/', views.ExpenseCreateView.as_view(), name='income_create'), # Placeholder/Reuse
     
     path('supplier-payments/', views.SupplierPaymentListView.as_view(), name='supplier_payment_list'),
-    
+
+    # Cashier desk
+    path('petty-cash/', views.PettyCashListView.as_view(), name='petty_cash'),
+    path('other-payments/', views.OtherPaymentListView.as_view(), name='other_payments'),
+
+
     path('taxes/', views.TaxPaymentListView.as_view(), name='tax_payment_list'),
     path('debtors/', views.DebtorListView.as_view(), name='debtors_list'),
     path('receipts/', views.PaymentReceiptListView.as_view(), name='payment_receipt_list'),

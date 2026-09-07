@@ -52,6 +52,13 @@ class Income(models.Model):
         return f"{self.source} - {self.amount}"
 
 class SupplierPayment(models.Model):
+    """Money paid to a supplier, against the purchase order it settles.
+
+    The supplier is never picked out of thin air: the payer chooses one of the
+    purchase orders Afisa Ugavi raised, and the supplier follows from it. The
+    FK is nullable only so payments recorded before this rule (and the rare
+    off-order settlement) still have a home — new payments come in with it set.
+    """
     PAYMENT_METHODS = (
         ('cash', 'Cash'),
         ('bank_transfer', 'Bank Transfer'),
@@ -59,6 +66,9 @@ class SupplierPayment(models.Model):
         ('mobile_money', 'Mobile Money'),
     )
     supplier = models.ForeignKey('inventory.Supplier', on_delete=models.CASCADE, related_name='payments')
+    purchase_order = models.ForeignKey('inventory.PurchaseOrder', on_delete=models.SET_NULL, null=True, blank=True,
+                                       related_name='payments',
+                                       help_text="The order this payment settles")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     payment_date = models.DateField()
     method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='bank_transfer')
@@ -128,3 +138,113 @@ class PaymentReceipt(models.Model):
 
     def __str__(self):
         return f"Receipt for Invoice #{self.invoice_number} - {self.amount_paid}"
+
+
+# ---------------------------------------------------------------------------
+# Cashier — the money that leaves the counter in cash
+# ---------------------------------------------------------------------------
+
+class PettyCashTransaction(models.Model):
+    """The cash float the cashier holds, one row per movement.
+
+    Two kinds of row: cash put *into* the float ('in' — a top-up drawn from a
+    bank account or handed over by the office) and cash paid *out* of it
+    ('out' — a petty cash voucher). The float balance is the difference, so it
+    is derived from this table and never stored; see `balance()`.
+    """
+    ENTRY_TYPES = (
+        ('in', 'Cash In (Top-up)'),
+        ('out', 'Cash Out (Payment)'),
+    )
+
+    entry_type = models.CharField(max_length=3, choices=ENTRY_TYPES, default='out')
+    voucher_number = models.CharField(max_length=20, unique=True, blank=True,
+                                      help_text="Auto-generated on save, e.g. PC-000123")
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='petty_cash')
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='petty_cash')
+    bank = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='petty_cash_topups',
+                             help_text="Account a top-up was drawn from")
+    payee = models.CharField(max_length=150, blank=True, help_text="Who received the cash")
+    description = models.TextField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    date = models.DateField()
+    reference = models.CharField(max_length=100, blank=True, help_text="Receipt no, slip no, etc.")
+    receipt_image = models.ImageField(upload_to='petty_cash/%Y/%m/', blank=True, null=True)
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
+                                   related_name='petty_cash_entries')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+        verbose_name = 'Petty Cash Transaction'
+
+    def save(self, *args, **kwargs):
+        if not self.voucher_number:
+            # Sequential voucher numbers, skipping any already taken (rows can
+            # be deleted, so max(id)+1 alone is not enough).
+            last = PettyCashTransaction.objects.order_by('-id').first()
+            n = (last.id + 1) if last else 1
+            while PettyCashTransaction.objects.filter(voucher_number=f"PC-{n:06d}").exists():
+                n += 1
+            self.voucher_number = f"PC-{n:06d}"
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def balance(cls, branch=None):
+        """Cash still in the float: everything paid in, less everything paid out."""
+        qs = cls.objects.all()
+        if branch:
+            qs = qs.filter(branch=branch)
+        totals = qs.values('entry_type').annotate(total=Sum('amount'))
+        by_type = {row['entry_type']: row['total'] or 0 for row in totals}
+        return (by_type.get('in') or 0) - (by_type.get('out') or 0)
+
+    def __str__(self):
+        return f"{self.voucher_number} - {self.get_entry_type_display()} {self.amount}"
+
+
+class OtherPayment(models.Model):
+    """Money paid out that is neither a supplier invoice nor a statutory tax.
+
+    Casual labour, salary advances, customer refunds, utilities, licences — the
+    cashier's catch-all outgoing register. Deliberately standalone: it does not
+    touch Expense (which is the accountant's cost ledger) so the cashier can
+    record a payout at the counter without owning the chart of accounts.
+    """
+    PAYMENT_TYPES = (
+        ('casual_labour', 'Casual Labour'),
+        ('salary_advance', 'Salary Advance'),
+        ('customer_refund', 'Customer Refund'),
+        ('utility', 'Utility Bill'),
+        ('rent', 'Rent'),
+        ('transport', 'Transport / Fuel'),
+        ('licence', 'Licence / Permit'),
+        ('loan_repayment', 'Loan Repayment'),
+        ('other', 'Other'),
+    )
+
+    payment_type = models.CharField(max_length=30, choices=PAYMENT_TYPES, default='other')
+    payee = models.CharField(max_length=150, help_text="Person or organisation paid")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_date = models.DateField()
+    method = models.CharField(max_length=20, choices=SupplierPayment.PAYMENT_METHODS, default='cash')
+    bank = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='other_payments',
+                             help_text="Account the money left, if not cash")
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='other_payments')
+    reference = models.CharField(max_length=100, blank=True, help_text="Check no, transaction ID, etc.")
+    description = models.TextField(blank=True)
+    receipt_image = models.ImageField(upload_to='other_payments/%Y/%m/', blank=True, null=True)
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
+                                   related_name='other_payments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-payment_date', '-id']
+
+    def __str__(self):
+        return f"{self.payee} - {self.amount} ({self.get_payment_type_display()})"

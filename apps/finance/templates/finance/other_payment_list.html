@@ -1,0 +1,331 @@
+{% extends 'base.html' %}
+
+{% block title %}Other Payments{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Other Payments</h2>
+        <p class="text-muted mb-0 small">Money paid out that is not a supplier invoice or a tax — casual labour,
+            advances, refunds, utilities.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openModal()">
+        <i class="bi bi-cash-coin"></i> Record Payment
+    </button>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Total Shown</h6>
+                <h3 class="fw-bold mb-0" id="statTotal">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">This Month</h6>
+                <h3 class="fw-bold mb-0" id="statMonth">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-4">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Payments</h6>
+                <h3 class="fw-bold mb-0" id="statCount">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <input type="text" id="searchInput" class="form-control"
+                    placeholder="Search payee, reference or description..." onkeyup="render()">
+            </div>
+            <div class="col-md-4">
+                <select id="typeFilter" class="form-select" onchange="render()">
+                    <option value="">All payment types</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="methodFilter" class="form-select" onchange="render()">
+                    <option value="">All methods</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="check">Check</option>
+                    <option value="mobile_money">Mobile Money</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Paid To</th>
+                        <th>Type</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th class="text-end">Amount</th>
+                        <th class="pe-4">Recorded By</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading payments...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Record Other Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm">
+                    <div class="mb-3">
+                        <label class="form-label">Paid To</label>
+                        <input type="text" class="form-control" id="payee" placeholder="Person or organisation"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Type</label>
+                        <select class="form-select" id="paymentType" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount (TZS)</label>
+                        <input type="number" step="0.01" min="1" class="form-control" id="amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Date</label>
+                        <input type="date" class="form-control" id="paymentDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" id="method" onchange="toggleBank()" required>
+                            <option value="cash">Cash</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="check">Check</option>
+                            <option value="mobile_money">Mobile Money</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="bankGroup" style="display:none;">
+                        <label class="form-label">Paid From</label>
+                        <select class="form-select" id="bank">
+                            <option value="">Select account...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="branch">
+                            <option value="">My branch</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" class="form-control" id="reference" placeholder="Check no, transaction ID">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="description" rows="2"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Save Payment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    // Kept in step with OtherPayment.PAYMENT_TYPES in apps/finance/models.py.
+    const PAYMENT_TYPES = [
+        ['casual_labour', 'Casual Labour'],
+        ['salary_advance', 'Salary Advance'],
+        ['customer_refund', 'Customer Refund'],
+        ['utility', 'Utility Bill'],
+        ['rent', 'Rent'],
+        ['transport', 'Transport / Fuel'],
+        ['licence', 'Licence / Permit'],
+        ['loan_repayment', 'Loan Repayment'],
+        ['other', 'Other']
+    ];
+
+    let payments = [];
+    let modal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+        document.getElementById('paymentForm').addEventListener('submit', handleSubmit);
+
+        const filter = document.getElementById('typeFilter');
+        const field = document.getElementById('paymentType');
+        PAYMENT_TYPES.forEach(t => {
+            filter.innerHTML += '<option value="' + t[0] + '">' + t[1] + '</option>';
+            field.innerHTML += '<option value="' + t[0] + '">' + t[1] + '</option>';
+        });
+
+        loadData();
+    });
+
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadData() {
+        try {
+            const [payRes, bankRes, branchRes] = await Promise.all([
+                fetch('/api/other-payments/'),
+                fetch('/api/bank-accounts/'),
+                fetch('/api/branches/')
+            ]);
+
+            if (!payRes.ok) throw new Error('Could not load payments (' + payRes.status + ')');
+
+            payments = await payRes.json();
+            fillSelect('bank', await bankRes.json(), 'Select account...');
+            fillSelect('branch', await branchRes.json(), 'My branch');
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load payments.</td></tr>';
+        }
+    }
+
+    function fillSelect(id, items, placeholder) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">' + placeholder + '</option>';
+        (items || []).forEach(i => {
+            select.innerHTML += '<option value="' + i.id + '">' + i.name + '</option>';
+        });
+    }
+
+    function render() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const type = document.getElementById('typeFilter').value;
+        const method = document.getElementById('methodFilter').value;
+
+        const rows = payments.filter(p => {
+            const haystack = [p.payee, p.reference, p.description]
+                .map(v => (v || '').toLowerCase()).join(' ');
+            return haystack.includes(term)
+                && (type ? p.payment_type === type : true)
+                && (method ? p.method === method : true);
+        });
+
+        const now = new Date();
+        let total = 0, thisMonth = 0;
+        rows.forEach(p => {
+            const amount = Number(p.amount || 0);
+            total += amount;
+            const d = p.payment_date ? new Date(p.payment_date) : null;
+            if (d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
+                thisMonth += amount;
+            }
+        });
+        document.getElementById('statTotal').innerText = money(total);
+        document.getElementById('statMonth').innerText = money(thisMonth);
+        document.getElementById('statCount').innerText = rows.length;
+
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No payments found</td></tr>';
+            return;
+        }
+
+        rows.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                <td class="fw-medium">${escapeHtml(p.payee)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(p.payment_type_display || '')}</span></td>
+                <td>${escapeHtml(p.method_display || '')}</td>
+                <td>${escapeHtml(p.reference || '-')}</td>
+                <td class="text-end fw-bold">${money(p.amount)}</td>
+                <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function toggleBank() {
+        const cash = document.getElementById('method').value === 'cash';
+        document.getElementById('bankGroup').style.display = cash ? 'none' : '';
+    }
+
+    function openModal() {
+        document.getElementById('paymentForm').reset();
+        document.getElementById('paymentDate').valueAsDate = new Date();
+        toggleBank();
+        modal.show();
+    }
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        const cash = document.getElementById('method').value === 'cash';
+        const payload = {
+            payee: document.getElementById('payee').value,
+            payment_type: document.getElementById('paymentType').value,
+            amount: document.getElementById('amount').value,
+            payment_date: document.getElementById('paymentDate').value,
+            method: document.getElementById('method').value,
+            bank: cash ? null : (document.getElementById('bank').value || null),
+            branch: document.getElementById('branch').value || null,
+            reference: document.getElementById('reference').value,
+            description: document.getElementById('description').value
+        };
+
+        try {
+            const res = await fetch('/api/other-payments/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                modal.hide();
+                Swal.fire('Saved', 'Payment recorded', 'success');
+                loadData();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || JSON.stringify(err), 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            Swal.fire('Error', 'Could not save the payment', 'error');
+        }
+    }
+</script>
+{% endblock %}

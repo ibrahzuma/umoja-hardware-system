@@ -1,30 +1,72 @@
 {% extends 'base.html' %}
 
+{% block title %}Supplier Payments{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="text-primary fw-bold">Supplier Payments</h2>
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Supplier Payments</h2>
+        <p class="text-muted mb-0 small">Paid against the purchase orders Afisa Ugavi raised.</p>
+    </div>
     <button class="btn btn-primary" onclick="openModal()">
         <i class="bi bi-cash-stack"></i> Record Payment
     </button>
 </div>
 
+<!-- Outstanding purchase orders -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-file-earmark-text"></i> Purchase Orders Awaiting Payment</span>
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="showSettled" onchange="loadOrders()">
+            <label class="form-check-label small text-muted" for="showSettled">Include settled orders</label>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Order</th>
+                        <th>Supplier</th>
+                        <th>Raised By</th>
+                        <th>Status</th>
+                        <th class="text-end">Order Total</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Balance</th>
+                        <th class="text-end pe-4"></th>
+                    </tr>
+                </thead>
+                <tbody id="orderTableBody">
+                    <tr>
+                        <td colspan="8" class="text-center py-4">Loading purchase orders...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Payments made -->
 <div class="card shadow-sm">
+    <div class="card-header bg-white fw-bold"><i class="bi bi-receipt"></i> Payments Made</div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="bg-light">
                     <tr>
                         <th class="ps-4">Date</th>
+                        <th>Order</th>
                         <th>Supplier</th>
                         <th>Method</th>
                         <th>Reference</th>
-                        <th>Amount</th>
-                        <th>Recorded By</th>
+                        <th class="text-end">Amount</th>
+                        <th class="pe-4">Recorded By</th>
                     </tr>
                 </thead>
                 <tbody id="paymentTableBody">
                     <tr>
-                        <td colspan="6" class="text-center py-4">Loading payments...</td>
+                        <td colspan="7" class="text-center py-4">Loading payments...</td>
                     </tr>
                 </tbody>
             </table>
@@ -43,12 +85,21 @@
             <div class="modal-body">
                 <form id="paymentForm">
                     <div class="mb-3">
+                        <label class="form-label">Purchase Order</label>
+                        <select class="form-select" id="purchaseOrder" onchange="onOrderChange()" required>
+                            <option value="">Select a purchase order...</option>
+                        </select>
+                        <small class="text-muted" id="orderHint">The supplier comes from the order.</small>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Supplier</label>
-                        <select class="form-select" id="supplier" required></select>
+                        <input type="text" class="form-control" id="supplierDisplay" readonly
+                            placeholder="Pick an order first">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Amount</label>
-                        <input type="number" step="0.01" class="form-control" id="amount" required>
+                        <input type="number" step="0.01" min="1" class="form-control" id="amount" required>
+                        <small class="text-muted" id="balanceHint"></small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Payment Date</label>
@@ -69,7 +120,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Notes</label>
-                        <textarea class="form-control" id="notes"></textarea>
+                        <textarea class="form-control" id="notes" rows="2"></textarea>
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">Save Payment</button>
@@ -84,68 +135,163 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+    // Purchase orders payable right now, keyed by id. This is also the supplier
+    // list: a payment is always against an order Afisa Ugavi raised.
+    let orders = [];
     let modal;
 
     document.addEventListener('DOMContentLoaded', function () {
         modal = new bootstrap.Modal(document.getElementById('paymentModal'));
-        loadData();
         document.getElementById('paymentForm').addEventListener('submit', handleSubmit);
-
-        // Set today's date
         document.getElementById('paymentDate').valueAsDate = new Date();
+        loadOrders();
+        loadPayments();
     });
 
-    async function loadData() {
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadOrders() {
+        const settled = document.getElementById('showSettled').checked ? '1' : '0';
         try {
-            const [payRes, supRes] = await Promise.all([
-                fetch('/api/supplier-payments/'),
-                fetch('/api/suppliers/')
-            ]);
+            const res = await fetch('/api/supplier-payments/payable_orders/?settled=' + settled);
+            if (!res.ok) throw new Error('status ' + res.status);
+            orders = await res.json();
+            renderOrders();
+            populateOrderSelect();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('orderTableBody').innerHTML =
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load purchase orders.</td></tr>';
+        }
+    }
 
-            const payments = await payRes.json();
-            const suppliers = await supRes.json();
+    function renderOrders() {
+        const tbody = document.getElementById('orderTableBody');
+        tbody.innerHTML = '';
+        if (orders.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">' +
+                'No purchase orders are awaiting payment.</td></tr>';
+            return;
+        }
 
-            renderPayments(payments);
-            populateSupplierSelect(suppliers);
-        } catch (e) { console.error(e); }
+        orders.forEach(o => {
+            const settled = Number(o.balance) <= 0;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4 fw-bold">${escapeHtml(o.label)}
+                    <div><small class="text-muted">${o.order_date ? new Date(o.order_date).toLocaleDateString() : ''}</small></div>
+                </td>
+                <td class="fw-medium">${escapeHtml(o.supplier_name)}</td>
+                <td><small class="text-muted">${escapeHtml(o.raised_by || '-')}</small></td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(o.status_display)}</span></td>
+                <td class="text-end">${money(o.total_amount)}</td>
+                <td class="text-end text-success">${money(o.paid_amount)}</td>
+                <td class="text-end fw-bold ${settled ? 'text-muted' : 'text-danger'}">${money(o.balance)}</td>
+                <td class="text-end pe-4">
+                    ${settled
+                    ? '<span class="badge bg-success">Settled</span>'
+                    : '<button class="btn btn-sm btn-outline-primary" onclick="openModal(' + o.id + ')">Pay</button>'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function populateOrderSelect() {
+        const select = document.getElementById('purchaseOrder');
+        const keep = select.value;
+        select.innerHTML = '<option value="">Select a purchase order...</option>';
+        orders.forEach(o => {
+            const text = o.label + ' - ' + o.supplier_name + ' - balance ' + money(o.balance);
+            select.innerHTML += '<option value="' + o.id + '">' + escapeHtml(text) + '</option>';
+        });
+        if (keep) select.value = keep;
+    }
+
+    function onOrderChange() {
+        const id = document.getElementById('purchaseOrder').value;
+        const order = orders.find(o => String(o.id) === id);
+        const supplierBox = document.getElementById('supplierDisplay');
+        const balanceHint = document.getElementById('balanceHint');
+        const amount = document.getElementById('amount');
+
+        if (!order) {
+            supplierBox.value = '';
+            balanceHint.innerText = '';
+            amount.value = '';
+            return;
+        }
+
+        supplierBox.value = order.supplier_name;
+        balanceHint.innerText = 'Order total ' + money(order.total_amount) +
+            ' | already paid ' + money(order.paid_amount) +
+            ' | balance ' + money(order.balance);
+        // Default to clearing the balance; the payer can type a part payment.
+        amount.value = Number(order.balance) > 0 ? Number(order.balance) : '';
+    }
+
+    async function loadPayments() {
+        try {
+            const res = await fetch('/api/supplier-payments/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            renderPayments(await res.json());
+        } catch (e) {
+            console.error(e);
+            document.getElementById('paymentTableBody').innerHTML =
+                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load payments.</td></tr>';
+        }
     }
 
     function renderPayments(data) {
         const tbody = document.getElementById('paymentTableBody');
         tbody.innerHTML = '';
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No payments found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No payments found</td></tr>';
             return;
         }
 
         data.forEach(p => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td class="ps-4">${new Date(p.payment_date).toLocaleDateString()}</td>
-                <td class="fw-medium">${p.supplier_name}</td>
-                <td>${p.method.replace('_', ' ').toUpperCase()}</td>
-                <td>${p.reference || '-'}</td>
-                <td class="fw-bold">TZS ${Math.round(Number(p.amount)).toLocaleString()}</td>
-                <td><small class="text-muted">${p.created_by_name || '-'}</small></td>
+                <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                <td>${p.po_number
+                    ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
+                    : '<small class="text-muted">-</small>'}</td>
+                <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
+                <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
+                <td>${escapeHtml(p.reference || '-')}</td>
+                <td class="text-end fw-bold">${money(p.amount)}</td>
+                <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
             `;
             tbody.appendChild(tr);
         });
     }
 
-    function populateSupplierSelect(suppliers) {
-        const select = document.getElementById('supplier');
-        select.innerHTML = '<option value="">Select Supplier...</option>';
-        suppliers.forEach(s => {
-            select.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-        });
+    function openModal(orderId) {
+        document.getElementById('paymentForm').reset();
+        document.getElementById('paymentDate').valueAsDate = new Date();
+        document.getElementById('purchaseOrder').value = orderId ? String(orderId) : '';
+        onOrderChange();
+        modal.show();
     }
-
-    function openModal() { modal.show(); }
 
     async function handleSubmit(e) {
         e.preventDefault();
+        const orderId = document.getElementById('purchaseOrder').value;
+        if (!orderId) {
+            Swal.fire('Pick an order', 'Choose the purchase order this payment settles.', 'info');
+            return;
+        }
+
         const data = {
-            supplier: document.getElementById('supplier').value,
+            purchase_order: orderId,
             amount: document.getElementById('amount').value,
             payment_date: document.getElementById('paymentDate').value,
             method: document.getElementById('method').value,
@@ -163,13 +309,17 @@
             if (res.ok) {
                 modal.hide();
                 Swal.fire('Success', 'Payment recorded', 'success');
-                loadData();
-                document.getElementById('paymentForm').reset();
-                document.getElementById('paymentDate').valueAsDate = new Date();
+                loadOrders();
+                loadPayments();
             } else {
-                Swal.fire('Error', 'Failed to record payment', 'error');
+                const err = await res.json().catch(() => ({}));
+                const first = err.detail || (Object.values(err)[0] || 'Failed to record payment');
+                Swal.fire('Error', Array.isArray(first) ? first[0] : String(first), 'error');
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to record payment', 'error');
+        }
     }
 </script>
 {% endblock %}
