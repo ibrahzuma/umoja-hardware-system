@@ -127,6 +127,9 @@ See `DEPLOYMENT.md` for one-time server setup.
       confirming a customer payment would clear a debtor with nothing to replace it and net assets would fall.
       The system holds no capital, drawings or fixed-asset records, so the gap between net assets and retained
       earnings is shown as **unrecorded** rather than plugged into equity — do not "fix" that by balancing it.
+      Creditors exclude **draft** purchase orders as well as cancelled ones: a draft is an order somebody is
+      still typing, and the business owes nothing on it. (`payable_orders` deliberately still offers drafts —
+      paying early is normal — so the two rules differ on purpose.)
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
     is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
     way — the ledger mirrors, it does not authorise.

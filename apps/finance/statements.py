@@ -223,9 +223,15 @@ def _debtors():
 
 def _creditors():
     """What is still owed on purchase orders, per order — being short on one
-    order does not cancel an overpayment on another, that is a credit."""
+    order does not cancel an overpayment on another, that is a credit.
+
+    **Drafts do not count.** A draft is an order somebody is still typing; the
+    business has not committed to it and owes nothing on it. The payment screen
+    offers drafts deliberately (a supplier is often paid before an order is
+    confirmed), but a balance sheet liability begins when the order is placed.
+    """
     orders = (PurchaseOrder.objects
-              .exclude(status='cancelled')
+              .exclude(status__in=['cancelled', 'draft'])
               .filter(supplier__isnull=False)
               .values_list('total_amount', 'id'))
     paid_by_order = {
@@ -289,7 +295,8 @@ def balance_sheet():
             _line('Credit held with suppliers', supplier_credit, 'Overpayments not yet applied', 'revenue'),
         ],
         'liability_lines': [
-            _line('Owed to suppliers', creditors, 'Purchase orders less approved payments'),
+            _line('Owed to suppliers', creditors,
+                  'Placed purchase orders less approved payments; drafts are not a commitment'),
         ],
         'caveats': [
             'Cash is derived from the movements this system holds, not read from a bank statement — '
