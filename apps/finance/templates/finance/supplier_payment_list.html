@@ -53,7 +53,21 @@
 
 <!-- Payments made -->
 <div class="card shadow-sm">
-    <div class="card-header bg-white fw-bold"><i class="bi bi-receipt"></i> Payments Made</div>
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-bold"><i class="bi bi-receipt"></i> Payments Made</span>
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <select id="monthFilter" class="form-select form-select-sm" style="max-width:200px;"
+                onchange="renderPayments()">
+                <option value="">All months</option>
+            </select>
+            <input type="text" id="paymentSearch" class="form-control form-control-sm" style="max-width:200px;"
+                placeholder="Search supplier or ref..." onkeyup="renderPayments()">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="bySupplier" onchange="renderPayments()">
+                <label class="form-check-label small text-muted" for="bySupplier">Totals per supplier</label>
+            </div>
+        </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -143,6 +157,8 @@
     // Purchase orders payable right now, keyed by id. This is also the supplier
     // list: a payment is always against an order Afisa Ugavi raised.
     let orders = [];
+    // Payments already made, grouped into months by the table below.
+    let payments = [];
     let modal;
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -251,7 +267,9 @@
         try {
             const res = await fetch('/api/supplier-payments/');
             if (!res.ok) throw new Error('status ' + res.status);
-            renderPayments(await res.json());
+            payments = await res.json();
+            populateMonthFilter();
+            renderPayments();
         } catch (e) {
             console.error(e);
             document.getElementById('paymentTableBody').innerHTML =
@@ -259,29 +277,124 @@
         }
     }
 
-    function renderPayments(data) {
+    // A payment's month, as a sortable key ("2026-09") and a heading
+    // ("September 2026"). Built off the date string rather than a Date so a
+    // payment never slides into the neighbouring month on a timezone shift.
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+
+    function monthKey(p) {
+        return (p.payment_date || '').slice(0, 7);
+    }
+
+    function monthLabel(key) {
+        if (!key) return 'Undated';
+        const parts = key.split('-');
+        return MONTH_NAMES[Number(parts[1]) - 1] + ' ' + parts[0];
+    }
+
+    function populateMonthFilter() {
+        const select = document.getElementById('monthFilter');
+        const keep = select.value;
+        const keys = Array.from(new Set(payments.map(monthKey))).sort().reverse();
+        select.innerHTML = '<option value="">All months</option>';
+        keys.forEach(k => {
+            select.innerHTML += '<option value="' + k + '">' + escapeHtml(monthLabel(k)) + '</option>';
+        });
+        if (keep && keys.indexOf(keep) !== -1) select.value = keep;
+    }
+
+    function renderPayments() {
         const tbody = document.getElementById('paymentTableBody');
+        const month = document.getElementById('monthFilter').value;
+        const term = (document.getElementById('paymentSearch').value || '').toLowerCase();
+        const perSupplier = document.getElementById('bySupplier').checked;
+
+        const rows = payments.filter(p => {
+            const haystack = [p.supplier_name, p.reference, p.po_number, p.created_by_name]
+                .map(v => (v || '').toLowerCase()).join(' ');
+            return haystack.includes(term) && (month ? monthKey(p) === month : true);
+        });
+
         tbody.innerHTML = '';
-        if (data.length === 0) {
+        if (rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No payments found</td></tr>';
             return;
         }
 
-        data.forEach(p => {
+        // Newest month first; within a month, newest payment first.
+        const groups = {};
+        rows.forEach(p => {
+            const k = monthKey(p);
+            (groups[k] = groups[k] || []).push(p);
+        });
+
+        Object.keys(groups).sort().reverse().forEach(key => {
+            const group = groups[key].slice().sort(
+                (a, b) => String(b.payment_date).localeCompare(String(a.payment_date)));
+            const total = group.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+            const head = document.createElement('tr');
+            head.className = 'table-light';
+            head.innerHTML = `
+                <td class="ps-4 fw-bold" colspan="5">
+                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(monthLabel(key))}
+                    <span class="text-muted fw-normal ms-2">${group.length}
+                        payment${group.length === 1 ? '' : 's'}</span>
+                </td>
+                <td class="text-end fw-bold">${money(total)}</td>
+                <td class="pe-4"></td>
+            `;
+            tbody.appendChild(head);
+
+            if (perSupplier) {
+                appendSupplierTotals(tbody, group);
+            } else {
+                group.forEach(p => appendPaymentRow(tbody, p));
+            }
+        });
+    }
+
+    // One row per supplier inside the month, with what they were paid.
+    function appendSupplierTotals(tbody, group) {
+        const totals = {};
+        group.forEach(p => {
+            const name = p.supplier_name || '-';
+            if (!totals[name]) totals[name] = { amount: 0, count: 0 };
+            totals[name].amount += Number(p.amount || 0);
+            totals[name].count += 1;
+        });
+
+        Object.keys(totals).sort((a, b) => totals[b].amount - totals[a].amount).forEach(name => {
+            const t = totals[name];
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
-                <td>${p.po_number
-                    ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
-                    : '<small class="text-muted">-</small>'}</td>
-                <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
-                <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
-                <td>${escapeHtml(p.reference || '-')}</td>
-                <td class="text-end fw-bold">${money(p.amount)}</td>
-                <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+                <td class="ps-4"></td>
+                <td></td>
+                <td class="fw-medium">${escapeHtml(name)}</td>
+                <td colspan="2"><small class="text-muted">${t.count}
+                    payment${t.count === 1 ? '' : 's'}</small></td>
+                <td class="text-end fw-bold">${money(t.amount)}</td>
+                <td class="pe-4"></td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    function appendPaymentRow(tbody, p) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+            <td>${p.po_number
+                ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
+                : '<small class="text-muted">-</small>'}</td>
+            <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
+            <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
+            <td>${escapeHtml(p.reference || '-')}</td>
+            <td class="text-end fw-bold">${money(p.amount)}</td>
+            <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+        `;
+        tbody.appendChild(tr);
     }
 
     function openModal(orderId) {
