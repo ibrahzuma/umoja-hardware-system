@@ -217,6 +217,13 @@ preserve this when adding new tracked models.
 - `static/js/api_service.js` wraps `fetch` against `/api` with the CSRF header and unwraps DRF error payloads
   (`error` / `detail`). Page JS talks to the REST API rather than posting forms, in most screens.
 - Bootstrap 5 (CDN) + Bootstrap Icons; money is rendered in whole TZS with thousands separators.
+- **Every long table pages itself.** `static/js/table_pager.js` is loaded from `base.html` for all pages and
+  works at the DOM level — it watches each `<tbody>` and, after whatever drew the rows (a fetch, a Django loop,
+  a keystroke re-render), shows one page and draws 10/25/50/100 controls. Nothing per-page is needed. A table
+  with 10 rows or fewer is left exactly as it was, a placeholder row ("Loading…", "No data found") is never
+  paged, tables inside a `.modal` are skipped, and `data-no-paginate` on a `<table>` opts out — used where every
+  row must be on screen at once (a cart being built, the items of one order being cross-checked, a payslip) or
+  where the screen already paginates server-side (CRM, the stock movement report).
 - **Template namespacing is inconsistent:** `apps/core/templates/` holds *unnamespaced* templates
   (`dashboard.html`, `product_list.html`, `inventory_*.html`, `settings.html`, …) while every other app namespaces
   under `templates/<app>/`. Follow the namespaced pattern for new templates.
