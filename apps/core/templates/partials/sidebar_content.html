@@ -139,8 +139,11 @@ adding another duplicate will not make two menus spring open at once.
         <ul class="collapse list-unstyled" id="cashierSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'finance:petty_cash' %}"><i class="bi bi-wallet2"></i> Petty Cash</a></li>
             {% if user.is_superuser or user.is_admin_role or user.is_cashier %}
-            {# Paying suppliers is the cash desk's alone — an accountant sees the
-               rest of this menu but not this, so it can never 403 on them. #}
+            {% comment %}
+            Paying suppliers is the cash desk's alone — an accountant sees the
+            rest of this menu but not these two, so they can never 403 on them.
+            ({# #} cannot span lines in Django: it would render as menu text.)
+            {% endcomment %}
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payment</a></li>
             <li><a href="{% url 'finance:supplier_accounts' %}"><i class="bi bi-person-rolodex"></i> By Supplier</a></li>
             {% endif %}
