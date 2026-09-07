@@ -261,6 +261,13 @@ preserve this when adding new tracked models.
 - `static/js/api_service.js` wraps `fetch` against `/api` with the CSRF header and unwraps DRF error payloads
   (`error` / `detail`). Page JS talks to the REST API rather than posting forms, in most screens.
 - Bootstrap 5 (CDN) + Bootstrap Icons; money is rendered in whole TZS with thousands separators.
+- **Any table can export itself.** `static/js/table_export.js` (loaded from `base.html` beside the pager) adds
+  an Export CSV / Print bar to any `<table data-export="Name">`. It writes what the filters left behind —
+  *including* rows paging has scrolled past, since somebody exporting wants the whole filtered set — with a
+  UTF-8 BOM and CRLF so Excel opens it cleanly. Client-side on purpose: these screens already hold every row
+  they show, so there is no endpoint to keep in step with the filters. Currently on the cash desk's four
+  screens (petty cash, supplier payments' two tables, other payments, by supplier); add the attribute to
+  offer it anywhere else.
 - **Every long table pages itself.** `static/js/table_pager.js` is loaded from `base.html` for all pages and
   works at the DOM level — it watches each `<tbody>` and, after whatever drew the rows (a fetch, a Django loop,
   a keystroke re-render), shows one page and draws 10/25/50/100 controls. Nothing per-page is needed. A table

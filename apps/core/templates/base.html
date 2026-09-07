@@ -221,7 +221,8 @@
     <script src="{% static 'js/socket_service.js' %}"></script>
     <script src="{% static 'js/notification_handler.js' %}"></script>
     {% block extra_js %}{% endblock %}
-    {# Loaded last so it sees the rows a page's own script has just drawn. #}
+    {# Loaded last so they see the rows a page's own script has just drawn. #}
     <script src="{% static 'js/table_pager.js' %}"></script>
+    <script src="{% static 'js/table_export.js' %}"></script>
 </body>
 </html>
