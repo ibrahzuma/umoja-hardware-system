@@ -88,9 +88,14 @@ class CanHandleGRN(_RolePermission):
 
 
 class CanRecordSupplierPayment(_RolePermission):
-    """Supplier payments appear in the Accountant, Afisa Ugavi (procurement)
-    and Cashier workspaces, so any of those roles may record them."""
-    allowed = ('is_accountant', 'is_procurement_officer', 'is_cashier')
+    """Paying a supplier is the cash desk's job and nobody else's.
+
+    Afisa Ugavi raises the order; the cashier settles it. Keeping the two apart
+    means the person who commits the company to a purchase is not also the
+    person who pays it out. Admins keep blanket access via `is_privileged`.
+    Mirrored by `apps/finance/views.py::can_record_supplier_payment`, which
+    gates the screen."""
+    allowed = ('is_cashier',)
 
 
 class CanHandleCash(_RolePermission):

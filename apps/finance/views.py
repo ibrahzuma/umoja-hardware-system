@@ -132,8 +132,21 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             })
         return Response(rows)
 
-class SupplierPaymentListView(LoginRequiredMixin, TemplateView):
+def can_record_supplier_payment(user):
+    """Who may see and use the supplier payment screen: the cash desk, and
+    admins. Same rule as `CanRecordSupplierPayment` guards on the API, so the
+    sidebar can never offer a screen that then returns 403."""
+    return bool(
+        user and user.is_authenticated
+        and (is_privileged(user) or getattr(user, 'is_cashier', False))
+    )
+
+
+class SupplierPaymentListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'finance/supplier_payment_list.html'
+
+    def test_func(self):
+        return can_record_supplier_payment(self.request.user)
 
 class TaxPaymentViewSet(viewsets.ModelViewSet):
     queryset = TaxPayment.objects.all().order_by('-payment_date')

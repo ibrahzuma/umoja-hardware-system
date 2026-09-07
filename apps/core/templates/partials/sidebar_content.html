@@ -32,7 +32,6 @@ adding another duplicate will not make two menus spring open at once.
         <ul class="collapse list-unstyled" id="procurementSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'inventory:purchase_order_list' %}"><i class="bi bi-file-earmark-text"></i> Purchase Orders</a></li>
             <li><a href="{% url 'inventory:manage_supplier' %}"><i class="bi bi-shop"></i> Suppliers</a></li>
-            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-coin"></i> Supplier Payments</a></li>
             <li><a href="{% url 'inventory:truck_list' %}"><i class="bi bi-truck"></i> Truck Allocation</a></li>
             <li><a href="{% url 'inventory:transport_management' %}"><i class="bi bi-truck-front"></i> Transport Management</a></li>
             <li><a href="{% url 'inventory:stock_management' %}"><i class="bi bi-boxes"></i> Stock Checking</a></li>
@@ -122,7 +121,6 @@ adding another duplicate will not make two menus spring open at once.
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
             <li><a href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph"></i> Expense Report</a></li>
-            <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payments</a></li>
             <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes &amp; Govt</a></li>
             <li><a href="{% url 'finance:other_income' %}"><i class="bi bi-graph-up-arrow"></i> Income &amp; Banking</a></li>
             <li><a href="{% url 'finance:payment_receipt_list' %}"><i class="bi bi-receipt-cutoff"></i> Payment Receipts</a></li>
@@ -140,7 +138,11 @@ adding another duplicate will not make two menus spring open at once.
         </a>
         <ul class="collapse list-unstyled" id="cashierSubmenu" data-bs-parent="#sidebarAccordion">
             <li><a href="{% url 'finance:petty_cash' %}"><i class="bi bi-wallet2"></i> Petty Cash</a></li>
+            {% if user.is_superuser or user.is_admin_role or user.is_cashier %}
+            {# Paying suppliers is the cash desk's alone — an accountant sees the
+               rest of this menu but not this, so it can never 403 on them. #}
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payment</a></li>
+            {% endif %}
             <li><a href="{% url 'finance:other_payments' %}"><i class="bi bi-arrow-right-circle"></i> Other Payments</a></li>
         </ul>
     </li>
