@@ -131,6 +131,13 @@
                 <div class="text-muted text-uppercase" style="font-size:.7rem;">Balance</div>
                 <div class="fw-bold text-primary">{{ item.closing|floatformat:0|intcomma }}</div>
             </div>
+            {# Stops the click from also folding the ledger away underneath. #}
+            <a class="btn btn-sm btn-outline-success"
+               title="Export just this item, with the filters above still applied"
+               onclick="event.stopPropagation();"
+               href="{% url 'inventory:stock_movement_export' %}?product={{ item.product.id }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
+                <i class="bi bi-file-earmark-excel"></i> Export
+            </a>
             <i class="bi bi-chevron-down text-muted"></i>
         </div>
     </div>

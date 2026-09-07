@@ -1522,6 +1522,9 @@ def _movement_filters(params):
         'category_id': (params.get('category') or '').strip() or None,
         'q': (params.get('q') or '').strip(),
         'direction': direction if direction in ('in', 'out') else '',
+        # One item on its own, for the per-item export. Every other filter
+        # still applies, so the file matches what was on screen.
+        'product_id': (params.get('product') or '').strip() or None,
     }
 
 
@@ -1571,6 +1574,8 @@ def _movement_products(filters):
         direction=filters['direction'],
     )
     qs = Product.objects.filter(id__in=ids)
+    if filters.get('product_id'):
+        qs = qs.filter(id=filters['product_id'])
     if filters['category_id']:
         qs = qs.filter(category_id=filters['category_id'])
     if filters['q']:
@@ -1652,6 +1657,10 @@ def _movement_filter_labels(filters):
         labels.append("Search: %s" % filters['q'])
     if filters['direction']:
         labels.append("Showing: %s only" % ('goods in' if filters['direction'] == 'in' else 'goods out'))
+    if filters.get('product_id'):
+        product = Product.objects.filter(id=filters['product_id']).first()
+        if product:
+            labels.append("Item: %s%s" % (product.name, " (%s)" % product.sku if product.sku else ""))
     return labels
 
 
@@ -1731,5 +1740,12 @@ def _export_movements_excel(items, filters):
     resp = HttpResponse(
         buf.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = 'attachment; filename="stock_in_vs_out_%s.xlsx"' % date.today().isoformat()
+    # A one-item file is named for the item, so a folder of them is readable.
+    stem = 'stock_in_vs_out'
+    if len(items) == 1:
+        import re as _re
+        only = _re.sub(r'[^a-zA-Z0-9]+', '_', items[0]['product'].name).strip('_').lower()
+        if only:
+            stem = '%s_%s' % (stem, only[:40])
+    resp['Content-Disposition'] = 'attachment; filename="%s_%s.xlsx"' % (stem, date.today().isoformat())
     return resp

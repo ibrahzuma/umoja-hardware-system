@@ -334,6 +334,10 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   so paginating it returns rows in an arbitrary order per page — duplicates on one page, omissions on the next.
   This bit the CRM list for real. Always `.order_by(...)` with a unique tiebreaker (id) after annotating
   anything you intend to paginate; see `apps/crm/views.py::_with_payments`.
+- **Stock In vs Out exports per item as well as whole.** `?product=<id>` on
+  `inventory:stock_movement_export` narrows the workbook to one item while every other filter still applies,
+  and the filename picks up the item's name so a folder of them stays readable. The report puts an Export
+  button on each item's card; `_movement_filters` reads the parameter and `_movement_products` applies it.
 - **One-off scripts live in `scripts/`.** Mostly `verify_*.py` / `reproduce_*.py` debugging aids, server
   provisioning/hardening shell scripts, seeders, and the docs capture tooling — not part of the runtime.
   Don't import from them.
