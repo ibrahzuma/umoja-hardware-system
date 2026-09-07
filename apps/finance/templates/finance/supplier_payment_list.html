@@ -193,14 +193,13 @@
         rows.forEach(o => {
             const settled = o.settled;
             const tr = document.createElement('tr');
-            if (o.cancelled) tr.classList.add('text-muted');
             tr.innerHTML = `
                 <td class="ps-4 fw-bold">${escapeHtml(o.label)}
                     <div><small class="text-muted">${o.order_date ? new Date(o.order_date).toLocaleDateString() : ''}</small></div>
                 </td>
                 <td class="fw-medium">${escapeHtml(o.supplier_name)}</td>
                 <td><small class="text-muted">${escapeHtml(o.raised_by || '-')}</small></td>
-                <td><span class="badge ${o.cancelled ? 'bg-secondary' : 'bg-light text-dark border'}">${escapeHtml(o.status_display)}</span></td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(o.status_display)}</span></td>
                 <td class="text-end">${money(o.total_amount)}</td>
                 <td class="text-end text-success">${money(o.paid_amount)}</td>
                 <td class="text-end fw-bold ${settled ? 'text-muted' : 'text-danger'}">${money(o.balance)}</td>

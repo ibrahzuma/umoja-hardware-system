@@ -87,16 +87,18 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
     def payable_orders(self, request):
         """The purchase orders a payment can be recorded against.
 
-        Every supplier the payer can choose comes from here: *every* order
-        Afisa Ugavi has raised, drafts included — a supplier is often paid
-        before the order is confirmed. The only orders left out are ones with
-        no supplier on them, which could not name a payee. Each row carries
-        what has already been paid so the form can default to the balance.
+        Every supplier the payer can choose comes from here: every order Afisa
+        Ugavi has raised, drafts included — a supplier is often paid before the
+        order is confirmed. Left out are cancelled orders (nothing is owed on
+        an order that was called off) and orders with no supplier on them,
+        which could not name a payee. Each row carries what has already been
+        paid so the form can default to the balance.
 
         GET ?settled=0 (the default) hides orders that have been paid off; an
         order nobody has paid against yet always shows, whatever its total.
         """
         orders = (PurchaseOrder.objects
+                  .exclude(status='cancelled')
                   .filter(supplier__isnull=False)
                   .select_related('supplier', 'created_by')
                   .annotate(paid_total=Sum('payments__amount'))
@@ -126,7 +128,6 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'paid_amount': str(paid),
                 'balance': str(balance),
                 'settled': bool(paid > 0 and balance <= 0),
-                'cancelled': po.status == 'cancelled',
                 'raised_by': (raised_by.get_full_name() or raised_by.username) if raised_by else '',
             })
         return Response(rows)
