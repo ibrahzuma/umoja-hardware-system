@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+
+{% block title %}Request Petty Cash{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">My Petty Cash</h2>
+        <p class="text-muted mb-0 small">Ask for cash from your own account. An Admin approves it, then the cash
+            desk hands it over.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openRequest()">
+        <i class="bi bi-plus-circle"></i> Request cash
+    </button>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <ol class="mb-0 small text-muted d-flex flex-wrap gap-4 list-unstyled">
+            <li><span class="badge bg-warning text-dark">1</span> You ask</li>
+            <li><span class="badge bg-info text-dark">2</span> An Admin approves</li>
+            <li><span class="badge bg-primary">3</span> The cashier hands it over</li>
+            <li><span class="badge bg-success">4</span> Done — it comes off the float</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-bold"><i class="bi bi-wallet2"></i> My requests</span>
+        <select id="statusFilter" class="form-select form-select-sm" style="max-width:200px;"
+            onchange="render()">
+            <option value="">All</option>
+            <option value="pending">Awaiting approval</option>
+            <option value="approved">Approved — to collect</option>
+            <option value="issued">Issued</option>
+            <option value="rejected">Rejected</option>
+        </select>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Asked</th>
+                        <th>Purpose</th>
+                        <th>Category</th>
+                        <th class="text-end">Amount</th>
+                        <th>Status</th>
+                        <th>Voucher</th>
+                        <th class="text-end pe-4"></th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="7" class="text-center py-4">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="requestModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Request Petty Cash</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="requestForm">
+                    <div class="mb-3">
+                        <label class="form-label">Amount (TZS)</label>
+                        <input type="number" step="0.01" min="1" class="form-control" id="amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">What is it for?</label>
+                        <textarea class="form-control" id="purpose" rows="2" required
+                            placeholder="e.g. Fuel for the Arusha delivery"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="category">
+                            <option value="">Uncategorized</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Branch</label>
+                        <select class="form-select" id="branch">
+                            <option value="">My branch</option>
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-send"></i> Send for approval
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let requests = [];
+    let requestModal;
+
+    const BADGE = {
+        pending: 'bg-warning text-dark', approved: 'bg-info text-dark',
+        issued: 'bg-success', rejected: 'bg-danger',
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        requestModal = new bootstrap.Modal(document.getElementById('requestModal'));
+        document.getElementById('requestForm').addEventListener('submit', submitRequest);
+        loadPickers();
+        load();
+    });
+
+    function money(v) { return 'TZS ' + Math.round(Number(v || 0)).toLocaleString(); }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadPickers() {
+        try {
+            const [cats, branches] = await Promise.all([
+                fetch('/api/expense-categories/'), fetch('/api/branches/')
+            ]);
+            if (cats.ok) fill('category', await cats.json(), 'Uncategorized');
+            if (branches.ok) fill('branch', await branches.json(), 'My branch');
+        } catch (e) { console.error(e); }
+    }
+
+    function fill(id, items, placeholder) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">' + placeholder + '</option>';
+        (items || []).forEach(i => {
+            select.innerHTML += '<option value="' + i.id + '">' + escapeHtml(i.name) + '</option>';
+        });
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/petty-cash-requests/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            requests = await res.json();
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load your requests.</td></tr>';
+        }
+    }
+
+    function render() {
+        const status = document.getElementById('statusFilter').value;
+        const rows = requests.filter(r => status ? r.status === status : true);
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">' +
+                'Nothing here yet.</td></tr>';
+            return;
+        }
+
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
+                <td class="fw-medium">${escapeHtml(r.purpose)}</td>
+                <td><small class="text-muted">${escapeHtml(r.category_name || '—')}</small></td>
+                <td class="text-end fw-bold">${money(r.amount)}</td>
+                <td><span class="badge ${BADGE[r.status] || 'bg-secondary'}">
+                        ${escapeHtml(r.status_display || '')}</span>
+                    ${r.decision_note
+                    ? '<div><small class="text-muted">' + escapeHtml(r.decision_note) + '</small></div>' : ''}</td>
+                <td><small class="text-muted">${escapeHtml(r.voucher_number || '—')}</small></td>
+                <td class="text-end pe-4">
+                    ${r.status === 'pending'
+                    ? '<button class="btn btn-sm btn-outline-danger" onclick="withdraw(' + r.id + ')">'
+                      + '<i class="bi bi-x-lg"></i> Withdraw</button>'
+                    : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openRequest() {
+        document.getElementById('requestForm').reset();
+        requestModal.show();
+    }
+
+    async function submitRequest(e) {
+        e.preventDefault();
+        const payload = {
+            amount: document.getElementById('amount').value,
+            purpose: document.getElementById('purpose').value,
+            category: document.getElementById('category').value || null,
+            branch: document.getElementById('branch').value || null,
+        };
+        try {
+            const res = await fetch('/api/petty-cash-requests/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                requestModal.hide();
+                Swal.fire('Sent', 'An Admin has it for approval', 'success');
+                load();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || JSON.stringify(err), 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not send the request', 'error');
+        }
+    }
+
+    async function withdraw(id) {
+        const ok = await Swal.fire({
+            title: 'Withdraw this request?', icon: 'warning',
+            showCancelButton: true, confirmButtonText: 'Withdraw',
+            confirmButtonColor: '#dc3545',
+        });
+        if (!ok.isConfirmed) return;
+        const res = await fetch('/api/petty-cash-requests/' + id + '/', {
+            method: 'DELETE', headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
+        if (res.ok || res.status === 204) {
+            load();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            Swal.fire('Error', err.detail || 'Could not withdraw it', 'error');
+        }
+    }
+</script>
+{% endblock %}

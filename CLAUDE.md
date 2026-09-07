@@ -87,6 +87,14 @@ See `DEPLOYMENT.md` for one-time server setup.
     plus the **Cashier desk**: `PettyCashTransaction` (the counter float — 'in' top-ups vs 'out' vouchers, balance
     derived) and `OtherPayment` (payouts that are neither a supplier invoice nor a tax). One predicate,
     `apps/finance/views.py::can_use_cashier`, gates the template views, the API and the sidebar section.
+  - **Petty cash requests** — `PettyCashRequest`: *anyone* raises one for themselves (`pending`), an Admin
+    approves or rejects it, and the cashier presses Done (`issue`) when the money is actually handed over.
+    **Only `issue()` moves the float** — it writes the `PettyCashTransaction` and links it, so the float counts
+    cash that has left the tin rather than cash somebody has been promised, and the two can never disagree.
+    Issuing is refused if it would take the float negative ("top the float up first"). The queryset is private:
+    a requester sees only their own; admins and cashiers see all, because they have to act on them. Screens:
+    `/finance/petty-cash/requests/` (everyone), `/finance/petty-cash/approvals/` (Admin), and a "To Issue"
+    section on `/finance/petty-cash/` (Cashier).
     All three registers group their rows by month via `static/js/month_group.js` — months are read off the
     `YYYY-MM-DD` string, never a parsed `Date`, so money cannot slide between months on a timezone shift.
     `/api/supplier-payments/by_supplier/` backs the **By Supplier** screen (ordered vs paid vs still owed per

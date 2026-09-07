@@ -416,3 +416,64 @@ class SalesLedgerEntry(models.Model):
 
     def __str__(self):
         return f"{self.invoice_number} - {self.total_amount} ({self.get_status_display()})"
+
+
+class PettyCashRequest(models.Model):
+    """Somebody asks for cash; an Admin allows it; the cashier hands it over.
+
+        raised --approve (Admin)--> approved --issue (Cashier)--> issued
+           |                                                        |
+           +--reject (Admin)--> rejected            the float moves here,
+                                                    not a moment earlier
+
+    Anyone may raise one for themselves — that is the point, it is how a driver
+    gets fuel money without finding the cashier first. Nothing leaves the float
+    until the cashier actually hands the money over and says so: `issue()`
+    writes the `PettyCashTransaction` and the two are linked, so the float and
+    this list can never tell different stories.
+    """
+    STATUS_CHOICES = (
+        ('pending', 'Awaiting Approval'),
+        ('approved', 'Approved - To Issue'),
+        ('rejected', 'Rejected'),
+        ('issued', 'Issued'),
+    )
+
+    requested_by = models.ForeignKey('users.User', on_delete=models.CASCADE,
+                                     related_name='petty_cash_requests')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    purpose = models.TextField(help_text="What the money is for")
+    category = models.ForeignKey(ExpenseCategory, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='petty_cash_requests')
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='petty_cash_requests')
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+
+    approved_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='approved_petty_cash_requests')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True, help_text="Admin's reason, most useful on a rejection")
+
+    issued_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='issued_petty_cash_requests')
+    issued_at = models.DateTimeField(null=True, blank=True)
+    issue_note = models.TextField(blank=True)
+    transaction = models.OneToOneField(PettyCashTransaction, on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='request',
+                                       help_text="The float movement this request produced")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        verbose_name = 'Petty Cash Request'
+
+    @property
+    def is_open(self):
+        """Still the requester's to amend or withdraw."""
+        return self.status == 'pending'
+
+    def __str__(self):
+        return f"{self.requested_by} - {self.amount} ({self.get_status_display()})"

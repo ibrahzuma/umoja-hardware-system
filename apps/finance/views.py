@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from django.db import transaction
 from django.db.models import Sum, Count, Max, Q
 from django.http import HttpResponse, Http404
 from apps.users.permissions import (
@@ -27,11 +28,13 @@ from .forms import ExpenseForm
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
     BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
+    PettyCashRequest,
 )
 from .serializers import (
     ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer,
     TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer,
     PettyCashTransactionSerializer, OtherPaymentSerializer, SalesLedgerEntrySerializer,
+    PettyCashRequestSerializer,
 )
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
@@ -963,3 +966,187 @@ class BalanceSheetView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
 
     def test_func(self):
         return can_use_accounting(self.request.user)
+
+
+# ----------------------------------------------------------------------------
+# Petty cash requests: anyone asks, an Admin allows, the cashier hands it over
+# ----------------------------------------------------------------------------
+
+def _users_in(role, group):
+    User = get_user_model()
+    return User.objects.filter(is_active=True).filter(
+        Q(role=role) | Q(groups__name=group)
+    ).distinct()
+
+
+def _admins():
+    User = get_user_model()
+    return User.objects.filter(is_active=True).filter(
+        Q(is_superuser=True) | Q(role='admin') | Q(groups__name='Admin')
+    ).distinct()
+
+
+def can_issue_petty_cash(user):
+    """The cash desk hands the money over. Admins can too, so a cashier being
+    off does not strand somebody's fuel money."""
+    return bool(
+        user and user.is_authenticated
+        and (is_privileged(user) or getattr(user, 'is_cashier', False))
+    )
+
+
+class CanIssuePettyCash(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_issue_petty_cash(request.user)
+
+
+class PettyCashRequestViewSet(viewsets.ModelViewSet):
+    """Everyone may raise one for themselves; only the people who act on a
+    request see everybody's."""
+    queryset = PettyCashRequest.objects.select_related(
+        'requested_by', 'approved_by', 'issued_by', 'category', 'branch', 'transaction'
+    ).all()
+    serializer_class = PettyCashRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['status', 'branch', 'requested_by']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if is_privileged(user) or getattr(user, 'is_cashier', False):
+            return qs
+        return qs.filter(requested_by=user)
+
+    def perform_create(self, serializer):
+        req = serializer.save(
+            requested_by=self.request.user,
+            status='pending',
+            branch=serializer.validated_data.get('branch') or getattr(self.request.user, 'branch', None),
+        )
+        who = self.request.user.get_full_name() or self.request.user.username
+        for admin in _admins():
+            notify(
+                admin,
+                "Petty cash request needs approval",
+                f"{who} asked for {req.amount} — {req.purpose}",
+                url='/finance/petty-cash/approvals/',
+                level='warning',
+            )
+
+    def perform_update(self, serializer):
+        """A request already with an Admin is out of the requester's hands."""
+        if not serializer.instance.is_open:
+            raise ValidationError({'detail': "That request has already been decided."})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not instance.is_open:
+            raise ValidationError({'detail': "That request has already been decided."})
+        instance.delete()
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def approve(self, request, pk=None):
+        """Allowed. It now waits for the cashier to hand the money over."""
+        req = self.get_object()
+        if req.status != 'pending':
+            return Response(
+                {'detail': f"That request is already {req.get_status_display().lower()}."},
+                status=400)
+
+        req.status = 'approved'
+        req.approved_by = request.user
+        req.approved_at = timezone.now()
+        req.decision_note = (request.data.get('note') or '').strip()
+        req.save(update_fields=['status', 'approved_by', 'approved_at', 'decision_note', 'updated_at'])
+
+        notify(req.requested_by, "Petty cash approved",
+               f"Your request for {req.amount} was approved. Collect it from the cash desk.",
+               url='/finance/petty-cash/requests/', level='success')
+        for cashier in _users_in('cashier', 'Cashier'):
+            notify(cashier, "Petty cash to issue",
+                   f"{req.requested_by} is owed {req.amount} — {req.purpose}",
+                   url='/finance/petty-cash/', level='info')
+        return Response(self.get_serializer(req).data)
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def reject(self, request, pk=None):
+        req = self.get_object()
+        if req.status != 'pending':
+            return Response(
+                {'detail': f"That request is already {req.get_status_display().lower()}."},
+                status=400)
+
+        req.status = 'rejected'
+        req.approved_by = request.user
+        req.approved_at = timezone.now()
+        req.decision_note = (request.data.get('note') or '').strip()
+        req.save(update_fields=['status', 'approved_by', 'approved_at', 'decision_note', 'updated_at'])
+
+        notify(req.requested_by, "Petty cash declined",
+               req.decision_note or "No reason was given.",
+               url='/finance/petty-cash/requests/', level='warning')
+        return Response(self.get_serializer(req).data)
+
+    @action(detail=True, methods=['post'],
+            permission_classes=[permissions.IsAuthenticated, CanIssuePettyCash])
+    def issue(self, request, pk=None):
+        """The cashier has handed the money over. Only now does the float move.
+
+        Writing the `PettyCashTransaction` here, rather than on approval, is
+        what keeps the float honest: it counts cash that has actually left the
+        tin, not cash somebody has been promised.
+        """
+        req = self.get_object()
+        if req.status == 'issued':
+            return Response({'detail': 'That request has already been issued.'}, status=400)
+        if req.status != 'approved':
+            return Response(
+                {'detail': 'Only an approved request can be issued.'}, status=400)
+
+        float_balance = PettyCashTransaction.balance(req.branch) if req.branch else PettyCashTransaction.balance()
+        if req.amount > float_balance:
+            return Response({'detail': (
+                f"The float holds {float_balance}; this request is {req.amount}. "
+                "Top the float up first."
+            )}, status=400)
+
+        who = req.requested_by.get_full_name() or req.requested_by.username
+        with transaction.atomic():
+            movement = PettyCashTransaction.objects.create(
+                entry_type='out',
+                branch=req.branch,
+                category=req.category,
+                payee=who,
+                description=req.purpose,
+                amount=req.amount,
+                date=timezone.now().date(),
+                reference=(request.data.get('reference') or '').strip(),
+                created_by=request.user,
+            )
+            req.status = 'issued'
+            req.issued_by = request.user
+            req.issued_at = timezone.now()
+            req.issue_note = (request.data.get('note') or '').strip()
+            req.transaction = movement
+            req.save(update_fields=['status', 'issued_by', 'issued_at', 'issue_note',
+                                    'transaction', 'updated_at'])
+
+        notify(req.requested_by, "Petty cash issued",
+               f"{req.amount} was handed over on voucher {movement.voucher_number}.",
+               url='/finance/petty-cash/requests/', level='success')
+        return Response(self.get_serializer(req).data)
+
+
+class PettyCashRequestView(LoginRequiredMixin, TemplateView):
+    """Anyone can ask for cash from their own account."""
+    template_name = 'finance/petty_cash_requests.html'
+
+
+class PettyCashApprovalView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = 'finance/petty_cash_approvals.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'is_admin_role', False)

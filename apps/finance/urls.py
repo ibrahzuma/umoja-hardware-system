@@ -26,6 +26,10 @@ urlpatterns = [
 
     # Cashier desk
     path('petty-cash/', views.PettyCashListView.as_view(), name='petty_cash'),
+    path('petty-cash/requests/', views.PettyCashRequestView.as_view(),
+         name='petty_cash_requests'),
+    path('petty-cash/approvals/', views.PettyCashApprovalView.as_view(),
+         name='petty_cash_approvals'),
     path('other-payments/', views.OtherPaymentListView.as_view(), name='other_payments'),
 
 

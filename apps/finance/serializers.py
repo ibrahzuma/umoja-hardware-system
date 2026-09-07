@@ -4,6 +4,7 @@ from django.db.models import Sum
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
     BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
+    PettyCashRequest,
 )
 from apps.sales.models import Sale
 
@@ -194,3 +195,35 @@ class SalesLedgerEntrySerializer(serializers.ModelSerializer):
         read_only_fields = tuple(
             f.name for f in SalesLedgerEntry._meta.fields if f.name != 'id'
         )
+
+
+class PettyCashRequestSerializer(serializers.ModelSerializer):
+    """A request for cash. Everything past `amount`, `purpose`, `category` and
+    `branch` belongs to the people who act on it, so the requester cannot set
+    it: status moves only through approve / reject / issue."""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    requested_by_name = serializers.SerializerMethodField()
+    approved_by_name = serializers.CharField(source='approved_by.username', read_only=True, default='')
+    issued_by_name = serializers.CharField(source='issued_by.username', read_only=True, default='')
+    category_name = serializers.CharField(source='category.name', read_only=True, default='')
+    branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+    voucher_number = serializers.CharField(source='transaction.voucher_number',
+                                           read_only=True, default='')
+
+    def get_requested_by_name(self, obj):
+        u = obj.requested_by
+        if not u:
+            return ''
+        return u.get_full_name() or u.username
+
+    class Meta:
+        model = PettyCashRequest
+        fields = '__all__'
+        read_only_fields = ('requested_by', 'status', 'approved_by', 'approved_at',
+                            'decision_note', 'issued_by', 'issued_at', 'issue_note',
+                            'transaction', 'created_at', 'updated_at')
+
+    def validate_amount(self, value):
+        if value is None or value <= 0:
+            raise serializers.ValidationError("Ask for more than nothing.")
+        return value

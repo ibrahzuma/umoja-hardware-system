@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+
+{% block title %}Petty Cash Approvals{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Petty Cash Approvals</h2>
+        <p class="text-muted mb-0 small">Staff asking for cash. Approving sends it to the cash desk to hand
+            over — no money moves until they do.</p>
+    </div>
+    <button class="btn btn-outline-secondary" onclick="load()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Waiting On You</h6>
+                <h3 class="fw-bold mb-0" id="statCount">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Value Requested</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statValue">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Asked</th>
+                        <th>Who</th>
+                        <th>Purpose</th>
+                        <th>Category</th>
+                        <th>Branch</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-end pe-4">Decision</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="7" class="text-center py-4">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let pending = [];
+
+    document.addEventListener('DOMContentLoaded', load);
+
+    function money(v) { return 'TZS ' + Math.round(Number(v || 0)).toLocaleString(); }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/petty-cash-requests/?status=pending');
+            if (!res.ok) throw new Error('status ' + res.status);
+            pending = await res.json();
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load the queue.</td></tr>';
+        }
+    }
+
+    function render() {
+        const total = pending.reduce((s, r) => s + Number(r.amount || 0), 0);
+        document.getElementById('statCount').innerText = pending.length;
+        document.getElementById('statValue').innerText = money(total);
+
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        if (pending.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">' +
+                'Nothing is waiting for approval.</td></tr>';
+            return;
+        }
+
+        pending.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${r.created_at ? new Date(r.created_at).toLocaleDateString() : '-'}</td>
+                <td class="fw-medium">${escapeHtml(r.requested_by_name)}</td>
+                <td>${escapeHtml(r.purpose)}</td>
+                <td><small class="text-muted">${escapeHtml(r.category_name || '—')}</small></td>
+                <td><small class="text-muted">${escapeHtml(r.branch_name || '—')}</small></td>
+                <td class="text-end fw-bold">${money(r.amount)}</td>
+                <td class="text-end pe-4 text-nowrap">
+                    <button class="btn btn-sm btn-success me-1" onclick="decide(${r.id}, 'approve')">
+                        <i class="bi bi-check-lg"></i> Approve
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="decide(${r.id}, 'reject')">
+                        <i class="bi bi-x-lg"></i> Decline
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function decide(id, what) {
+        const r = pending.find(x => x.id === id);
+        const approving = what === 'approve';
+        const result = await Swal.fire({
+            title: approving ? 'Approve this request?' : 'Decline this request?',
+            html: r ? '<b>' + money(r.amount) + '</b> for ' + escapeHtml(r.requested_by_name)
+                      + '<br><small class="text-muted">' + escapeHtml(r.purpose) + '</small>'
+                      + (approving
+                          ? '<br><small class="text-muted">The cash desk will be told to hand it over.</small>'
+                          : '') : '',
+            icon: approving ? 'question' : 'warning',
+            input: 'text',
+            inputPlaceholder: approving ? 'Note (optional)' : 'Why are you declining?',
+            showCancelButton: true,
+            confirmButtonText: approving ? 'Approve' : 'Decline',
+            confirmButtonColor: approving ? '#198754' : '#dc3545',
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            const res = await fetch('/api/petty-cash-requests/' + id + '/' + what + '/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ note: result.value || '' })
+            });
+            if (res.ok) {
+                Swal.fire('Done', approving ? 'Approved — the cash desk has it' : 'Declined', 'success');
+                load();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not record the decision', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not record the decision', 'error');
+        }
+    }
+</script>
+{% endblock %}
