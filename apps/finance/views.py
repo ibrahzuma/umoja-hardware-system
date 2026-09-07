@@ -1,10 +1,11 @@
 import io
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import date
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Sum, Count, Max, Q
 from django.http import HttpResponse, Http404
 from apps.users.permissions import (
@@ -841,6 +842,51 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response(self.get_serializer(entry).data)
 
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def confirm_payment(self, request, pk=None):
+        """Accounts say the money is actually in.
+
+        The till's word is a claim, not a receipt: until this is done the sale
+        is revenue earned with the cash still outstanding, however the POS
+        recorded it. Naming the method and attaching the invoice is the point
+        of the step, so both are required.
+        """
+        entry = self.get_object()
+        if entry.payment_status == 'confirmed':
+            return Response({'detail': 'That payment is already confirmed.'}, status=400)
+
+        method = (request.data.get('method') or '').strip()
+        valid = dict(SalesLedgerEntry.CONFIRMED_METHODS)
+        if method not in valid:
+            return Response(
+                {'detail': 'Say how the money came in: ' + ', '.join(valid)},
+                status=400,
+            )
+
+        document = request.FILES.get('invoice_document')
+        if document is None and not entry.invoice_document:
+            return Response({'detail': 'Attach the invoice for this payment.'}, status=400)
+
+        raw_amount = request.data.get('amount')
+        try:
+            amount = (Decimal(str(raw_amount)) if raw_amount not in (None, '')
+                      else (entry.total_amount or Decimal('0')))
+        except (InvalidOperation, TypeError):
+            return Response({'detail': 'That amount is not a number.'}, status=400)
+        if amount <= 0:
+            return Response({'detail': 'A confirmed payment has to be more than nothing.'}, status=400)
+
+        entry.payment_status = 'confirmed'
+        entry.confirmed_method = method
+        entry.confirmed_amount = amount
+        entry.confirmed_reference = (request.data.get('reference') or '').strip()
+        entry.confirmed_by = request.user
+        entry.confirmed_at = timezone.now()
+        if document is not None:
+            entry.invoice_document = document
+        entry.save()
+        return Response(self.get_serializer(entry).data)
+
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """The stat cards: how much is waiting, and how it was settled."""
@@ -848,17 +894,127 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         by_status = {row['status']: row for row in
                      qs.values('status').annotate(n=Count('id'), total=Sum('total_amount'))}
         pending = by_status.get('pending') or {}
+        money = qs.aggregate(invoiced=Sum('total_amount'), confirmed=Sum('confirmed_amount'))
+        invoiced = money['invoiced'] or Decimal('0')
+        confirmed = money['confirmed'] or Decimal('0')
         return Response({
             'pending_count': pending.get('n') or 0,
             'pending_value': str(pending.get('total') or Decimal('0')),
             'posted_count': (by_status.get('posted') or {}).get('n') or 0,
             'queried_count': (by_status.get('queried') or {}).get('n') or 0,
             'total_count': qs.count(),
+            'awaiting_payment_count': qs.filter(payment_status='awaiting').count(),
+            'cash_confirmed': str(confirmed),
+            'cash_outstanding': str(invoiced - confirmed),
         })
 
 
 class SalesLedgerView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'finance/sales_ledger.html'
+
+    def test_func(self):
+        return can_use_accounting(self.request.user)
+
+
+# ----------------------------------------------------------------------------
+# Profit & loss - built from what Accounts have posted, nothing else
+# ----------------------------------------------------------------------------
+
+def _period(params):
+    """The window the statement covers. Defaults to the month to date."""
+    today = date.today()
+    start = (params.get('date_from') or '').strip() or today.replace(day=1).isoformat()
+    end = (params.get('date_to') or '').strip() or today.isoformat()
+    return start, end
+
+
+def profit_and_loss(date_from, date_to):
+    """The statement itself, as plain figures.
+
+    Revenue is **posted sales only** - a sale the accountant has not taken up
+    is not in the books, whatever the till did with it. Cash confirmed is
+    reported beside it but never in place of it: the two answer different
+    questions, and conflating them is how a business talks itself into profit
+    it has not been paid.
+    """
+    posted = SalesLedgerEntry.objects.filter(
+        status='posted', sale_date__gte=date_from, sale_date__lte=date_to)
+
+    sales = posted.aggregate(
+        revenue=Sum('total_amount'),
+        discounts=Sum('discount'),
+        cost=Sum('cost_of_sales'),
+        commission=Sum('commission_total'),
+        confirmed=Sum('confirmed_amount'),
+    )
+    revenue = sales['revenue'] or Decimal('0')
+    cost = sales['cost'] or Decimal('0')
+    commission = sales['commission'] or Decimal('0')
+    confirmed = sales['confirmed'] or Decimal('0')
+
+    expenses = Expense.objects.filter(
+        date_incurred__gte=date_from, date_incurred__lte=date_to
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    petty = PettyCashTransaction.objects.filter(
+        entry_type='out', date__gte=date_from, date__lte=date_to
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    other_out = OtherPayment.objects.filter(
+        payment_date__gte=date_from, payment_date__lte=date_to
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    taxes = TaxPayment.objects.filter(
+        payment_date__gte=date_from, payment_date__lte=date_to
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    other_income = Income.objects.filter(
+        date_received__gte=date_from, date_received__lte=date_to
+    ).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+
+    gross_profit = revenue - cost
+    operating_costs = expenses + petty + other_out + commission
+    operating_profit = gross_profit - operating_costs
+    net_profit = operating_profit + other_income - taxes
+
+    def row(label, amount, source, kind='cost'):
+        return {'label': label, 'amount': str(amount), 'source': source, 'kind': kind}
+
+    return {
+        'date_from': str(date_from),
+        'date_to': str(date_to),
+        'sales_count': posted.count(),
+        'revenue': str(revenue),
+        'discounts': str(sales['discounts'] or Decimal('0')),
+        'cost_of_sales': str(cost),
+        'gross_profit': str(gross_profit),
+        'operating_costs': str(operating_costs),
+        'operating_profit': str(operating_profit),
+        'other_income': str(other_income),
+        'taxes': str(taxes),
+        'net_profit': str(net_profit),
+        'cash_confirmed': str(confirmed),
+        'cash_outstanding': str(revenue - confirmed),
+        'lines': [
+            row('Revenue (posted sales)', revenue, 'Sales accounting, posted only', 'revenue'),
+            row('Cost of sales', cost, 'Product cost at the time of each sale'),
+            row('Sales commission', commission, 'Commission frozen on each sale line'),
+            row('Expenses', expenses, 'Finance > Expenses'),
+            row('Petty cash paid out', petty, 'Cashier > Petty Cash'),
+            row('Other payments', other_out, 'Cashier > Other Payments'),
+            row('Other income', other_income, 'Finance > Other Income', 'revenue'),
+            row('Taxes paid', taxes, 'Finance > Taxes & Govt'),
+        ],
+    }
+
+
+class ProfitLossViewSet(viewsets.ViewSet):
+    """Read-only statement. Same gate as the sales ledger it is built from."""
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+
+    def list(self, request):
+        date_from, date_to = _period(request.query_params)
+        return Response(profit_and_loss(date_from, date_to))
+
+
+class ProfitLossView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = 'finance/profit_loss.html'
 
     def test_func(self):
         return can_use_accounting(self.request.user)

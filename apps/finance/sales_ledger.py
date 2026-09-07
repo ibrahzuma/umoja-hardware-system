@@ -57,6 +57,22 @@ def _paid_and_methods(sale):
     return paid, ', '.join(methods)
 
 
+def _cost_and_commission(sale):
+    """What the goods on this sale cost us, and the commission earned on them.
+
+    Taken at sync time and frozen with the entry once it is posted: a product's
+    cost moves, and the profit on a sale already in the books must not move
+    with it.
+    """
+    cost = ZERO
+    commission = ZERO
+    for item in sale.items.all():
+        unit_cost = getattr(item.product, 'cost', None) or ZERO
+        cost += (item.quantity or 0) * unit_cost
+        commission += item.commission_amount or ZERO
+    return cost, commission
+
+
 def settlement_for(total, paid):
     if paid <= 0:
         return 'credit'
@@ -91,6 +107,7 @@ def sync_sale(sale):
 
     total = sale.total_amount or ZERO
     paid, methods = _paid_and_methods(sale)
+    cost, commission = _cost_and_commission(sale)
 
     if entry is None:
         return SalesLedgerEntry.objects.create(
@@ -105,6 +122,8 @@ def sync_sale(sale):
             amount_paid=paid,
             settlement=settlement_for(total, paid),
             methods=methods,
+            cost_of_sales=cost,
+            commission_total=commission,
             sale_status=sale.status,
             status='pending',
         )
@@ -122,6 +141,8 @@ def sync_sale(sale):
         entry.amount_paid = paid
         entry.settlement = settlement_for(total, paid)
         entry.methods = methods
+        entry.cost_of_sales = cost
+        entry.commission_total = commission
 
     entry.save()
     return entry
@@ -163,7 +184,7 @@ def backfill():
 
     created = refreshed = 0
     known = set(SalesLedgerEntry.objects.values_list('invoice_number', flat=True))
-    for sale in Sale.objects.prefetch_related('transactions').select_related(
+    for sale in Sale.objects.prefetch_related('transactions', 'items__product').select_related(
             'customer', 'branch', 'user').iterator(chunk_size=500):
         if not sale.invoice_number:
             continue

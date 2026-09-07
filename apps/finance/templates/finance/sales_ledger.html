@@ -7,7 +7,8 @@
     <div>
         <h2 class="text-primary fw-bold mb-1">Sales Accounting</h2>
         <p class="text-muted mb-0 small">Every sale made at the till — cash, credit or any other way — lands here
-            as pending until Accounts post it.</p>
+            as pending. Posting takes it into the books and the P&amp;L; the money counts only once Accounts
+            confirm it, with the invoice attached.</p>
     </div>
     <button class="btn btn-outline-secondary" onclick="loadEntries()">
         <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -43,8 +44,9 @@
     <div class="col-sm-6 col-lg-3">
         <div class="card shadow-sm border-0 border-start border-danger border-4">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Queried</h6>
-                <h3 class="fw-bold mb-0 text-danger" id="statQueried">0</h3>
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Cash Not Confirmed</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statOutstanding">TZS 0</h3>
+                <small class="text-muted"><span id="statQueried">0</span> queried</small>
             </div>
         </div>
     </div>
@@ -79,9 +81,16 @@
                     <option value="">All months</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select id="branchFilter" class="form-select" onchange="render()">
                     <option value="">All branches</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="paymentFilter" class="form-select" onchange="render()">
+                    <option value="">Money: any</option>
+                    <option value="awaiting">Not confirmed</option>
+                    <option value="confirmed">Confirmed</option>
                 </select>
             </div>
         </div>
@@ -110,13 +119,14 @@
                         <th class="text-end">Total</th>
                         <th class="text-end">Paid</th>
                         <th class="text-end">Balance</th>
+                        <th>Money</th>
                         <th>Status</th>
                         <th class="text-end pe-4"></th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <tr>
-                        <td colspan="10" class="text-center py-4">Loading sales...</td>
+                        <td colspan="11" class="text-center py-4">Loading sales...</td>
                     </tr>
                 </tbody>
             </table>
@@ -127,9 +137,64 @@
 <p class="text-muted small mt-3 mb-0">
     <strong>Posting</strong> says the books have taken the sale up; its figures freeze from that point.
     <strong>Querying</strong> flags one that does not look right and tells whoever made the sale — it can still be
-    posted once it is sorted out.
+    posted once it is sorted out. <strong>Confirming payment</strong> is separate: it is what says the money is
+    actually in, and it takes the method and the invoice.
 </p>
+
+<!-- Confirm the money is in -->
+<div class="modal fade" id="confirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Payment Received</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Until this is done the money counts as not yet received, whatever
+                    the till recorded.</p>
+                <form id="confirmForm">
+                    <input type="hidden" id="confirmId">
+                    <div class="mb-3">
+                        <label class="form-label">Invoice</label>
+                        <input type="text" class="form-control" id="confirmInvoice" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Received By</label>
+                        <select class="form-select" id="confirmMethod" required>
+                            <option value="cash">Cash</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="mobile">Mobile Money</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount Received</label>
+                        <input type="number" step="0.01" min="1" class="form-control" id="confirmAmount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" class="form-control" id="confirmReference"
+                            placeholder="Bank ref, transaction ID, cheque no">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Invoice Attachment <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" id="confirmFile"
+                            accept="image/*,application/pdf" required>
+                        <small class="text-muted">A picture or PDF of the invoice for this payment.</small>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Confirm the money is in
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
+
 
 {% block extra_js %}
 {% load static %}
@@ -141,6 +206,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         loadBranches();
         loadEntries();
+        document.getElementById('confirmForm').addEventListener('submit', submitConfirm);
     });
 
     function money(v) {
@@ -175,7 +241,7 @@
         } catch (e) {
             console.error(e);
             document.getElementById('tableBody').innerHTML =
-                '<tr><td colspan="10" class="text-center py-4 text-danger">Could not load the sales ledger.</td></tr>';
+                '<tr><td colspan="11" class="text-center py-4 text-danger">Could not load the sales ledger.</td></tr>';
         }
     }
 
@@ -188,6 +254,7 @@
             document.getElementById('statValue').innerText = money(s.pending_value);
             document.getElementById('statPosted').innerText = s.posted_count;
             document.getElementById('statQueried').innerText = s.queried_count;
+        document.getElementById('statOutstanding').innerText = money(s.cash_outstanding);
         } catch (e) { console.error(e); }
     }
 
@@ -204,6 +271,7 @@
         const settlement = document.getElementById('settlementFilter').value;
         const month = document.getElementById('monthFilter').value;
         const branch = document.getElementById('branchFilter').value;
+        const payment = document.getElementById('paymentFilter').value;
 
         return entries.filter(e => {
             const haystack = [e.invoice_number, e.customer_name, e.sold_by_name, e.methods]
@@ -212,7 +280,8 @@
                 && (status ? e.status === status : true)
                 && (settlement ? e.settlement === settlement : true)
                 && (month ? MonthGroup.key(e.sale_date) === month : true)
-                && (branch ? String(e.branch) === branch : true);
+                && (branch ? String(e.branch) === branch : true)
+                && (payment ? e.payment_status === payment : true);
         });
     }
 
@@ -225,7 +294,7 @@
 
         tbody.innerHTML = '';
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No sales found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No sales found</td></tr>';
             return;
         }
 
@@ -242,7 +311,7 @@
                         sale${g.rows.length === 1 ? '' : 's'}</span>
                 </td>
                 <td class="text-end fw-bold">${money(monthTotal)}</td>
-                <td colspan="4"></td>
+                <td colspan="5"></td>
             `;
             tbody.appendChild(head);
 
@@ -257,7 +326,7 @@
                         <td><small class="text-muted">${t.count}
                             sale${t.count === 1 ? '' : 's'}</small></td>
                         <td class="text-end fw-bold">${money(t.amount)}</td>
-                        <td colspan="4"></td>
+                        <td colspan="5"></td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -283,19 +352,102 @@
             <td class="text-end text-success">${money(e.amount_paid)}</td>
             <td class="text-end fw-bold ${Number(e.balance) > 0 ? 'text-danger' : 'text-muted'}">
                 ${money(e.balance)}</td>
+            <td>${moneyCell(e)}</td>
             <td><span class="badge ${STATUS_BADGE[e.status] || 'bg-secondary'}">
                     ${escapeHtml(e.status_display || '')}</span>
                 ${e.note ? '<div><small class="text-muted">' + escapeHtml(e.note) + '</small></div>' : ''}</td>
             <td class="text-end pe-4 text-nowrap">
-                ${e.status === 'posted'
-                ? '<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>'
-                : '<button class="btn btn-sm btn-success me-1" onclick="decide(' + e.id + ", 'post_entry')\">"
-                  + '<i class="bi bi-check-lg"></i> Post</button>'
-                  + '<button class="btn btn-sm btn-outline-danger" onclick="decide(' + e.id + ", 'query')\">"
-                  + '<i class="bi bi-question-lg"></i> Query</button>'}
+                ${actionsFor(e)}
             </td>
         `;
         tbody.appendChild(tr);
+    }
+
+    function moneyCell(e) {
+        if (e.payment_status === 'confirmed') {
+            return '<span class="badge bg-success">Confirmed</span>'
+                + '<div><small class="text-muted">' + money(e.confirmed_amount) + ' by '
+                + escapeHtml(e.confirmed_method || '') + '</small></div>'
+                + (e.invoice_document
+                    ? '<div><a href="' + e.invoice_document + '" target="_blank" class="small">'
+                      + '<i class="bi bi-paperclip"></i> Invoice</a></div>'
+                    : '');
+        }
+        return '<span class="badge bg-secondary">Not confirmed</span>'
+            + '<div><small class="text-muted">' + money(e.total_amount) + ' outstanding</small></div>';
+    }
+
+    function actionsFor(e) {
+        const parts = [];
+        if (e.status !== 'posted') {
+            parts.push('<button class="btn btn-sm btn-success mb-1" onclick="decide(' + e.id
+                + ", 'post_entry')\"><i class=\"bi bi-check-lg\"></i> Post</button>");
+            parts.push('<button class="btn btn-sm btn-outline-danger mb-1" onclick="decide(' + e.id
+                + ", 'query')\"><i class=\"bi bi-question-lg\"></i> Query</button>");
+        }
+        if (e.payment_status !== 'confirmed') {
+            parts.push('<button class="btn btn-sm btn-outline-primary mb-1" onclick="openConfirm(' + e.id
+                + ')"><i class="bi bi-cash-coin"></i> Confirm payment</button>');
+        }
+        if (!parts.length) {
+            parts.push('<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>');
+        }
+        return parts.join(' ');
+    }
+
+    // The money is not in until Accounts say so, name how it came, and attach
+    // the invoice. That is what this does; nothing else moves the figure.
+    let confirmModal;
+
+    function openConfirm(id) {
+        const e = entries.find(x => x.id === id);
+        if (!e) return;
+        document.getElementById('confirmId').value = e.id;
+        document.getElementById('confirmInvoice').value =
+            e.invoice_number + '  -  ' + e.customer_name;
+        document.getElementById('confirmAmount').value = e.total_amount;
+        document.getElementById('confirmMethod').value = 'cash';
+        document.getElementById('confirmReference').value = '';
+        document.getElementById('confirmFile').value = '';
+        if (!confirmModal) {
+            confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        }
+        confirmModal.show();
+    }
+
+    async function submitConfirm(ev) {
+        ev.preventDefault();
+        const id = document.getElementById('confirmId').value;
+        const file = document.getElementById('confirmFile').files[0];
+        if (!file) {
+            Swal.fire('Attach the invoice', 'A confirmed payment needs its invoice attached.', 'info');
+            return;
+        }
+
+        const body = new FormData();
+        body.append('method', document.getElementById('confirmMethod').value);
+        body.append('amount', document.getElementById('confirmAmount').value);
+        body.append('reference', document.getElementById('confirmReference').value);
+        body.append('invoice_document', file);
+
+        try {
+            const res = await fetch('/api/sales-ledger/' + id + '/confirm_payment/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                body: body
+            });
+            if (res.ok) {
+                confirmModal.hide();
+                Swal.fire('Confirmed', 'The money is recorded as received', 'success');
+                loadEntries();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not confirm the payment', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not confirm the payment', 'error');
+        }
     }
 
     async function decide(id, what) {

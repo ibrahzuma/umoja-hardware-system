@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+
+{% block title %}Profit &amp; Loss{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Profit &amp; Loss</h2>
+        <p class="text-muted mb-0 small">Built from the sales Accounts have <strong>posted</strong> — a sale
+            nobody has taken up is not in the books, whatever the till did with it.</p>
+    </div>
+    <button class="btn btn-outline-secondary" onclick="window.print()">
+        <i class="bi bi-printer"></i> Print
+    </button>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">From</label>
+                <input type="date" id="dateFrom" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">To</label>
+                <input type="date" id="dateTo" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-6">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('month')">This month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('last')">Last month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('year')">This year</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Revenue Posted</h6>
+                <h3 class="fw-bold mb-0" id="statRevenue">TZS 0</h3>
+                <small class="text-muted" id="statSales">0 sales</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Gross Profit</h6>
+                <h3 class="fw-bold mb-0" id="statGross">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Net Profit</h6>
+                <h3 class="fw-bold mb-0" id="statNet">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Cash Not Yet In</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statOutstanding">TZS 0</h3>
+                <small class="text-muted">Posted but unconfirmed</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold" id="statementTitle">Statement</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table data-no-paginate class="table align-middle mb-0">
+                <tbody id="statementBody">
+                    <tr>
+                        <td colspan="3" class="text-center py-4">Loading…</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-info d-flex align-items-start gap-2">
+    <i class="bi bi-info-circle mt-1"></i>
+    <div class="small mb-0">
+        <strong>Revenue is what has been earned, not what has been collected.</strong>
+        A posted sale counts here the moment Accounts take it up; the money counts only once Accounts
+        confirm it, with the method and the invoice attached. The two figures are shown side by side and
+        never added together — <span id="cashLine" class="fw-bold"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        setPeriod('month');
+    });
+
+    function money(v) {
+        const n = Math.round(Number(v || 0));
+        return (n < 0 ? '-TZS ' : 'TZS ') + Math.abs(n).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function iso(d) { return d.toISOString().slice(0, 10); }
+
+    function setPeriod(which) {
+        const now = new Date();
+        let from, to;
+        if (which === 'month') {
+            from = new Date(now.getFullYear(), now.getMonth(), 1);
+            to = now;
+        } else if (which === 'last') {
+            from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            to = new Date(now.getFullYear(), now.getMonth(), 0);
+        } else {
+            from = new Date(now.getFullYear(), 0, 1);
+            to = now;
+        }
+        document.getElementById('dateFrom').value = iso(from);
+        document.getElementById('dateTo').value = iso(to);
+        load();
+    }
+
+    async function load() {
+        const from = document.getElementById('dateFrom').value;
+        const to = document.getElementById('dateTo').value;
+        try {
+            const res = await fetch('/api/profit-loss/?date_from=' + from + '&date_to=' + to);
+            if (!res.ok) throw new Error('status ' + res.status);
+            render(await res.json());
+        } catch (e) {
+            console.error(e);
+            document.getElementById('statementBody').innerHTML =
+                '<tr><td colspan="3" class="text-center py-4 text-danger">Could not load the statement.</td></tr>';
+        }
+    }
+
+    function line(label, amount, opts) {
+        opts = opts || {};
+        const cls = opts.total ? 'fw-bold ' + (opts.top ? 'border-top border-2 ' : '') : '';
+        const value = opts.negate ? -Number(amount || 0) : Number(amount || 0);
+        const colour = opts.total && value < 0 ? ' text-danger' : (opts.total ? ' text-success' : '');
+        return `
+            <tr class="${opts.total ? 'table-light' : ''}">
+                <td class="ps-4 ${cls}">${escapeHtml(label)}</td>
+                <td><small class="text-muted">${escapeHtml(opts.source || '')}</small></td>
+                <td class="text-end pe-4 ${cls}${opts.total ? colour : ''}">
+                    ${opts.bracket ? '(' + money(amount).replace('TZS ', 'TZS ') + ')' : money(value)}
+                </td>
+            </tr>`;
+    }
+
+    function render(d) {
+        document.getElementById('statementTitle').innerText =
+            'Statement — ' + d.date_from + ' to ' + d.date_to;
+        document.getElementById('statRevenue').innerText = money(d.revenue);
+        document.getElementById('statSales').innerText =
+            d.sales_count + ' posted sale' + (Number(d.sales_count) === 1 ? '' : 's');
+        document.getElementById('statGross').innerText = money(d.gross_profit);
+        document.getElementById('statNet').innerText = money(d.net_profit);
+        document.getElementById('statOutstanding').innerText = money(d.cash_outstanding);
+        document.getElementById('cashLine').innerText =
+            money(d.cash_confirmed) + ' confirmed, ' + money(d.cash_outstanding) + ' still to come in.';
+
+        const by = {};
+        (d.lines || []).forEach(l => { by[l.label] = l; });
+        const src = k => (by[k] || {}).source || '';
+
+        document.getElementById('statementBody').innerHTML =
+            line('Revenue (posted sales)', d.revenue, { source: src('Revenue (posted sales)') })
+            + line('Cost of sales', d.cost_of_sales, { source: src('Cost of sales'), bracket: true })
+            + line('Gross profit', d.gross_profit, { total: true, top: true })
+
+            + line('Sales commission', d.lines[2].amount, { source: src('Sales commission'), bracket: true })
+            + line('Expenses', d.lines[3].amount, { source: src('Expenses'), bracket: true })
+            + line('Petty cash paid out', d.lines[4].amount, { source: src('Petty cash paid out'), bracket: true })
+            + line('Other payments', d.lines[5].amount, { source: src('Other payments'), bracket: true })
+            + line('Operating profit', d.operating_profit, { total: true, top: true })
+
+            + line('Other income', d.other_income, { source: src('Other income') })
+            + line('Taxes paid', d.taxes, { source: src('Taxes paid'), bracket: true })
+            + line('Net profit', d.net_profit, { total: true, top: true });
+    }
+</script>
+{% endblock %}

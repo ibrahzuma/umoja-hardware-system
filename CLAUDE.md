@@ -107,7 +107,18 @@ See `DEPLOYMENT.md` for one-time server setup.
     the seller. A pending or queried row keeps following the sale; **a posted row freezes** — only `sale_status`
     still updates, so a sale cancelled or deleted after posting stays put, flagged for reversal, instead of
     vanishing. `python manage.py sync_sales_ledger` backfills or repairs. Access is admin + accountant via
-    `apps/finance/views.py::can_use_accounting`; the API is read-only apart from the two actions.
+    `apps/finance/views.py::can_use_accounting`; the API is read-only apart from its actions.
+    **Posting is what puts a sale in the P&L** — revenue is earned, not collected. Separately,
+    `confirm_payment` is what says the money is actually in: it requires a method (cash/bank/mobile/cheque/other)
+    **and an attached invoice**, and only `confirmed_amount` counts as cash. The till's transactions are a claim,
+    never a receipt, so never read `amount_paid` as money in hand. `cost_of_sales` and `commission_total` are
+    frozen on the entry so a later change to a product's cost cannot move a posted profit.
+  - **`/api/profit-loss/`** and `/finance/profit-loss/` (`views.py::profit_and_loss`) — revenue from *posted*
+    entries only, less cost of sales, commission, `Expense`, petty cash payouts and `OtherPayment`, plus `Income`,
+    less `TaxPayment`. Cash confirmed is reported beside revenue, never instead of it.
+  - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
+    is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
+    way — the ledger mirrors, it does not authorise.
   - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
     `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
     `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.

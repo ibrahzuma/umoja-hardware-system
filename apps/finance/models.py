@@ -345,11 +345,46 @@ class SalesLedgerEntry(models.Model):
     sale_status = models.CharField(max_length=20, blank=True,
                                    help_text="The sale's own state at last sync")
 
+    # Frozen with the entry so a later change to a product's cost cannot move
+    # the profit on a sale that has already been posted.
+    cost_of_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0.00,
+                                        help_text="What the goods cost us, at the time of the sale")
+    commission_total = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
     posted_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
                                   related_name='posted_sales_entries')
     posted_at = models.DateTimeField(null=True, blank=True)
     note = models.TextField(blank=True, help_text="Accountant's note, most useful on a query")
+
+    # --- Money in ---------------------------------------------------------
+    # What the till recorded is a claim, not a receipt. Nothing counts as
+    # money until the accountant confirms it, names how it came in, and
+    # attaches the invoice. Until then the sale is revenue earned but cash
+    # not yet in hand.
+    PAYMENT_STATES = (
+        ('awaiting', 'Awaiting Confirmation'),
+        ('confirmed', 'Payment Confirmed'),
+    )
+    CONFIRMED_METHODS = (
+        ('cash', 'Cash'),
+        ('bank', 'Bank Transfer'),
+        ('mobile', 'Mobile Money'),
+        ('cheque', 'Cheque'),
+        ('other', 'Other'),
+    )
+    payment_status = models.CharField(max_length=10, choices=PAYMENT_STATES, default='awaiting',
+                                      db_index=True)
+    confirmed_method = models.CharField(max_length=10, choices=CONFIRMED_METHODS, blank=True)
+    confirmed_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00,
+                                           help_text="Money the accountant has confirmed as received")
+    confirmed_reference = models.CharField(max_length=100, blank=True,
+                                           help_text="Bank ref, transaction ID, cheque no")
+    invoice_document = models.FileField(upload_to='sales_invoices/%Y/%m/', null=True, blank=True,
+                                        help_text="The invoice, attached when the payment is confirmed")
+    confirmed_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='confirmed_sales_entries')
+    confirmed_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -361,7 +396,18 @@ class SalesLedgerEntry(models.Model):
 
     @property
     def balance(self):
+        """What the till says is still owed on the invoice."""
         return (self.total_amount or 0) - (self.amount_paid or 0)
+
+    @property
+    def cash_outstanding(self):
+        """What Accounts have not yet confirmed as received — the figure that
+        matters, since the till's word is only a claim."""
+        return (self.total_amount or 0) - (self.confirmed_amount or 0)
+
+    @property
+    def gross_profit(self):
+        return (self.total_amount or 0) - (self.cost_of_sales or 0)
 
     @property
     def is_open(self):
