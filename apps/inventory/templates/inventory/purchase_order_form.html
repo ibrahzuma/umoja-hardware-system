@@ -15,7 +15,8 @@
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">Supplier</label>
-                    <select class="form-select" id="poSupplier" required></select>
+                    <select class="form-select" id="poSupplier" required onchange="checkSupplierCredit()"></select>
+                    <div id="creditNotice" class="alert alert-success mt-2 mb-0 py-2 px-3 small d-none"></div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Branch</label>
@@ -132,6 +133,49 @@
         } catch (e) { console.error(e); }
     }
 
+    // Money this supplier already holds of ours, from an earlier overpayment.
+    // Worth knowing before committing to fresh money on a new order.
+    let supplierCredit = 0;
+
+    async function checkSupplierCredit() {
+        const box = document.getElementById('creditNotice');
+        const supplier = document.getElementById('poSupplier').value;
+        supplierCredit = 0;
+        box.classList.add('d-none');
+        if (!supplier) return;
+
+        try {
+            const res = await fetch('/api/purchase-orders/supplier_credit/?supplier=' + supplier);
+            if (!res.ok) return;
+            const data = await res.json();
+            supplierCredit = Number(data.spendable || 0);
+            if (supplierCredit <= 0) return;
+
+            box.classList.remove('d-none');
+            box.innerHTML = '<i class="bi bi-piggy-bank"></i> <b>' + data.supplier_name +
+                '</b> is holding <b>TZS ' + Math.round(supplierCredit).toLocaleString() +
+                '</b> of ours from an earlier overpayment. The cash desk can put it against this order.';
+            renderCreditAgainstTotal();
+        } catch (e) { console.error(e); }
+    }
+
+    // Once there are line items, say how far the credit goes.
+    function renderCreditAgainstTotal() {
+        const box = document.getElementById('creditNotice');
+        if (supplierCredit <= 0 || box.classList.contains('d-none')) return;
+        const total = lineItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0);
+        if (!total) return;
+
+        const remaining = total - supplierCredit;
+        const line = remaining > 0
+            ? 'This order is TZS ' + Math.round(total).toLocaleString() + ' — the credit covers part of it, ' +
+              'leaving TZS ' + Math.round(remaining).toLocaleString() + ' to pay.'
+            : 'That covers this order in full.';
+        const existing = box.querySelector('.credit-split');
+        if (existing) existing.remove();
+        box.insertAdjacentHTML('beforeend', '<div class="credit-split mt-1 fw-bold">' + line + '</div>');
+    }
+
     function populateSelect(id, items) {
         const select = document.getElementById(id);
         select.innerHTML = '<option value="">Select...</option>';
@@ -196,6 +240,7 @@
             tbody.appendChild(tr);
         });
         document.getElementById('poTotal').innerText = 'TZS ' + fmt(total);
+        renderCreditAgainstTotal();
     }
 
     async function submitOrder() {

@@ -17,6 +17,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from apps.core.notify import notify
+from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -201,6 +202,30 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(qs, many=True).data)
 
     @action(detail=False, methods=['get'])
+    def credits(self, request):
+        """Suppliers holding money of ours, most first.
+
+        An overpayment is not a loss — it is the next order's deposit. This is
+        the section that says so, and what the payment form draws on.
+        """
+        balances = credit_balances()
+        names = dict(Supplier.objects.filter(id__in=balances).values_list('id', 'name'))
+        rows = [{
+            'supplier': sid,
+            'supplier_name': names.get(sid, 'Unknown supplier'),
+            'overpaid': str(row['overpaid']),
+            'applied': str(row['applied']),
+            'available': str(row['available']),
+            'pending_use': str(pending_credit_use(sid)),
+            'spendable': str(max(row['available'] - pending_credit_use(sid), Decimal('0'))),
+        } for sid, row in balances.items()]
+        rows.sort(key=lambda r: Decimal(r['available']), reverse=True)
+
+        if (request.query_params.get('all') or '').strip() not in ('1', 'true', 'yes'):
+            rows = [r for r in rows if Decimal(r['available']) > 0]
+        return Response(rows)
+
+    @action(detail=False, methods=['get'])
     def payable_orders(self, request):
         """The purchase orders a payment can be recorded against.
 
@@ -224,11 +249,16 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                   .select_related('supplier', 'created_by')
                   .annotate(
                       paid_total=Sum('payments__amount', filter=Q(payments__status='paid')),
+                      credit_total=Sum('payments__amount',
+                                       filter=Q(payments__status='paid', payments__from_credit=True)),
                       pending_total=Sum('payments__amount', filter=Q(payments__status='pending')),
                   )
                   .order_by('-created_at', '-id'))
 
         include_settled = (request.query_params.get('settled') or '').strip() in ('1', 'true', 'yes')
+        # One pass for every supplier on the list, not one query per row.
+        spendable = {sid: max(row['available'] - pending_credit_use(sid), Decimal('0'))
+                     for sid, row in credit_balances().items()}
 
         rows = []
         for po in orders:
@@ -251,8 +281,10 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'status_display': po.get_status_display(),
                 'total_amount': str(total),
                 'paid_amount': str(paid),
+                'paid_from_credit': str(po.credit_total or Decimal('0')),
                 'pending_amount': str(pending),
                 'balance': str(balance),
+                'supplier_credit': str(spendable.get(po.supplier_id, Decimal('0'))),
                 'settled': bool(paid > 0 and balance <= 0),
                 'raised_by': (raised_by.get_full_name() or raised_by.username) if raised_by else '',
             })
@@ -305,7 +337,9 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                    .annotate(total=Sum('total_amount'), n=Count('id')))
         ordered_by_supplier = {row['supplier']: row for row in ordered}
 
-        supplier_ids = set(ordered_by_supplier) | set(paid_by_supplier) | set(pending_by_supplier)
+        credits = credit_balances()
+        supplier_ids = (set(ordered_by_supplier) | set(paid_by_supplier)
+                        | set(pending_by_supplier) | set(credits))
         names = dict(Supplier.objects.filter(id__in=supplier_ids).values_list('id', 'name'))
 
         rows = []
@@ -325,6 +359,7 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'pending_count': w.get('n') or 0,
                 'pending_amount': str(w.get('total') or Decimal('0')),
                 'balance': str(order_total - paid_total),
+                'credit_available': str(credits.get(sid, {}).get('available') or Decimal('0')),
                 'last_payment': last_paid.get(sid),
             })
 

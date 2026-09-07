@@ -16,6 +16,7 @@ from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 from django.db.models import Q, Sum
+from django.contrib.auth import get_user_model
 from rest_framework.decorators import action
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -270,13 +271,73 @@ def _receive_delivery(check):
         item.save(update_fields=['received_quantity'])
 
 
+def _offer_supplier_credit(po, actor):
+    """Ask the cash desk to spend the supplier's credit on a new order.
+
+    An overpayment is only useful if somebody remembers it, so the moment an
+    order is raised for a supplier holding our money the cashiers are told —
+    with the figure, so they know whether it covers the order or only part.
+    """
+    if po.supplier_id is None:
+        return
+    from apps.finance.credit import spendable_credit
+    from apps.core.notify import notify
+
+    credit = spendable_credit(po.supplier_id)
+    if credit <= 0:
+        return
+
+    total = po.total_amount or 0
+    covers = credit >= total > 0
+    User = get_user_model()
+    cashiers = User.objects.filter(is_active=True).filter(
+        Q(role='cashier') | Q(groups__name='Cashier')
+    ).distinct()
+    for cashier in cashiers:
+        notify(
+            cashier,
+            f"{po.supplier} holds credit — apply it to PO #{po.id}",
+            f"{po.supplier} is holding {credit} of ours."
+            + (f" That covers PO #{po.id} in full." if covers
+               else f" PO #{po.id} is {total}; the rest would still need paying."),
+            url='/finance/supplier-payments/',
+            level='info',
+        )
+
+
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all()
     serializer_class = PurchaseOrderSerializer
     permission_classes = [permissions.IsAuthenticated, CanManagePurchaseOrders]
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        po = serializer.save(created_by=self.request.user)
+        _offer_supplier_credit(po, self.request.user)
+
+    @action(detail=False, methods=['GET'])
+    def supplier_credit(self, request):
+        """What a supplier already holds of ours, for the order form.
+
+        Afisa Ugavi sees this while choosing the supplier: an overpayment on an
+        earlier order is the next order's deposit, and they should know it is
+        there before committing to fresh money.
+
+        GET ?supplier=<id>
+        """
+        supplier_id = (request.query_params.get('supplier') or '').strip()
+        if not supplier_id.isdigit():
+            return Response({'detail': 'supplier must be an id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.finance.credit import available_credit, pending_credit_use, spendable_credit
+        sid = int(supplier_id)
+        supplier = Supplier.objects.filter(id=sid).first()
+        return Response({
+            'supplier': sid,
+            'supplier_name': supplier.name if supplier else '',
+            'available': str(available_credit(sid)),
+            'pending_use': str(pending_credit_use(sid)),
+            'spendable': str(spendable_credit(sid)),
+        })
 
     def destroy(self, request, *args, **kwargs):
         po = self.get_object()

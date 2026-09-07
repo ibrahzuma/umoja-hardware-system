@@ -87,6 +87,12 @@ class SupplierPayment(models.Model):
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Money that never left the till: settling an order out of what the
+    # supplier already holds of ours. See apps/finance/credit.py.
+    from_credit = models.BooleanField(
+        default=False, db_index=True,
+        help_text="Settled from the supplier's credit rather than fresh money")
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
     approved_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
                                     related_name='approved_supplier_payments',

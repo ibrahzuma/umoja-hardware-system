@@ -87,12 +87,13 @@
                         <th class="text-center">Payments</th>
                         <th class="text-end">Paid</th>
                         <th class="text-end">Balance</th>
+                        <th class="text-end">Credit Held</th>
                         <th class="pe-4">Last Paid</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody">
                     <tr>
-                        <td colspan="7" class="text-center py-4">Loading supplier accounts...</td>
+                        <td colspan="8" class="text-center py-4">Loading supplier accounts...</td>
                     </tr>
                 </tbody>
             </table>
@@ -205,7 +206,7 @@
         } catch (e) {
             console.error(e);
             document.getElementById('tableBody').innerHTML =
-                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load supplier accounts.</td></tr>';
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load supplier accounts.</td></tr>';
         }
     }
 
@@ -231,7 +232,7 @@
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No suppliers found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No suppliers found</td></tr>';
             return;
         }
 
@@ -247,6 +248,8 @@
                 <td class="text-center">${a.payment_count}</td>
                 <td class="text-end text-success">${money(a.paid_amount)}</td>
                 <td class="text-end fw-bold ${owed ? 'text-danger' : 'text-muted'}">${money(a.balance)}</td>
+                <td class="text-end fw-bold ${Number(a.credit_available) > 0 ? 'text-success' : 'text-muted'}">
+                    ${money(a.credit_available)}</td>
                 <td class="pe-4"><small class="text-muted">${a.last_payment
                     ? new Date(a.last_payment).toLocaleDateString() : 'never'}</small></td>
             `;

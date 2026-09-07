@@ -68,6 +68,19 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'purchase_order': "Choose the purchase order this payment settles."})
 
+        # Credit can only be spent down to zero, and only once: applications
+        # already queued for approval have claimed their share of it.
+        if attrs.get('from_credit') and self.instance is None:
+            from .credit import spendable_credit
+            supplier = attrs.get('supplier')
+            spendable = spendable_credit(supplier.pk) if supplier else Decimal('0')
+            amount = attrs.get('amount') or Decimal('0')
+            if amount > spendable:
+                raise serializers.ValidationError({'amount': (
+                    f"{supplier} only holds {spendable} of ours"
+                    + (" once payments already awaiting approval are counted." if spendable else ".")
+                )})
+
         return attrs
 
 class TaxPaymentSerializer(serializers.ModelSerializer):

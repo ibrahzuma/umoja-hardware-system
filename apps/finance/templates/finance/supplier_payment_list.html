@@ -13,6 +13,30 @@
     </button>
 </div>
 
+<!-- Money suppliers are holding for us -->
+<div class="card shadow-sm mb-4 d-none" id="creditCard">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-piggy-bank"></i> Credit With Suppliers</span>
+        <small class="text-muted">Overpaid earlier — put it against their next order before paying again.</small>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Supplier</th>
+                        <th class="text-end">Overpaid</th>
+                        <th class="text-end">Already Applied</th>
+                        <th class="text-end">Awaiting Approval</th>
+                        <th class="text-end pe-4">Available Now</th>
+                    </tr>
+                </thead>
+                <tbody id="creditTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Outstanding purchase orders -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-white">
@@ -210,9 +234,19 @@
                         <input type="text" class="form-control" id="supplierDisplay" readonly
                             placeholder="Pick an order first">
                     </div>
+                    <div class="alert alert-success py-2 px-3 d-none" id="creditOffer">
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" id="useCredit"
+                                onchange="onOrderChange(true)">
+                            <label class="form-check-label fw-bold" for="useCredit">
+                                Use the credit this supplier is holding
+                            </label>
+                        </div>
+                        <div class="small" id="creditSplit"></div>
+                    </div>
                     <div class="mb-3">
-                        <label class="form-label">Amount</label>
-                        <input type="number" step="0.01" min="1" class="form-control" id="amount" required>
+                        <label class="form-label" id="amountLabel">Amount</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="amount" required>
                         <small class="text-muted" id="balanceHint"></small>
                     </div>
                     <div class="mb-3">
@@ -267,6 +301,7 @@
         document.getElementById('paymentDate').valueAsDate = new Date();
         loadOrders();
         loadPayments();
+        loadCredits();
     });
 
     function money(v) {
@@ -376,6 +411,10 @@
                 <td><span class="badge bg-light text-dark border">${escapeHtml(o.status_display)}</span></td>
                 <td class="text-end">${money(o.total_amount)}</td>
                 <td class="text-end text-success">${money(o.paid_amount)}
+                    ${Number(o.paid_from_credit || 0) > 0
+                    ? '<div><small class="text-muted">incl. ' + money(o.paid_from_credit)
+                      + ' from credit</small></div>'
+                    : ''}
                     ${Number(o.pending_amount || 0) > 0
                     ? '<div><small class="text-warning-emphasis">' + money(o.pending_amount)
                       + ' awaiting approval</small></div>'
@@ -404,17 +443,26 @@
         if (keep) select.value = keep;
     }
 
-    function onOrderChange() {
+    // `keepChoice` is passed when the credit checkbox itself fired this, so the
+    // tick is not undone by the redraw.
+    function onOrderChange(keepChoice) {
         const id = document.getElementById('purchaseOrder').value;
         const order = orders.find(o => String(o.id) === id);
         const supplierBox = document.getElementById('supplierDisplay');
         const balanceHint = document.getElementById('balanceHint');
         const amount = document.getElementById('amount');
+        const offer = document.getElementById('creditOffer');
+        const useCredit = document.getElementById('useCredit');
+        const amountLabel = document.getElementById('amountLabel');
+
+        if (!keepChoice) useCredit.checked = false;
 
         if (!order) {
             supplierBox.value = '';
             balanceHint.innerText = '';
             amount.value = '';
+            offer.classList.add('d-none');
+            amountLabel.innerText = 'Amount';
             return;
         }
 
@@ -422,8 +470,34 @@
         balanceHint.innerText = 'Order total ' + money(order.total_amount) +
             ' | already paid ' + money(order.paid_amount) +
             ' | balance ' + money(order.balance);
+
+        const balance = Math.max(Number(order.balance) || 0, 0);
+        const credit = Number(order.supplier_credit || 0);
+
+        if (credit > 0 && balance > 0) {
+            offer.classList.remove('d-none');
+            const applied = Math.min(credit, balance);
+            const remaining = balance - applied;
+            document.getElementById('creditSplit').innerHTML =
+                money(credit) + ' held. Applying ' + money(applied) + ' to this order leaves ' +
+                (remaining > 0
+                    ? '<b>' + money(remaining) + '</b> still to pay.'
+                    : '<b>nothing left to pay</b>.');
+
+            if (useCredit.checked) {
+                amountLabel.innerText = 'Cash still to pay (on top of the credit)';
+                amount.value = remaining > 0 ? remaining : 0;
+                amount.min = 0;
+                return;
+            }
+        } else {
+            offer.classList.add('d-none');
+        }
+
+        amountLabel.innerText = 'Amount';
+        amount.min = 1;
         // Default to clearing the balance; the payer can type a part payment.
-        amount.value = Number(order.balance) > 0 ? Number(order.balance) : '';
+        amount.value = balance > 0 ? balance : '';
     }
 
     async function loadPayments() {
@@ -529,7 +603,9 @@
                 ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
                 : '<small class="text-muted">-</small>'}</td>
             <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
-            <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
+            <td>${p.from_credit
+                ? '<span class="badge bg-info text-dark">From credit</span>'
+                : escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
             <td>${statusBadge(p)}${p.decision_note
                 ? '<div><small class="text-muted">Admin: ' + escapeHtml(p.decision_note) + '</small></div>' : ''}
                 ${p.resubmitted_at && p.cashier_note
@@ -627,35 +703,93 @@
             return;
         }
 
-        const data = {
+        const base = {
             purchase_order: orderId,
-            amount: document.getElementById('amount').value,
             payment_date: document.getElementById('paymentDate').value,
             method: document.getElementById('method').value,
             reference: document.getElementById('reference').value,
             notes: document.getElementById('notes').value
         };
 
-        try {
-            const res = await fetch('/api/supplier-payments/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify(data)
-            });
+        const order = orders.find(o => String(o.id) === orderId);
+        const useCredit = document.getElementById('useCredit').checked;
+        const cash = Number(document.getElementById('amount').value || 0);
 
-            if (res.ok) {
-                modal.hide();
-                Swal.fire('Success', 'Payment recorded', 'success');
-                loadOrders();
-                loadPayments();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                const first = err.detail || (Object.values(err)[0] || 'Failed to record payment');
-                Swal.fire('Error', Array.isArray(first) ? first[0] : String(first), 'error');
+        // Two records when credit only covers part of it: the credit applied,
+        // and the cash that still has to go out. Each is its own entry so the
+        // ledger shows plainly which was which.
+        const posts = [];
+        if (useCredit && order) {
+            const applied = Math.min(Number(order.supplier_credit || 0),
+                                     Math.max(Number(order.balance) || 0, 0));
+            if (applied > 0) posts.push(Object.assign({}, base, { amount: applied, from_credit: true }));
+        }
+        if (cash > 0) posts.push(Object.assign({}, base, { amount: cash }));
+
+        if (!posts.length) {
+            Swal.fire('Nothing to record', 'Enter an amount, or apply the supplier credit.', 'info');
+            return;
+        }
+
+        try {
+            for (const payload of posts) {
+                const res = await fetch('/api/supplier-payments/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    const first = err.detail || (Object.values(err)[0] || 'Failed to record payment');
+                    Swal.fire('Error', Array.isArray(first) ? first[0] : String(first), 'error');
+                    loadOrders();
+                    loadPayments();
+                    loadCredits();
+                    return;
+                }
             }
+
+            modal.hide();
+            Swal.fire('Success', posts.length > 1
+                ? 'Credit applied and the balance recorded — both wait on an Admin.'
+                : 'Payment recorded', 'success');
+            loadOrders();
+            loadPayments();
+            loadCredits();
         } catch (e) {
             console.error(e);
             Swal.fire('Error', 'Failed to record payment', 'error');
+        }
+    }
+
+    async function loadCredits() {
+        try {
+            const res = await fetch('/api/supplier-payments/credits/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            const rows = await res.json();
+            const card = document.getElementById('creditCard');
+            const tbody = document.getElementById('creditTableBody');
+
+            if (!rows.length) {
+                card.classList.add('d-none');
+                return;
+            }
+            card.classList.remove('d-none');
+            tbody.innerHTML = '';
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="ps-4 fw-medium">${escapeHtml(r.supplier_name)}</td>
+                    <td class="text-end">${money(r.overpaid)}</td>
+                    <td class="text-end text-muted">${money(r.applied)}</td>
+                    <td class="text-end">${Number(r.pending_use) > 0
+                        ? '<span class="text-warning-emphasis">' + money(r.pending_use) + '</span>' : '-'}</td>
+                    <td class="text-end pe-4 fw-bold text-success">${money(r.spendable)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {
+            console.error(e);
         }
     }
 </script>

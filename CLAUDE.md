@@ -91,6 +91,15 @@ See `DEPLOYMENT.md` for one-time server setup.
     `YYYY-MM-DD` string, never a parsed `Date`, so money cannot slide between months on a timezone shift.
     `/api/supplier-payments/by_supplier/` backs the **By Supplier** screen (ordered vs paid vs still owed per
     supplier; `?month=` narrows the paid side only).
+  - **Supplier credit** (`apps/finance/credit.py`) — overpay a 10m order by 10m and the supplier holds 10m of
+    ours. Derived, never stored, like the CRM's customer credit:
+    `credit = Σ per-order overpayment (approved cash only, never negative per order) − Σ approved
+    from_credit payments`. Spending it is an ordinary `SupplierPayment` with `from_credit=True`: it settles the
+    order it points at and draws the credit down, and it is excluded from the overpayment side so applying
+    credit can never manufacture more of it. `spendable_credit()` also subtracts applications still awaiting
+    approval, so two queued applications cannot both spend the same money. Afisa Ugavi sees the figure on the
+    order form (`/api/purchase-orders/supplier_credit/?supplier=`), and creating an order for a supplier holding
+    credit notifies the cashiers.
   - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
     `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
     `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.
