@@ -7,8 +7,8 @@
     <div>
         <h2 class="text-primary fw-bold mb-1">Sales Accounting</h2>
         <p class="text-muted mb-0 small">Every sale made at the till — cash, credit or any other way — lands here
-            as pending. Posting takes it into the books and the P&amp;L; the money counts only once Accounts
-            confirm it, with the invoice attached.</p>
+            as pending. Posting it takes it into the books and records the money in one step — say how it was
+            paid and attach the invoice.</p>
     </div>
     <button class="btn btn-outline-secondary" onclick="loadEntries()">
         <i class="bi bi-arrow-clockwise"></i> Refresh
@@ -135,10 +135,10 @@
 </div>
 
 <p class="text-muted small mt-3 mb-0">
-    <strong>Posting</strong> says the books have taken the sale up; its figures freeze from that point.
-    <strong>Querying</strong> flags one that does not look right and tells whoever made the sale — it can still be
-    posted once it is sorted out. <strong>Confirming payment</strong> is separate: it is what says the money is
-    actually in, and it takes the method and the invoice.
+    <strong>Posting</strong> does both jobs at once: it takes the sale into the books and the P&amp;L, and
+    records the money as received — so it asks how it was paid and for the invoice. Its figures freeze from that
+    point. <strong>Querying</strong> flags one that does not look right and tells whoever made the sale; it can
+    still be posted once sorted out.
 </p>
 
 <!-- Confirm the money is in -->
@@ -146,12 +146,13 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Confirm Payment Received</h5>
+                <h5 class="modal-title">Post Sale &amp; Record Payment</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">Until this is done the money counts as not yet received, whatever
-                    the till recorded.</p>
+                <p class="text-muted small">This takes the sale into the books and records the money as
+                    received. Until it is done the sale is out of the P&amp;L and the money counts as not yet in,
+                    whatever the till recorded.</p>
                 <form id="confirmForm">
                     <input type="hidden" id="confirmId">
                     <div class="mb-3">
@@ -185,7 +186,7 @@
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-lg"></i> Confirm the money is in
+                            <i class="bi bi-check-lg"></i> Post it and record the money
                         </button>
                     </div>
                 </form>
@@ -378,25 +379,25 @@
     }
 
     function actionsFor(e) {
-        const parts = [];
+        // One button. Posting a sale and recording its money are the same act.
+        const done = e.status === 'posted' && e.payment_status === 'confirmed';
+        if (done) {
+            return '<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>';
+        }
+
+        const parts = [
+            '<button class="btn btn-sm btn-success mb-1" onclick="openConfirm(' + e.id + ')">'
+            + '<i class="bi bi-check-lg"></i> Post &amp; record payment</button>'
+        ];
         if (e.status !== 'posted') {
-            parts.push('<button class="btn btn-sm btn-success mb-1" onclick="decide(' + e.id
-                + ", 'post_entry')\"><i class=\"bi bi-check-lg\"></i> Post</button>");
             parts.push('<button class="btn btn-sm btn-outline-danger mb-1" onclick="decide(' + e.id
                 + ", 'query')\"><i class=\"bi bi-question-lg\"></i> Query</button>");
-        }
-        if (e.payment_status !== 'confirmed') {
-            parts.push('<button class="btn btn-sm btn-outline-primary mb-1" onclick="openConfirm(' + e.id
-                + ')"><i class="bi bi-cash-coin"></i> Confirm payment</button>');
-        }
-        if (!parts.length) {
-            parts.push('<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>');
         }
         return parts.join(' ');
     }
 
-    // The money is not in until Accounts say so, name how it came, and attach
-    // the invoice. That is what this does; nothing else moves the figure.
+    // Posting a sale and saying its money is in are one act: this collects the
+    // method and the invoice, then does both.
     let confirmModal;
 
     function openConfirm(id) {
@@ -431,43 +432,40 @@
         body.append('invoice_document', file);
 
         try {
-            const res = await fetch('/api/sales-ledger/' + id + '/confirm_payment/', {
+            const res = await fetch('/api/sales-ledger/' + id + '/post_entry/', {
                 method: 'POST',
                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
                 body: body
             });
             if (res.ok) {
                 confirmModal.hide();
-                Swal.fire('Confirmed', 'The money is recorded as received', 'success');
+                Swal.fire('Posted', 'The sale is in the books and the money recorded', 'success');
                 loadEntries();
             } else {
                 const err = await res.json().catch(() => ({}));
-                Swal.fire('Error', err.detail || 'Could not confirm the payment', 'error');
+                Swal.fire('Error', err.detail || 'Could not post the sale', 'error');
             }
         } catch (e) {
             console.error(e);
-            Swal.fire('Error', 'Could not confirm the payment', 'error');
+            Swal.fire('Error', 'Could not post the sale', 'error');
         }
     }
 
     async function decide(id, what) {
         const entry = entries.find(e => e.id === id);
-        const posting = what === 'post_entry';
 
         const result = await Swal.fire({
-            title: posting ? 'Post this sale?' : 'Query this sale?',
+            title: 'Query this sale?',
             html: entry
                 ? '<b>' + escapeHtml(entry.invoice_number) + '</b> — ' + money(entry.total_amount)
-                  + (posting
-                      ? '<br><small class="text-muted">Its figures freeze once posted.</small>'
-                      : '<br><small class="text-muted">Whoever made the sale is told.</small>')
+                  + '<br><small class="text-muted">Whoever made the sale is told.</small>'
                 : '',
-            icon: posting ? 'question' : 'warning',
+            icon: 'warning',
             input: 'text',
-            inputPlaceholder: posting ? 'Note (optional)' : 'What is wrong with it?',
+            inputPlaceholder: 'What is wrong with it?',
             showCancelButton: true,
-            confirmButtonText: posting ? 'Post' : 'Query',
-            confirmButtonColor: posting ? '#198754' : '#dc3545',
+            confirmButtonText: 'Query',
+            confirmButtonColor: '#dc3545',
         });
         if (!result.isConfirmed) return;
 
@@ -478,7 +476,7 @@
                 body: JSON.stringify({ note: result.value || '' })
             });
             if (res.ok) {
-                Swal.fire('Done', posting ? 'Sale posted' : 'Sale queried', 'success');
+                Swal.fire('Done', 'Sale queried', 'success');
                 loadEntries();
             } else {
                 const err = await res.json().catch(() => ({}));

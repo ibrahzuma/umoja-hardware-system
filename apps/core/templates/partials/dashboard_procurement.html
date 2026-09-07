@@ -46,7 +46,7 @@
                 </div>
                 <div>
                     <h3 class="fw-bold mb-0">{{ po_draft }}</h3>
-                    <small class="text-muted">Draft orders</small>
+                    <small class="text-muted">Awaiting delivery</small>
                 </div>
             </div>
         </div>
@@ -171,7 +171,7 @@
                             {% if po.status == 'received' %}<span class="badge bg-success-subtle text-success">Received</span>
                             {% elif po.status == 'sent' %}<span class="badge bg-primary-subtle text-primary">Sent</span>
                             {% elif po.status == 'cancelled' %}<span class="badge bg-secondary-subtle text-secondary">Cancelled</span>
-                            {% else %}<span class="badge bg-warning-subtle text-warning">Draft</span>{% endif %}
+                            {% else %}<span class="badge bg-warning-subtle text-warning">Awaiting delivery</span>{% endif %}
                         </td>
                         <td class="text-end fw-semibold">TZS {{ po.total_amount|floatformat:0|intcomma }}</td>
                     </tr>

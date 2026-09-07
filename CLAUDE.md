@@ -108,10 +108,11 @@ See `DEPLOYMENT.md` for one-time server setup.
     still updates, so a sale cancelled or deleted after posting stays put, flagged for reversal, instead of
     vanishing. `python manage.py sync_sales_ledger` backfills or repairs. Access is admin + accountant via
     `apps/finance/views.py::can_use_accounting`; the API is read-only apart from its actions.
-    **Posting is what puts a sale in the P&L** — revenue is earned, not collected. Separately,
-    `confirm_payment` is what says the money is actually in: it requires a method (cash/bank/mobile/cheque/other)
-    **and an attached invoice**, and only `confirmed_amount` counts as cash. The till's transactions are a claim,
-    never a receipt, so never read `amount_paid` as money in hand. `cost_of_sales` and `commission_total` are
+    **`post_entry` is one act**: it takes the sale into the books (and so into the P&L) *and* records the money
+    as received. It requires a method (cash/bank/mobile/cheque/other) **and an attached invoice**; only
+    `confirmed_amount` counts as cash. The till's transactions are a claim, never a receipt, so never read
+    `amount_paid` as money in hand. `status` and `payment_status` stay separate fields — the P&L reads one, the
+    cash flow the other — but nothing moves them apart. `cost_of_sales` and `commission_total` are
     frozen on the entry so a later change to a product's cost cannot move a posted profit.
   - **The three statements live in `apps/finance/statements.py`** (`profit_and_loss`, `cash_flow`,
     `balance_sheet`), each behind a read-only ViewSet and a page: `/finance/profit-loss/`, `/finance/cash-flow/`,
@@ -127,9 +128,11 @@ See `DEPLOYMENT.md` for one-time server setup.
       confirming a customer payment would clear a debtor with nothing to replace it and net assets would fall.
       The system holds no capital, drawings or fixed-asset records, so the gap between net assets and retained
       earnings is shown as **unrecorded** rather than plugged into equity — do not "fix" that by balancing it.
-      Creditors exclude **draft** purchase orders as well as cancelled ones: a draft is an order somebody is
-      still typing, and the business owes nothing on it. (`payable_orders` deliberately still offers drafts —
-      paying early is normal — so the two rules differ on purpose.)
+      Creditors count **every live purchase order**, cancelled ones aside. The `draft` status is a historical
+      value: those orders are placed and simply have not arrived, which is why they read **"Waiting for
+      Delivery"** everywhere and why the money on them is owed. Debtors are invoices Accounts have not confirmed
+      as paid, posted or not — with posting and payment one act, a sale still waiting on Accounts is exactly one
+      nobody has been paid for.
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
     is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
     way — the ledger mirrors, it does not authorise.

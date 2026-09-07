@@ -127,8 +127,12 @@ class PurchaseOrder(models.Model):
     Nothing reaches stock on a short delivery until the Admin confirms it, and
     only the quantity that actually arrived is added.
     """
+    # 'draft' is a historical value: these orders are placed and simply have
+    # not arrived yet, so they read as "Waiting for Delivery" everywhere and
+    # count as money owed on the balance sheet. The stored value is left alone
+    # rather than migrated, so nothing that filters on it breaks.
     STATUS_CHOICES = (
-        ('draft', 'Draft'),
+        ('draft', 'Waiting for Delivery'),
         ('sent', 'Sent'),
         ('awaiting_check', 'Awaiting Store Check'),
         ('discrepancy', 'Discrepancy'),

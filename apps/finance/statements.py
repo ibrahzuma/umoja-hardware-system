@@ -215,9 +215,17 @@ def _stock_at_cost():
 
 
 def _debtors():
-    """Posted invoices whose money Accounts have not confirmed."""
-    rows = SalesLedgerEntry.objects.filter(status='posted').aggregate(
-        invoiced=Sum('total_amount'), confirmed=Sum('confirmed_amount'))
+    """Invoices whose money Accounts have not confirmed as received.
+
+    Not limited to posted rows. Posting and confirming the money are one act
+    now, so a sale still waiting on Accounts is precisely one nobody has been
+    paid for — which is what a debtor is. Cancelled and deleted sales are left
+    out; there is nothing to collect on those.
+    """
+    rows = (SalesLedgerEntry.objects
+            .filter(payment_status='awaiting')
+            .exclude(sale_status__in=['cancelled', 'deleted'])
+            .aggregate(invoiced=Sum('total_amount'), confirmed=Sum('confirmed_amount')))
     return max((rows['invoiced'] or ZERO) - (rows['confirmed'] or ZERO), ZERO)
 
 
@@ -225,13 +233,13 @@ def _creditors():
     """What is still owed on purchase orders, per order — being short on one
     order does not cancel an overpayment on another, that is a credit.
 
-    **Drafts do not count.** A draft is an order somebody is still typing; the
-    business has not committed to it and owes nothing on it. The payment screen
-    offers drafts deliberately (a supplier is often paid before an order is
-    confirmed), but a balance sheet liability begins when the order is placed.
+    Every order that has not been cancelled counts, including those still
+    marked 'draft' in the database: those are placed orders waiting for
+    delivery, not something somebody is half-way through typing, so the money
+    on them is owed.
     """
     orders = (PurchaseOrder.objects
-              .exclude(status__in=['cancelled', 'draft'])
+              .exclude(status='cancelled')
               .filter(supplier__isnull=False)
               .values_list('total_amount', 'id'))
     paid_by_order = {
@@ -291,12 +299,12 @@ def balance_sheet():
                   'revenue'),
             _line('   of which petty cash float', petty, 'Cashier > Petty Cash, in less out', 'memo'),
             _line('Stock at cost', stock, 'Quantity on hand x product cost', 'revenue'),
-            _line('Debtors', debtors, 'Posted invoices Accounts have not confirmed as paid', 'revenue'),
+            _line('Debtors', debtors, 'Invoices Accounts have not confirmed as paid', 'revenue'),
             _line('Credit held with suppliers', supplier_credit, 'Overpayments not yet applied', 'revenue'),
         ],
         'liability_lines': [
             _line('Owed to suppliers', creditors,
-                  'Placed purchase orders less approved payments; drafts are not a commitment'),
+                  'Every live purchase order, less approved payments'),
         ],
         'caveats': [
             'Cash is derived from the movements this system holds, not read from a bank statement — '

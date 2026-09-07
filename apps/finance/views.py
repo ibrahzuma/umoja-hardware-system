@@ -803,20 +803,62 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
     filterset_fields = ['status', 'settlement', 'branch', 'sold_by']
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'],
+            parser_classes=[MultiPartParser, FormParser, JSONParser])
     def post_entry(self, request, pk=None):
-        """Accounts take the sale up. The figures freeze from here."""
-        entry = self.get_object()
-        if entry.status == 'posted':
-            return Response({'detail': 'That sale is already posted.'}, status=400)
+        """Take the sale into the books and record the money, in one step.
 
-        entry.status = 'posted'
-        entry.posted_by = request.user
-        entry.posted_at = timezone.now()
+        Accounts do one thing to a sale: satisfy themselves it is real, say how
+        the money came in, attach the invoice, and post it. Two buttons only
+        invited half-done rows, so the method and the attachment are required
+        here and the figures freeze on the same click.
+
+        An entry posted before this became one action can still be completed:
+        the posting is left as it was and only the money is recorded.
+        """
+        entry = self.get_object()
+        if entry.status == 'posted' and entry.payment_status == 'confirmed':
+            return Response({'detail': 'That sale is already posted and paid.'}, status=400)
+
+        method = (request.data.get('method') or '').strip()
+        valid = dict(SalesLedgerEntry.CONFIRMED_METHODS)
+        if method not in valid:
+            return Response(
+                {'detail': 'Say how the money came in: ' + ', '.join(valid)},
+                status=400,
+            )
+
+        document = request.FILES.get('invoice_document')
+        if document is None and not entry.invoice_document:
+            return Response({'detail': 'Attach the invoice for this sale.'}, status=400)
+
+        raw_amount = request.data.get('amount')
+        try:
+            amount = (Decimal(str(raw_amount)) if raw_amount not in (None, '')
+                      else (entry.total_amount or Decimal('0')))
+        except (InvalidOperation, TypeError):
+            return Response({'detail': 'That amount is not a number.'}, status=400)
+        if amount <= 0:
+            return Response({'detail': 'A confirmed payment has to be more than nothing.'}, status=400)
+
+        now = timezone.now()
+        if entry.status != 'posted':
+            entry.status = 'posted'
+            entry.posted_by = request.user
+            entry.posted_at = now
         note = (request.data.get('note') or '').strip()
         if note:
             entry.note = note
-        entry.save(update_fields=['status', 'posted_by', 'posted_at', 'note', 'updated_at'])
+
+        entry.payment_status = 'confirmed'
+        entry.confirmed_method = method
+        entry.confirmed_amount = amount
+        entry.confirmed_reference = (request.data.get('reference') or '').strip()
+        entry.confirmed_by = request.user
+        entry.confirmed_at = now
+        if document is not None:
+            entry.invoice_document = document
+        entry.save()
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=['post'])
@@ -841,51 +883,6 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
             url='/sales/sales/',
             level='warning',
         )
-        return Response(self.get_serializer(entry).data)
-
-    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser, JSONParser])
-    def confirm_payment(self, request, pk=None):
-        """Accounts say the money is actually in.
-
-        The till's word is a claim, not a receipt: until this is done the sale
-        is revenue earned with the cash still outstanding, however the POS
-        recorded it. Naming the method and attaching the invoice is the point
-        of the step, so both are required.
-        """
-        entry = self.get_object()
-        if entry.payment_status == 'confirmed':
-            return Response({'detail': 'That payment is already confirmed.'}, status=400)
-
-        method = (request.data.get('method') or '').strip()
-        valid = dict(SalesLedgerEntry.CONFIRMED_METHODS)
-        if method not in valid:
-            return Response(
-                {'detail': 'Say how the money came in: ' + ', '.join(valid)},
-                status=400,
-            )
-
-        document = request.FILES.get('invoice_document')
-        if document is None and not entry.invoice_document:
-            return Response({'detail': 'Attach the invoice for this payment.'}, status=400)
-
-        raw_amount = request.data.get('amount')
-        try:
-            amount = (Decimal(str(raw_amount)) if raw_amount not in (None, '')
-                      else (entry.total_amount or Decimal('0')))
-        except (InvalidOperation, TypeError):
-            return Response({'detail': 'That amount is not a number.'}, status=400)
-        if amount <= 0:
-            return Response({'detail': 'A confirmed payment has to be more than nothing.'}, status=400)
-
-        entry.payment_status = 'confirmed'
-        entry.confirmed_method = method
-        entry.confirmed_amount = amount
-        entry.confirmed_reference = (request.data.get('reference') or '').strip()
-        entry.confirmed_by = request.user
-        entry.confirmed_at = timezone.now()
-        if document is not None:
-            entry.invoice_document = document
-        entry.save()
         return Response(self.get_serializer(entry).data)
 
     @action(detail=False, methods=['get'])
