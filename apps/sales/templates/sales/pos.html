@@ -363,7 +363,7 @@
             const col = document.createElement('div');
             col.className = 'col-6 col-sm-4 col-md-4 col-xl-3';
             col.innerHTML = `
-                <div class="card h-100 product-card shadow-sm border-0 ${hasStock ? '' : 'opacity-50'}" 
+                <div class="card h-100 product-card shadow-sm border-0 ${hasStock ? '' : 'opacity-50 pe-none'}" 
                      role="button" onclick="addToCart(${p.id})">
                     <div class="card-body p-3 d-flex flex-column text-center">
                         <div class="bg-light rounded p-3 mb-3 d-flex align-items-center justify-content-center" style="height: 100px;">
@@ -398,11 +398,17 @@
         const existingItem = cart.find(i => i.id === productId);
         const currentQty = existingItem ? existingItem.qty : 0;
 
-        // Out-of-stock / over-stock items are allowed as back-orders — stock is
-        // only deducted at dispatch, which re-checks availability. Just warn.
+        // Nothing is sold that is not there to sell. The server refuses such a
+        // sale outright; stopping it here saves keying a whole order first.
         if (currentQty + 1 > available) {
-            Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2200 })
-                .fire({ icon: 'warning', title: available > 0 ? 'Exceeds stock — added as back-order' : 'Out of stock — added as back-order' });
+            Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2600 })
+                .fire({
+                    icon: 'error',
+                    title: available > 0
+                        ? `Only ${available} in stock at this branch`
+                        : 'Out of stock at this branch'
+                });
+            return;
         }
 
         if (existingItem) {

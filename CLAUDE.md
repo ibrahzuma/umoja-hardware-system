@@ -296,7 +296,14 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
 - **`SaleItem` commission is frozen at save time.** `SaleItem.save()` only computes `commission_amount` when it's
   `0`, so historical sales keep their commission if `Category.commission_percentage` later changes. Preserve this.
 - **Stock is deducted at dispatch, not at sale creation** (`SaleViewSet.dispatch_order`), and restored in
-  `perform_destroy` only for dispatched sales. Back-orders are therefore possible by design.
+  `perform_destroy` only for dispatched sales. **Back-orders are not allowed** (they used to be): since
+  2026-09-07 `SaleSerializer.validate` refuses any sale the branch cannot fill, via
+  `apps/sales/stock_guard.py`. Because stock only leaves at dispatch, "available" is
+  `Stock.quantity − quantities already on pending/approved sales at that branch` — otherwise three reps
+  could each sell the same last five bags and the shortfall would only surface in front of a customer.
+  Services (`product_type='service'`) are never stock-limited, on the sale *or* at dispatch. The guard
+  lives on the serializer, not in a screen, so it holds for the web POS, the Android app and any other
+  client; both POS screens also check it up front so nobody keys a whole order first.
 - **Credit sales take an optional deposit** in the POS (`apps/sales/templates/sales/pos.html`), recorded as a
   `Transaction`; the "credit" filter on `/api/sales/?status=credit` annotates paid totals and returns underpaid sales.
 - **`Sale.total_amount` is declared twice in the model** (`apps/sales/models.py`). Known quirk — the second

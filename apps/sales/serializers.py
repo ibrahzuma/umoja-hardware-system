@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
 from apps.inventory.models import Product
+from .stock_guard import check_lines
 
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -68,6 +69,28 @@ class SaleSerializer(serializers.ModelSerializer):
 
     def get_total_weight(self, obj):
         return sum(item.quantity * item.product.weight for item in obj.items.all())
+
+    def validate(self, attrs):
+        """Nothing is sold that is not there to sell.
+
+        Enforced here rather than in a screen so it holds for the web POS, the
+        Android app and anything else that posts a sale. Stock still leaves at
+        dispatch — this only refuses to promise goods the branch does not have,
+        counting what earlier undispatched sales have already spoken for.
+        """
+        items = attrs.get('items') or []
+        branch = attrs.get('branch') or getattr(self.instance, 'branch', None)
+        if not items or branch is None:
+            return attrs
+
+        problems = check_lines(
+            branch.pk if hasattr(branch, 'pk') else branch,
+            [(i.get('product'), i.get('quantity')) for i in items],
+            exclude_sale_id=self.instance.pk if self.instance else None,
+        )
+        if problems:
+            raise serializers.ValidationError({'items': problems})
+        return attrs
 
     def create(self, validated_data):
         from decimal import Decimal

@@ -5,6 +5,7 @@ import '../data/api_client.dart';
 import '../data/repositories.dart';
 import '../models/branch.dart';
 import '../models/product.dart';
+import '../models/stock.dart';
 import '../screens/home_shell.dart';
 import '../theme/app_theme.dart';
 import '../widgets/empty_state.dart';
@@ -33,7 +34,45 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
   double get _total => _cart.values.fold(0, (s, l) => s + l.subtotal);
 
+  /// What the chosen branch has on the shelf, product by product.
+  ///
+  /// The server refuses a sale it cannot fill, so the app checks the same
+  /// thing first: being told "out of stock" after keying a whole order in
+  /// front of a customer is no way to find out.
+  Map<int, int> get _onHand {
+    final branchId = _branch?.id;
+    if (branchId == null) return const {};
+    final stocks = ref.read(stockListProvider).value ?? const <Stock>[];
+    return {
+      for (final s in stocks)
+        if (s.branchId == branchId) s.productId: s.quantity,
+    };
+  }
+
+  /// Services are not stocked, so they are never limited.
+  bool _isStocked(Product p) => p.productType != 'service';
+
+  int _availableFor(Product p) =>
+      _isStocked(p) ? (_onHand[p.id] ?? 0) : 1 << 30;
+
+  void _tooFew(Product p, int available) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(available <= 0
+            ? '${p.name} is out of stock at ${_branch?.name ?? "this branch"}.'
+            : 'Only $available of ${p.name} left at ${_branch?.name ?? "this branch"}.'),
+        backgroundColor: AppColors.danger500,
+      ),
+    );
+  }
+
   void _add(Product p) {
+    final available = _availableFor(p);
+    final inCart = _cart[p.id]?.quantity ?? 0;
+    if (inCart + 1 > available) {
+      _tooFew(p, available);
+      return;
+    }
     setState(() {
       final existing = _cart[p.id];
       if (existing != null) {
@@ -45,9 +84,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   void _changeQty(Product p, int delta) {
+    final line = _cart[p.id];
+    if (line == null) return;
+    if (delta > 0 && line.quantity + delta > _availableFor(p)) {
+      _tooFew(p, _availableFor(p));
+      return;
+    }
     setState(() {
-      final line = _cart[p.id];
-      if (line == null) return;
       line.quantity += delta;
       if (line.quantity <= 0) _cart.remove(p.id);
     });
@@ -61,7 +104,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
-      builder: (_) => const _ProductPickerSheet(),
+      builder: (_) => _ProductPickerSheet(branchId: _branch?.id),
     );
     if (picked != null) _add(picked);
   }
@@ -137,7 +180,19 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   return _BranchSelector(
                     branches: list,
                     selected: _branch!,
-                    onChanged: (b) => setState(() => _branch = b),
+                    onChanged: (b) => setState(() {
+                      _branch = b;
+                      // The cart was priced against another branch's shelf.
+                      if (_cart.isNotEmpty) {
+                        _cart.clear();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Branch changed — the cart was cleared, stock differs by branch.'),
+                          ),
+                        );
+                      }
+                    }),
                   );
                 },
                 loading: () => const LinearProgressIndicator(minHeight: 2),
@@ -534,7 +589,10 @@ class _Notice extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ProductPickerSheet extends ConsumerStatefulWidget {
-  const _ProductPickerSheet();
+  const _ProductPickerSheet({this.branchId});
+
+  /// Stock is per branch, so the sheet has to know which one it is offering.
+  final int? branchId;
 
   @override
   ConsumerState<_ProductPickerSheet> createState() =>
@@ -547,6 +605,11 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final products = ref.watch(productListProvider(_query));
+    final stocks = ref.watch(stockListProvider).value ?? const <Stock>[];
+    final onHand = <int, int>{
+      for (final s in stocks)
+        if (s.branchId == widget.branchId) s.productId: s.quantity,
+    };
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
@@ -591,24 +654,42 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
                         const Divider(height: 1, color: AppColors.slate100),
                     itemBuilder: (_, i) {
                       final p = list[i];
+                      final stocked = p.productType != 'service';
+                      final available = onHand[p.id] ?? 0;
+                      final out = stocked && available <= 0;
+
                       return ListTile(
-                        onTap: () => Navigator.pop(context, p),
+                        enabled: !out,
+                        onTap: out ? null : () => Navigator.pop(context, p),
                         leading: Container(
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: AppColors.brand50,
+                            color: out ? AppColors.slate100 : AppColors.brand50,
                             borderRadius:
                                 BorderRadius.circular(AppRadius.sm),
                           ),
-                          child: const Icon(Icons.inventory_2_outlined,
-                              color: AppColors.brand600, size: 18),
+                          child: Icon(Icons.inventory_2_outlined,
+                              color: out
+                                  ? AppColors.slate400
+                                  : AppColors.brand600,
+                              size: 18),
                         ),
                         title: Text(p.name),
-                        subtitle:
-                            Text('${p.sku ?? "—"} · ${formatTzs(p.price)}'),
-                        trailing: const Icon(Icons.add_circle_outline_rounded,
-                            color: AppColors.brand500),
+                        subtitle: Text(
+                          stocked
+                              ? '${p.sku ?? "—"} · ${formatTzs(p.price)} · '
+                                  '${out ? "out of stock" : "$available in stock"}'
+                              : '${p.sku ?? "—"} · ${formatTzs(p.price)} · service',
+                          style: TextStyle(
+                            color: out ? AppColors.danger700 : null,
+                          ),
+                        ),
+                        trailing: out
+                            ? const Icon(Icons.block_rounded,
+                                color: AppColors.slate400)
+                            : const Icon(Icons.add_circle_outline_rounded,
+                                color: AppColors.brand500),
                       );
                     },
                   );

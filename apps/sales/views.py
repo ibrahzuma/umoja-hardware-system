@@ -205,10 +205,13 @@ class SaleViewSet(viewsets.ModelViewSet):
             from rest_framework import status
             return Response({"error": "Invalid store keeper"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Deduct Stock
+        # 1. Deduct Stock. Services are not on any shelf, so they are skipped —
+        #    otherwise a sale with a fitting charge on it could never leave.
         from apps.inventory.models import Stock
         errors = []
         for item in sale.items.all():
+            if item.product.product_type == 'service':
+                continue
             try:
                 stock = Stock.objects.get(product=item.product, branch=sale.branch)
                 if stock.quantity < item.quantity:
