@@ -72,7 +72,8 @@ See `DEPLOYMENT.md` for one-time server setup.
     plus `utils.py` (PDF rendering) and `views_report.py`.
   - `finance` — `ExpenseCategory`, `Expense` (receipt image, paid-from `BankAccount`), `Income`, `BankAccount`,
     `SupplierPayment` (hangs off the `PurchaseOrder` it settles — the supplier is derived from the order, never
-    picked freely; `/api/supplier-payments/payable_orders/` is the list the form is built from),
+    picked freely; `/api/supplier-payments/payable_orders/` is the list the form is built from, and it carries
+    *every* order with a supplier, drafts included, minus the ones already paid off),
     `TaxPayment` (VAT/PAYE/SDL/…), `PaymentReceipt` (customer payment tracking / debtors),
     plus the **Cashier desk**: `PettyCashTransaction` (the counter float — 'in' top-ups vs 'out' vouchers, balance
     derived) and `OtherPayment` (payouts that are neither a supplier invoice nor a tax). One predicate,

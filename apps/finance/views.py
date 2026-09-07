@@ -87,15 +87,16 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
     def payable_orders(self, request):
         """The purchase orders a payment can be recorded against.
 
-        Every supplier the payer can choose comes from here: these are the
-        orders Afisa Ugavi raised and committed. Drafts and cancelled orders
-        are left out — nothing is owed on them — and each row carries what has
-        already been paid so the form can default to the balance.
+        Every supplier the payer can choose comes from here: *every* order
+        Afisa Ugavi has raised, drafts included — a supplier is often paid
+        before the order is confirmed. The only orders left out are ones with
+        no supplier on them, which could not name a payee. Each row carries
+        what has already been paid so the form can default to the balance.
 
-        GET ?settled=0 (the default) hides orders with nothing left to pay.
+        GET ?settled=0 (the default) hides orders that have been paid off; an
+        order nobody has paid against yet always shows, whatever its total.
         """
         orders = (PurchaseOrder.objects
-                  .exclude(status__in=['draft', 'cancelled'])
                   .filter(supplier__isnull=False)
                   .select_related('supplier', 'created_by')
                   .annotate(paid_total=Sum('payments__amount'))
@@ -108,7 +109,9 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             total = po.total_amount or Decimal('0')
             paid = po.paid_total or Decimal('0')
             balance = total - paid
-            if not include_settled and balance <= 0:
+            # Settled means money has actually gone out and cleared the order —
+            # not merely that the order totals zero.
+            if not include_settled and paid > 0 and balance <= 0:
                 continue
             raised_by = po.created_by
             rows.append({
@@ -122,6 +125,8 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'total_amount': str(total),
                 'paid_amount': str(paid),
                 'balance': str(balance),
+                'settled': bool(paid > 0 and balance <= 0),
+                'cancelled': po.status == 'cancelled',
                 'raised_by': (raised_by.get_full_name() or raised_by.username) if raised_by else '',
             })
         return Response(rows)
