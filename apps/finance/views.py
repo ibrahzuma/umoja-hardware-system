@@ -4,11 +4,11 @@ from datetime import date
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Sum
+from django.db.models import Sum, Count, Max
 from django.http import HttpResponse, Http404
 from apps.users.permissions import IsAccountant, CanRecordSupplierPayment, CanHandleCash, is_privileged
 from apps.sales.models import Sale
-from apps.inventory.models import Branch, PurchaseOrder
+from apps.inventory.models import Branch, PurchaseOrder, Supplier
 from .models import Expense, ExpenseCategory
 from django.shortcuts import render
 from django.urls import reverse_lazy
@@ -132,6 +132,69 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             })
         return Response(rows)
 
+    @action(detail=False, methods=['get'])
+    def by_supplier(self, request):
+        """One row per supplier: what was ordered, what has been paid, what is
+        still owed — the account the cash desk works from.
+
+        Ordered totals come from the same orders `payable_orders` offers
+        (cancelled ones excluded, since nothing is owed on them). Paid totals
+        count every payment on record for that supplier, including any not tied
+        to an order, so the figure matches the payment ledger.
+
+        GET ?month=YYYY-MM narrows *payments* to that month, leaving the
+        ordered figure whole — "what did we pay Steel Ltd in September" is the
+        question, against the full account.
+        """
+        month = (request.query_params.get('month') or '').strip()
+
+        payments = SupplierPayment.objects.all()
+        if month:
+            try:
+                year, mon = (int(part) for part in month.split('-'))
+                payments = payments.filter(payment_date__year=year, payment_date__month=mon)
+            except (ValueError, TypeError):
+                return Response({'detail': 'month must look like 2026-09.'}, status=400)
+
+        paid_by_supplier = {
+            row['supplier']: row for row in
+            payments.values('supplier').annotate(total=Sum('amount'), n=Count('id'))
+        }
+        last_paid = {
+            row['supplier']: row['last'] for row in
+            SupplierPayment.objects.values('supplier').annotate(last=Max('payment_date'))
+        }
+
+        ordered = (PurchaseOrder.objects
+                   .exclude(status='cancelled')
+                   .filter(supplier__isnull=False)
+                   .values('supplier')
+                   .annotate(total=Sum('total_amount'), n=Count('id')))
+        ordered_by_supplier = {row['supplier']: row for row in ordered}
+
+        supplier_ids = set(ordered_by_supplier) | set(paid_by_supplier)
+        names = dict(Supplier.objects.filter(id__in=supplier_ids).values_list('id', 'name'))
+
+        rows = []
+        for sid in supplier_ids:
+            o = ordered_by_supplier.get(sid) or {}
+            p = paid_by_supplier.get(sid) or {}
+            order_total = o.get('total') or Decimal('0')
+            paid_total = p.get('total') or Decimal('0')
+            rows.append({
+                'supplier': sid,
+                'supplier_name': names.get(sid, 'Unknown supplier'),
+                'order_count': o.get('n') or 0,
+                'ordered_amount': str(order_total),
+                'payment_count': p.get('n') or 0,
+                'paid_amount': str(paid_total),
+                'balance': str(order_total - paid_total),
+                'last_payment': last_paid.get(sid),
+            })
+
+        rows.sort(key=lambda r: Decimal(r['balance']), reverse=True)
+        return Response(rows)
+
 def can_record_supplier_payment(user):
     """Who may see and use the supplier payment screen: the cash desk, and
     admins. Same rule as `CanRecordSupplierPayment` guards on the API, so the
@@ -144,6 +207,14 @@ def can_record_supplier_payment(user):
 
 class SupplierPaymentListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
     template_name = 'finance/supplier_payment_list.html'
+
+    def test_func(self):
+        return can_record_supplier_payment(self.request.user)
+
+
+class SupplierAccountListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """The same money as the payment ledger, read supplier by supplier."""
+    template_name = 'finance/supplier_accounts.html'
 
     def test_func(self):
         return can_record_supplier_payment(self.request.user)

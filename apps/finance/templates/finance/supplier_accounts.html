@@ -1,0 +1,313 @@
+{% extends 'base.html' %}
+
+{% block title %}By Supplier{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">By Supplier</h2>
+        <p class="text-muted mb-0 small">What each supplier was ordered, what they have been paid, and what is
+            still owed.</p>
+    </div>
+    <a href="{% url 'finance:supplier_payment_list' %}" class="btn btn-outline-primary">
+        <i class="bi bi-cash-stack"></i> Record a payment
+    </a>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-secondary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Suppliers</h6>
+                <h3 class="fw-bold mb-0" id="statSuppliers">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Ordered</h6>
+                <h3 class="fw-bold mb-0" id="statOrdered">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Paid</h6>
+                <h3 class="fw-bold mb-0 text-success" id="statPaid">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Still Owed</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statBalance">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-md-5">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search supplier..."
+                    onkeyup="render()">
+            </div>
+            <div class="col-md-4">
+                <select id="monthFilter" class="form-select" onchange="loadAccounts()">
+                    <option value="">Paid: all time</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="owingOnly" onchange="render()">
+                    <label class="form-check-label small text-muted" for="owingOnly">Only those still owed</label>
+                </div>
+            </div>
+        </div>
+        <small class="text-muted d-block mt-2" id="monthNote"></small>
+    </div>
+</div>
+
+<!-- Accounts -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Supplier</th>
+                        <th class="text-center">Orders</th>
+                        <th class="text-end">Ordered</th>
+                        <th class="text-center">Payments</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Balance</th>
+                        <th class="pe-4">Last Paid</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="7" class="text-center py-4">Loading supplier accounts...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Drill-down -->
+<div class="modal fade" id="supplierModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="supplierModalTitle">Supplier</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6 class="fw-bold text-muted text-uppercase small">Orders</h6>
+                <div class="table-responsive mb-4">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Order</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Paid</th>
+                                <th class="text-end">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailOrders"></tbody>
+                    </table>
+                </div>
+                <h6 class="fw-bold text-muted text-uppercase small">Payments</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Order</th>
+                                <th>Method</th>
+                                <th>Reference</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailPayments"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/month_group.js' %}"></script>
+<script>
+    let accounts = [];
+    let orders = [];
+    let payments = [];
+    let supplierModal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        supplierModal = new bootstrap.Modal(document.getElementById('supplierModal'));
+        loadSupporting();
+        loadAccounts();
+    });
+
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Orders and payments back the drill-down, and the payments also give the
+    // month picker the months that actually have money in them.
+    async function loadSupporting() {
+        try {
+            const [orderRes, payRes] = await Promise.all([
+                fetch('/api/supplier-payments/payable_orders/?settled=1'),
+                fetch('/api/supplier-payments/')
+            ]);
+            if (orderRes.ok) orders = await orderRes.json();
+            if (payRes.ok) {
+                payments = await payRes.json();
+                const select = document.getElementById('monthFilter');
+                MonthGroup.populateSelect(select, payments, 'payment_date');
+                select.options[0].text = 'Paid: all time';
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadAccounts() {
+        const month = document.getElementById('monthFilter').value;
+        document.getElementById('monthNote').innerText = month
+            ? 'Paid and Balance count only payments made in ' + MonthGroup.label(month) +
+              '; Ordered is the whole account.'
+            : '';
+        try {
+            const res = await fetch('/api/supplier-payments/by_supplier/' + (month ? '?month=' + month : ''));
+            if (!res.ok) throw new Error('status ' + res.status);
+            accounts = await res.json();
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load supplier accounts.</td></tr>';
+        }
+    }
+
+    function render() {
+        const term = (document.getElementById('searchInput').value || '').toLowerCase();
+        const owingOnly = document.getElementById('owingOnly').checked;
+
+        const rows = accounts.filter(a =>
+            (a.supplier_name || '').toLowerCase().includes(term)
+            && (owingOnly ? Number(a.balance) > 0 : true));
+
+        let ordered = 0, paid = 0, balance = 0;
+        rows.forEach(a => {
+            ordered += Number(a.ordered_amount || 0);
+            paid += Number(a.paid_amount || 0);
+            balance += Number(a.balance || 0);
+        });
+        document.getElementById('statSuppliers').innerText = rows.length;
+        document.getElementById('statOrdered').innerText = money(ordered);
+        document.getElementById('statPaid').innerText = money(paid);
+        document.getElementById('statBalance').innerText = money(balance);
+
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No suppliers found</td></tr>';
+            return;
+        }
+
+        rows.forEach(a => {
+            const owed = Number(a.balance) > 0;
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.onclick = () => openSupplier(a.supplier);
+            tr.innerHTML = `
+                <td class="ps-4 fw-medium">${escapeHtml(a.supplier_name)}</td>
+                <td class="text-center">${a.order_count}</td>
+                <td class="text-end">${money(a.ordered_amount)}</td>
+                <td class="text-center">${a.payment_count}</td>
+                <td class="text-end text-success">${money(a.paid_amount)}</td>
+                <td class="text-end fw-bold ${owed ? 'text-danger' : 'text-muted'}">${money(a.balance)}</td>
+                <td class="pe-4"><small class="text-muted">${a.last_payment
+                    ? new Date(a.last_payment).toLocaleDateString() : 'never'}</small></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function openSupplier(supplierId) {
+        const account = accounts.find(a => a.supplier === supplierId);
+        document.getElementById('supplierModalTitle').innerText =
+            account ? account.supplier_name : 'Supplier';
+
+        const theirOrders = orders.filter(o => o.supplier === supplierId);
+        const ordersBody = document.getElementById('detailOrders');
+        ordersBody.innerHTML = theirOrders.length
+            ? ''
+            : '<tr><td colspan="6" class="text-muted">No orders on record.</td></tr>';
+        theirOrders.forEach(o => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="fw-bold">${escapeHtml(o.label)}</td>
+                <td>${o.order_date ? new Date(o.order_date).toLocaleDateString() : '-'}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(o.status_display)}</span></td>
+                <td class="text-end">${money(o.total_amount)}</td>
+                <td class="text-end text-success">${money(o.paid_amount)}</td>
+                <td class="text-end fw-bold">${money(o.balance)}</td>
+            `;
+            ordersBody.appendChild(tr);
+        });
+
+        const theirPayments = payments.filter(p => p.supplier === supplierId);
+        const payBody = document.getElementById('detailPayments');
+        payBody.innerHTML = theirPayments.length
+            ? ''
+            : '<tr><td colspan="5" class="text-muted">Nothing paid yet.</td></tr>';
+
+        // Same month grouping as the payment ledger, so the two read alike.
+        MonthGroup.group(theirPayments, 'payment_date').forEach(g => {
+            const total = g.rows.reduce((s, p) => s + Number(p.amount || 0), 0);
+            const head = document.createElement('tr');
+            head.className = 'table-light';
+            head.innerHTML = `
+                <td colspan="4" class="fw-bold">${escapeHtml(g.label)}</td>
+                <td class="text-end fw-bold">${money(total)}</td>
+            `;
+            payBody.appendChild(head);
+
+            g.rows.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                    <td>${escapeHtml(p.po_number || '-')}</td>
+                    <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
+                    <td>${escapeHtml(p.reference || '-')}</td>
+                    <td class="text-end">${money(p.amount)}</td>
+                `;
+                payBody.appendChild(tr);
+            });
+        });
+
+        supplierModal.show();
+    }
+</script>
+{% endblock %}

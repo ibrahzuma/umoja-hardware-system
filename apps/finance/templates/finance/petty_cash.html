@@ -58,11 +58,20 @@
                     <option value="out">Cash out (payments)</option>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
                 <select id="branchFilter" class="form-select" onchange="render()">
                     <option value="">All branches</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <select id="monthFilter" class="form-select" onchange="render()">
+                    <option value="">All months</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-check form-switch mt-3 mb-0">
+            <input class="form-check-input" type="checkbox" id="byCategory" onchange="render()">
+            <label class="form-check-label small text-muted" for="byCategory">Totals per category</label>
         </div>
     </div>
 </div>
@@ -154,7 +163,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{% load static %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/month_group.js' %}"></script>
 <script>
     let entries = [];
     let entryModal;
@@ -181,6 +192,7 @@
             if (!entryRes.ok) throw new Error('Could not load petty cash (' + entryRes.status + ')');
 
             entries = await entryRes.json();
+            MonthGroup.populateSelect(document.getElementById('monthFilter'), entries, 'date');
             populate('branchFilter', await branchRes.json(), 'All branches');
             populate('branch', null, null, 'branchFilter');
             populate('category', await catRes.json(), 'Uncategorized');
@@ -217,6 +229,7 @@
         const term = document.getElementById('searchInput').value.toLowerCase();
         const type = document.getElementById('typeFilter').value;
         const branch = document.getElementById('branchFilter').value;
+        const month = document.getElementById('monthFilter').value;
 
         return entries.filter(e => {
             const haystack = [e.voucher_number, e.description, e.payee, e.reference]
@@ -224,8 +237,17 @@
             const matchesTerm = haystack.includes(term);
             const matchesType = type ? e.entry_type === type : true;
             const matchesBranch = branch ? String(e.branch) === branch : true;
-            return matchesTerm && matchesType && matchesBranch;
+            const matchesMonth = month ? MonthGroup.key(e.date) === month : true;
+            return matchesTerm && matchesType && matchesBranch && matchesMonth;
         });
+    }
+
+    function sumIn(rows) {
+        return rows.filter(e => e.entry_type === 'in').reduce((s, e) => s + Number(e.amount || 0), 0);
+    }
+
+    function sumOut(rows) {
+        return rows.filter(e => e.entry_type !== 'in').reduce((s, e) => s + Number(e.amount || 0), 0);
     }
 
     function render() {
@@ -233,11 +255,7 @@
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';
 
-        let totalIn = 0, totalOut = 0;
-        rows.forEach(e => {
-            if (e.entry_type === 'in') totalIn += Number(e.amount || 0);
-            else totalOut += Number(e.amount || 0);
-        });
+        const totalIn = sumIn(rows), totalOut = sumOut(rows);
         document.getElementById('statIn').innerText = money(totalIn);
         document.getElementById('statOut').innerText = money(totalOut);
         document.getElementById('statBalance').innerText = money(totalIn - totalOut);
@@ -247,21 +265,70 @@
             return;
         }
 
-        rows.forEach(e => {
-            const isIn = e.entry_type === 'in';
+        const perCategory = document.getElementById('byCategory').checked;
+
+        MonthGroup.group(rows, 'date').forEach(g => {
+            const head = document.createElement('tr');
+            head.className = 'table-light';
+            head.innerHTML = `
+                <td class="ps-4 fw-bold" colspan="5">
+                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(g.label)}
+                    <span class="text-muted fw-normal ms-2">${g.rows.length}
+                        entr${g.rows.length === 1 ? 'y' : 'ies'}</span>
+                    <span class="text-muted fw-normal ms-2">closing ${money(sumIn(g.rows) - sumOut(g.rows))}</span>
+                </td>
+                <td class="text-end fw-bold text-success">${money(sumIn(g.rows))}</td>
+                <td class="text-end fw-bold text-danger">${money(sumOut(g.rows))}</td>
+                <td class="pe-4"></td>
+            `;
+            tbody.appendChild(head);
+
+            if (perCategory) {
+                appendCategoryTotals(tbody, g.rows);
+            } else {
+                g.rows.forEach(e => appendEntryRow(tbody, e));
+            }
+        });
+    }
+
+    // One row per category inside the month — what the float actually went on.
+    // Top-ups have no category, so they are counted under "Top-up".
+    function appendCategoryTotals(tbody, group) {
+        const labelled = group.map(e => Object.assign({}, e, {
+            _bucket: e.entry_type === 'in' ? 'Top-up' : (e.category_name || 'Uncategorized')
+        }));
+
+        MonthGroup.totalsBy(labelled, '_bucket', 'amount').forEach(t => {
+            const isIn = t.name === 'Top-up';
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td class="ps-4">${e.date ? new Date(e.date).toLocaleDateString() : '-'}</td>
-                <td><span class="badge bg-light text-dark border">${e.voucher_number || '-'}</span></td>
-                <td class="fw-medium">${escapeHtml(e.description || '')}</td>
-                <td>${escapeHtml(e.payee || '-')}</td>
-                <td><small class="text-muted">${escapeHtml(e.category_name || (isIn ? 'Top-up' : 'Uncategorized'))}</small></td>
-                <td class="text-end text-success fw-bold">${isIn ? money(e.amount) : ''}</td>
-                <td class="text-end text-danger fw-bold">${isIn ? '' : money(e.amount)}</td>
-                <td class="pe-4"><small class="text-muted">${escapeHtml(e.created_by_name || '-')}</small></td>
+                <td class="ps-4"></td>
+                <td></td>
+                <td class="fw-medium">${escapeHtml(t.name)}</td>
+                <td colspan="2"><small class="text-muted">${t.count}
+                    entr${t.count === 1 ? 'y' : 'ies'}</small></td>
+                <td class="text-end fw-bold text-success">${isIn ? money(t.amount) : ''}</td>
+                <td class="text-end fw-bold text-danger">${isIn ? '' : money(t.amount)}</td>
+                <td class="pe-4"></td>
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    function appendEntryRow(tbody, e) {
+        const isIn = e.entry_type === 'in';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="ps-4">${e.date ? new Date(e.date).toLocaleDateString() : '-'}</td>
+            <td><span class="badge bg-light text-dark border">${e.voucher_number || '-'}</span></td>
+            <td class="fw-medium">${escapeHtml(e.description || '')}</td>
+            <td>${escapeHtml(e.payee || '-')}</td>
+            <td><small class="text-muted">${escapeHtml(e.category_name || (isIn ? 'Top-up' : 'Uncategorized'))}</small></td>
+            <td class="text-end text-success fw-bold">${isIn ? money(e.amount) : ''}</td>
+            <td class="text-end text-danger fw-bold">${isIn ? '' : money(e.amount)}</td>
+            <td class="pe-4"><small class="text-muted">${escapeHtml(e.created_by_name || '-')}</small></td>
+        `;
+        tbody.appendChild(tr);
     }
 
     function escapeHtml(s) {

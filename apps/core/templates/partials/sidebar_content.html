@@ -142,6 +142,7 @@ adding another duplicate will not make two menus spring open at once.
             {# Paying suppliers is the cash desk's alone — an accountant sees the
                rest of this menu but not this, so it can never 403 on them. #}
             <li><a href="{% url 'finance:supplier_payment_list' %}"><i class="bi bi-cash-stack"></i> Supplier Payment</a></li>
+            <li><a href="{% url 'finance:supplier_accounts' %}"><i class="bi bi-person-rolodex"></i> By Supplier</a></li>
             {% endif %}
             <li><a href="{% url 'finance:other_payments' %}"><i class="bi bi-arrow-right-circle"></i> Other Payments</a></li>
         </ul>

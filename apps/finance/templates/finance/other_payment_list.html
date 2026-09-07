@@ -46,11 +46,11 @@
 <div class="card mb-4">
     <div class="card-body">
         <div class="row g-3">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <input type="text" id="searchInput" class="form-control"
                     placeholder="Search payee, reference or description..." onkeyup="render()">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <select id="typeFilter" class="form-select" onchange="render()">
                     <option value="">All payment types</option>
                 </select>
@@ -64,6 +64,15 @@
                     <option value="mobile_money">Mobile Money</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <select id="monthFilter" class="form-select" onchange="render()">
+                    <option value="">All months</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-check form-switch mt-3 mb-0">
+            <input class="form-check-input" type="checkbox" id="byPayee" onchange="render()">
+            <label class="form-check-label small text-muted" for="byPayee">Totals per payee</label>
         </div>
     </div>
 </div>
@@ -161,7 +170,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{% load static %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/month_group.js' %}"></script>
 <script>
     // Kept in step with OtherPayment.PAYMENT_TYPES in apps/finance/models.py.
     const PAYMENT_TYPES = [
@@ -213,6 +224,7 @@
             if (!payRes.ok) throw new Error('Could not load payments (' + payRes.status + ')');
 
             payments = await payRes.json();
+            MonthGroup.populateSelect(document.getElementById('monthFilter'), payments, 'payment_date');
             fillSelect('bank', await bankRes.json(), 'Select account...');
             fillSelect('branch', await branchRes.json(), 'My branch');
             render();
@@ -235,13 +247,15 @@
         const term = document.getElementById('searchInput').value.toLowerCase();
         const type = document.getElementById('typeFilter').value;
         const method = document.getElementById('methodFilter').value;
+        const month = document.getElementById('monthFilter').value;
 
         const rows = payments.filter(p => {
             const haystack = [p.payee, p.reference, p.description]
                 .map(v => (v || '').toLowerCase()).join(' ');
             return haystack.includes(term)
                 && (type ? p.payment_type === type : true)
-                && (method ? p.method === method : true);
+                && (method ? p.method === method : true)
+                && (month ? MonthGroup.key(p.payment_date) === month : true);
         });
 
         const now = new Date();
@@ -265,19 +279,55 @@
             return;
         }
 
-        rows.forEach(p => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
-                <td class="fw-medium">${escapeHtml(p.payee)}</td>
-                <td><span class="badge bg-light text-dark border">${escapeHtml(p.payment_type_display || '')}</span></td>
-                <td>${escapeHtml(p.method_display || '')}</td>
-                <td>${escapeHtml(p.reference || '-')}</td>
-                <td class="text-end fw-bold">${money(p.amount)}</td>
-                <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+        const perPayee = document.getElementById('byPayee').checked;
+
+        MonthGroup.group(rows, 'payment_date').forEach(g => {
+            const monthTotal = g.rows.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+            const head = document.createElement('tr');
+            head.className = 'table-light';
+            head.innerHTML = `
+                <td class="ps-4 fw-bold" colspan="5">
+                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(g.label)}
+                    <span class="text-muted fw-normal ms-2">${g.rows.length}
+                        payment${g.rows.length === 1 ? '' : 's'}</span>
+                </td>
+                <td class="text-end fw-bold">${money(monthTotal)}</td>
+                <td class="pe-4"></td>
             `;
-            tbody.appendChild(tr);
+            tbody.appendChild(head);
+
+            if (perPayee) {
+                MonthGroup.totalsBy(g.rows, 'payee', 'amount').forEach(t => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="ps-4"></td>
+                        <td class="fw-medium">${escapeHtml(t.name)}</td>
+                        <td colspan="3"><small class="text-muted">${t.count}
+                            payment${t.count === 1 ? '' : 's'}</small></td>
+                        <td class="text-end fw-bold">${money(t.amount)}</td>
+                        <td class="pe-4"></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                g.rows.forEach(p => appendPaymentRow(tbody, p));
+            }
         });
+    }
+
+    function appendPaymentRow(tbody, p) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+            <td class="fw-medium">${escapeHtml(p.payee)}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(p.payment_type_display || '')}</span></td>
+            <td>${escapeHtml(p.method_display || '')}</td>
+            <td>${escapeHtml(p.reference || '-')}</td>
+            <td class="text-end fw-bold">${money(p.amount)}</td>
+            <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+        `;
+        tbody.appendChild(tr);
     }
 
     function toggleBank() {

@@ -152,7 +152,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{% load static %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/month_group.js' %}"></script>
 <script>
     // Purchase orders payable right now, keyed by id. This is also the supplier
     // list: a payment is always against an order Afisa Ugavi raised.
@@ -277,31 +279,8 @@
         }
     }
 
-    // A payment's month, as a sortable key ("2026-09") and a heading
-    // ("September 2026"). Built off the date string rather than a Date so a
-    // payment never slides into the neighbouring month on a timezone shift.
-    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-
-    function monthKey(p) {
-        return (p.payment_date || '').slice(0, 7);
-    }
-
-    function monthLabel(key) {
-        if (!key) return 'Undated';
-        const parts = key.split('-');
-        return MONTH_NAMES[Number(parts[1]) - 1] + ' ' + parts[0];
-    }
-
     function populateMonthFilter() {
-        const select = document.getElementById('monthFilter');
-        const keep = select.value;
-        const keys = Array.from(new Set(payments.map(monthKey))).sort().reverse();
-        select.innerHTML = '<option value="">All months</option>';
-        keys.forEach(k => {
-            select.innerHTML += '<option value="' + k + '">' + escapeHtml(monthLabel(k)) + '</option>';
-        });
-        if (keep && keys.indexOf(keep) !== -1) select.value = keep;
+        MonthGroup.populateSelect(document.getElementById('monthFilter'), payments, 'payment_date');
     }
 
     function renderPayments() {
@@ -313,7 +292,7 @@
         const rows = payments.filter(p => {
             const haystack = [p.supplier_name, p.reference, p.po_number, p.created_by_name]
                 .map(v => (v || '').toLowerCase()).join(' ');
-            return haystack.includes(term) && (month ? monthKey(p) === month : true);
+            return haystack.includes(term) && (month ? MonthGroup.key(p.payment_date) === month : true);
         });
 
         tbody.innerHTML = '';
@@ -322,25 +301,16 @@
             return;
         }
 
-        // Newest month first; within a month, newest payment first.
-        const groups = {};
-        rows.forEach(p => {
-            const k = monthKey(p);
-            (groups[k] = groups[k] || []).push(p);
-        });
-
-        Object.keys(groups).sort().reverse().forEach(key => {
-            const group = groups[key].slice().sort(
-                (a, b) => String(b.payment_date).localeCompare(String(a.payment_date)));
-            const total = group.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        MonthGroup.group(rows, 'payment_date').forEach(g => {
+            const total = g.rows.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
             const head = document.createElement('tr');
             head.className = 'table-light';
             head.innerHTML = `
                 <td class="ps-4 fw-bold" colspan="5">
-                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(monthLabel(key))}
-                    <span class="text-muted fw-normal ms-2">${group.length}
-                        payment${group.length === 1 ? '' : 's'}</span>
+                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(g.label)}
+                    <span class="text-muted fw-normal ms-2">${g.rows.length}
+                        payment${g.rows.length === 1 ? '' : 's'}</span>
                 </td>
                 <td class="text-end fw-bold">${money(total)}</td>
                 <td class="pe-4"></td>
@@ -348,36 +318,22 @@
             tbody.appendChild(head);
 
             if (perSupplier) {
-                appendSupplierTotals(tbody, group);
+                MonthGroup.totalsBy(g.rows, 'supplier_name', 'amount').forEach(t => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="ps-4"></td>
+                        <td></td>
+                        <td class="fw-medium">${escapeHtml(t.name)}</td>
+                        <td colspan="2"><small class="text-muted">${t.count}
+                            payment${t.count === 1 ? '' : 's'}</small></td>
+                        <td class="text-end fw-bold">${money(t.amount)}</td>
+                        <td class="pe-4"></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
             } else {
-                group.forEach(p => appendPaymentRow(tbody, p));
+                g.rows.forEach(p => appendPaymentRow(tbody, p));
             }
-        });
-    }
-
-    // One row per supplier inside the month, with what they were paid.
-    function appendSupplierTotals(tbody, group) {
-        const totals = {};
-        group.forEach(p => {
-            const name = p.supplier_name || '-';
-            if (!totals[name]) totals[name] = { amount: 0, count: 0 };
-            totals[name].amount += Number(p.amount || 0);
-            totals[name].count += 1;
-        });
-
-        Object.keys(totals).sort((a, b) => totals[b].amount - totals[a].amount).forEach(name => {
-            const t = totals[name];
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td class="ps-4"></td>
-                <td></td>
-                <td class="fw-medium">${escapeHtml(name)}</td>
-                <td colspan="2"><small class="text-muted">${t.count}
-                    payment${t.count === 1 ? '' : 's'}</small></td>
-                <td class="text-end fw-bold">${money(t.amount)}</td>
-                <td class="pe-4"></td>
-            `;
-            tbody.appendChild(tr);
         });
     }
 

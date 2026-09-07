@@ -80,6 +80,10 @@ See `DEPLOYMENT.md` for one-time server setup.
     plus the **Cashier desk**: `PettyCashTransaction` (the counter float — 'in' top-ups vs 'out' vouchers, balance
     derived) and `OtherPayment` (payouts that are neither a supplier invoice nor a tax). One predicate,
     `apps/finance/views.py::can_use_cashier`, gates the template views, the API and the sidebar section.
+    All three registers group their rows by month via `static/js/month_group.js` — months are read off the
+    `YYYY-MM-DD` string, never a parsed `Date`, so money cannot slide between months on a timezone shift.
+    `/api/supplier-payments/by_supplier/` backs the **By Supplier** screen (ordered vs paid vs still owed per
+    supplier; `?month=` narrows the paid side only).
   - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
     `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
     `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.
