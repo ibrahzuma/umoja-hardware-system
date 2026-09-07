@@ -13,7 +13,7 @@ if not ADMIN_URL.endswith('/'):
 
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet, PurchaseOrderViewSet, GoodsReceivedNoteViewSet, TruckViewSet, TruckAllocationViewSet, DriverViewSet, StockAdjustmentViewSet, TruckMaintenanceViewSet, TruckCostViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
-from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet, PettyCashViewSet, OtherPaymentViewSet
+from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet, PettyCashViewSet, OtherPaymentViewSet, SalesLedgerViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
 from apps.crm.views import CrmCreditViewSet, CrmPaymentViewSet, CustomerRecordViewSet
 from apps.core.api_views import ActivityViewSet, NotificationViewSet
@@ -60,6 +60,7 @@ router.register(r'supplier-payments', SupplierPaymentViewSet)
 router.register(r'payment-receipts', PaymentReceiptViewSet)
 router.register(r'petty-cash', PettyCashViewSet)
 router.register(r'other-payments', OtherPaymentViewSet)
+router.register(r'sales-ledger', SalesLedgerViewSet)
 # HR
 router.register(r'departments', DepartmentViewSet)
 router.register(r'job-positions', JobPositionViewSet)

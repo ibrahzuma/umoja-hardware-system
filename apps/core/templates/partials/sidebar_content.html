@@ -119,6 +119,7 @@ adding another duplicate will not make two menus spring open at once.
             <i class="bi bi-calculator"></i> Accountant
         </a>
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-receipt"></i> Expenses</a></li>
             <li><a href="{% url 'finance:expense_report' %}"><i class="bi bi-file-earmark-bar-graph"></i> Expense Report</a></li>
             <li><a href="{% url 'finance:tax_payment_list' %}"><i class="bi bi-bank"></i> Taxes &amp; Govt</a></li>
@@ -305,6 +306,9 @@ adding another duplicate will not make two menus spring open at once.
             <i class="bi bi-currency-dollar"></i> Finance
         </a>
         <ul class="collapse list-unstyled" id="financeSubmenu" data-bs-parent="#sidebarAccordion">
+            {% if user.is_superuser or user.is_admin_role or user.is_accountant %}
+            <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
+            {% endif %}
             <li><a href="{% url 'finance:expenses_list' %}"><i class="bi bi-journal-minus"></i> View Expenses</a></li>
             {% if user.is_superuser or perms.finance.add_expense %}
             <li><a href="{% url 'finance:expense_create' %}"><i class="bi bi-plus-square"></i> Record Expense</a></li>

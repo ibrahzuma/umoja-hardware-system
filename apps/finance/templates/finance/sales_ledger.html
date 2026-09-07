@@ -1,0 +1,341 @@
+{% extends 'base.html' %}
+
+{% block title %}Sales Accounting{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Sales Accounting</h2>
+        <p class="text-muted mb-0 small">Every sale made at the till — cash, credit or any other way — lands here
+            as pending until Accounts post it.</p>
+    </div>
+    <button class="btn btn-outline-secondary" onclick="loadEntries()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Pending</h6>
+                <h3 class="fw-bold mb-0" id="statPending">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Value Pending</h6>
+                <h3 class="fw-bold mb-0" id="statValue">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Posted</h6>
+                <h3 class="fw-bold mb-0 text-success" id="statPosted">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Queried</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statQueried">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-3">
+                <input type="text" id="searchInput" class="form-control"
+                    placeholder="Search invoice, customer or seller..." onkeyup="render()">
+            </div>
+            <div class="col-md-2">
+                <select id="statusFilter" class="form-select" onchange="render()">
+                    <option value="pending">Pending</option>
+                    <option value="">All statuses</option>
+                    <option value="posted">Posted</option>
+                    <option value="queried">Queried</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="settlementFilter" class="form-select" onchange="render()">
+                    <option value="">Any settlement</option>
+                    <option value="paid">Paid</option>
+                    <option value="part_paid">Part paid</option>
+                    <option value="credit">On credit</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="monthFilter" class="form-select" onchange="render()">
+                    <option value="">All months</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="branchFilter" class="form-select" onchange="render()">
+                    <option value="">All branches</option>
+                </select>
+            </div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="bySeller" onchange="render()">
+                <label class="form-check-label small text-muted" for="bySeller">Totals per seller</label>
+            </div>
+            <small class="text-muted" id="entryCount"></small>
+        </div>
+    </div>
+</div>
+
+<!-- Ledger -->
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Invoice</th>
+                        <th>Customer</th>
+                        <th>Sold By</th>
+                        <th>Settlement</th>
+                        <th class="text-end">Total</th>
+                        <th class="text-end">Paid</th>
+                        <th class="text-end">Balance</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4"></th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="10" class="text-center py-4">Loading sales...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted small mt-3 mb-0">
+    <strong>Posting</strong> says the books have taken the sale up; its figures freeze from that point.
+    <strong>Querying</strong> flags one that does not look right and tells whoever made the sale — it can still be
+    posted once it is sorted out.
+</p>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/month_group.js' %}"></script>
+<script>
+    let entries = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+        loadBranches();
+        loadEntries();
+    });
+
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadBranches() {
+        try {
+            const res = await fetch('/api/branches/');
+            if (!res.ok) return;
+            const select = document.getElementById('branchFilter');
+            select.innerHTML = '<option value="">All branches</option>';
+            (await res.json()).forEach(b => {
+                select.innerHTML += '<option value="' + b.id + '">' + escapeHtml(b.name) + '</option>';
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadEntries() {
+        try {
+            const res = await fetch('/api/sales-ledger/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            entries = await res.json();
+            MonthGroup.populateSelect(document.getElementById('monthFilter'), entries, 'sale_date');
+            render();
+            loadSummary();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="10" class="text-center py-4 text-danger">Could not load the sales ledger.</td></tr>';
+        }
+    }
+
+    async function loadSummary() {
+        try {
+            const res = await fetch('/api/sales-ledger/summary/');
+            if (!res.ok) return;
+            const s = await res.json();
+            document.getElementById('statPending').innerText = s.pending_count;
+            document.getElementById('statValue').innerText = money(s.pending_value);
+            document.getElementById('statPosted').innerText = s.posted_count;
+            document.getElementById('statQueried').innerText = s.queried_count;
+        } catch (e) { console.error(e); }
+    }
+
+    const SETTLEMENT_BADGE = {
+        paid: 'bg-success', part_paid: 'bg-warning text-dark', credit: 'bg-danger'
+    };
+    const STATUS_BADGE = {
+        pending: 'bg-warning text-dark', posted: 'bg-success', queried: 'bg-danger'
+    };
+
+    function visible() {
+        const term = (document.getElementById('searchInput').value || '').toLowerCase();
+        const status = document.getElementById('statusFilter').value;
+        const settlement = document.getElementById('settlementFilter').value;
+        const month = document.getElementById('monthFilter').value;
+        const branch = document.getElementById('branchFilter').value;
+
+        return entries.filter(e => {
+            const haystack = [e.invoice_number, e.customer_name, e.sold_by_name, e.methods]
+                .map(v => (v || '').toLowerCase()).join(' ');
+            return haystack.includes(term)
+                && (status ? e.status === status : true)
+                && (settlement ? e.settlement === settlement : true)
+                && (month ? MonthGroup.key(e.sale_date) === month : true)
+                && (branch ? String(e.branch) === branch : true);
+        });
+    }
+
+    function render() {
+        const rows = visible();
+        const tbody = document.getElementById('tableBody');
+        const total = rows.reduce((s, e) => s + Number(e.total_amount || 0), 0);
+        document.getElementById('entryCount').innerText =
+            rows.length + ' of ' + entries.length + ' sales  |  ' + money(total);
+
+        tbody.innerHTML = '';
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No sales found</td></tr>';
+            return;
+        }
+
+        const perSeller = document.getElementById('bySeller').checked;
+
+        MonthGroup.group(rows, 'sale_date').forEach(g => {
+            const monthTotal = g.rows.reduce((s, e) => s + Number(e.total_amount || 0), 0);
+            const head = document.createElement('tr');
+            head.className = 'table-light';
+            head.innerHTML = `
+                <td class="ps-4 fw-bold" colspan="5">
+                    <i class="bi bi-calendar3 me-1"></i>${escapeHtml(g.label)}
+                    <span class="text-muted fw-normal ms-2">${g.rows.length}
+                        sale${g.rows.length === 1 ? '' : 's'}</span>
+                </td>
+                <td class="text-end fw-bold">${money(monthTotal)}</td>
+                <td colspan="4"></td>
+            `;
+            tbody.appendChild(head);
+
+            if (perSeller) {
+                MonthGroup.totalsBy(g.rows, 'sold_by_name', 'total_amount').forEach(t => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="ps-4"></td>
+                        <td></td>
+                        <td></td>
+                        <td class="fw-medium">${escapeHtml(t.name || 'Unknown')}</td>
+                        <td><small class="text-muted">${t.count}
+                            sale${t.count === 1 ? '' : 's'}</small></td>
+                        <td class="text-end fw-bold">${money(t.amount)}</td>
+                        <td colspan="4"></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                g.rows.forEach(e => appendRow(tbody, e));
+            }
+        });
+    }
+
+    function appendRow(tbody, e) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="ps-4">${e.sale_date ? new Date(e.sale_date).toLocaleDateString() : '-'}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(e.invoice_number)}</span>
+                ${e.sale_status && e.sale_status !== 'dispatched' && e.sale_status !== 'approved'
+                ? '<div><small class="text-muted">sale: ' + escapeHtml(e.sale_status) + '</small></div>' : ''}</td>
+            <td class="fw-medium">${escapeHtml(e.customer_name)}</td>
+            <td><small class="text-muted">${escapeHtml(e.sold_by_name || '-')}</small></td>
+            <td><span class="badge ${SETTLEMENT_BADGE[e.settlement] || 'bg-secondary'}">
+                    ${escapeHtml(e.settlement_display || '')}</span>
+                ${e.methods ? '<div><small class="text-muted">' + escapeHtml(e.methods) + '</small></div>' : ''}</td>
+            <td class="text-end">${money(e.total_amount)}</td>
+            <td class="text-end text-success">${money(e.amount_paid)}</td>
+            <td class="text-end fw-bold ${Number(e.balance) > 0 ? 'text-danger' : 'text-muted'}">
+                ${money(e.balance)}</td>
+            <td><span class="badge ${STATUS_BADGE[e.status] || 'bg-secondary'}">
+                    ${escapeHtml(e.status_display || '')}</span>
+                ${e.note ? '<div><small class="text-muted">' + escapeHtml(e.note) + '</small></div>' : ''}</td>
+            <td class="text-end pe-4 text-nowrap">
+                ${e.status === 'posted'
+                ? '<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>'
+                : '<button class="btn btn-sm btn-success me-1" onclick="decide(' + e.id + ", 'post_entry')\">"
+                  + '<i class="bi bi-check-lg"></i> Post</button>'
+                  + '<button class="btn btn-sm btn-outline-danger" onclick="decide(' + e.id + ", 'query')\">"
+                  + '<i class="bi bi-question-lg"></i> Query</button>'}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    async function decide(id, what) {
+        const entry = entries.find(e => e.id === id);
+        const posting = what === 'post_entry';
+
+        const result = await Swal.fire({
+            title: posting ? 'Post this sale?' : 'Query this sale?',
+            html: entry
+                ? '<b>' + escapeHtml(entry.invoice_number) + '</b> — ' + money(entry.total_amount)
+                  + (posting
+                      ? '<br><small class="text-muted">Its figures freeze once posted.</small>'
+                      : '<br><small class="text-muted">Whoever made the sale is told.</small>')
+                : '',
+            icon: posting ? 'question' : 'warning',
+            input: 'text',
+            inputPlaceholder: posting ? 'Note (optional)' : 'What is wrong with it?',
+            showCancelButton: true,
+            confirmButtonText: posting ? 'Post' : 'Query',
+            confirmButtonColor: posting ? '#198754' : '#dc3545',
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            const res = await fetch('/api/sales-ledger/' + id + '/' + what + '/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ note: result.value || '' })
+            });
+            if (res.ok) {
+                Swal.fire('Done', posting ? 'Sale posted' : 'Sale queried', 'success');
+                loadEntries();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not record the decision', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not record the decision', 'error');
+        }
+    }
+</script>
+{% endblock %}

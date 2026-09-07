@@ -100,6 +100,14 @@ See `DEPLOYMENT.md` for one-time server setup.
     approval, so two queued applications cannot both spend the same money. Afisa Ugavi sees the figure on the
     order form (`/api/purchase-orders/supplier_credit/?supplier=`), and creating an order for a supplier holding
     credit notifies the cashiers.
+  - **Sales accounting** (`apps/finance/sales_ledger.py` + `signals.py`) — `SalesLedgerEntry`, one row per sale,
+    mirrored from the till the way the CRM register is: linked **by invoice number**, nothing cascades. Every
+    sale lands `pending` however it was settled (`settlement` = paid / part_paid / credit, derived from its
+    `Transaction`s), and the accountant **posts** it (`post_entry`) or **queries** it with a note, which notifies
+    the seller. A pending or queried row keeps following the sale; **a posted row freezes** — only `sale_status`
+    still updates, so a sale cancelled or deleted after posting stays put, flagged for reversal, instead of
+    vanishing. `python manage.py sync_sales_ledger` backfills or repairs. Access is admin + accountant via
+    `apps/finance/views.py::can_use_accounting`; the API is read-only apart from the two actions.
   - `hr` — `Department`, `JobPosition`, `Employee` (NIDA/TIN/NSSF/NHIF, salary + allowances), `LeaveType`,
     `LeaveRequest`, `AttendanceRecord`, `PayrollPeriod`, `Payslip` (TZ statutory: NSSF, NHIF, PAYE, HESLB, WCF, SDL),
     `EmployeeDocument`, `PerformanceReview`, `DisciplinaryAction`. HR-only users are redirected to `hr:dashboard`.

@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.db.models import Sum
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
-    BankAccount, PettyCashTransaction, OtherPayment,
+    BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
 )
 from apps.sales.models import Sale
 
@@ -169,3 +169,28 @@ class OtherPaymentSerializer(serializers.ModelSerializer):
         model = OtherPayment
         fields = '__all__'
         read_only_fields = ('created_by', 'created_at')
+
+
+class SalesLedgerEntrySerializer(serializers.ModelSerializer):
+    """The accountant's view of a sale. Everything that came off the sale is
+    read-only here — the ledger reports the till, it does not edit it. Only the
+    post/query actions on the viewset move `status`."""
+    settlement_display = serializers.CharField(source='get_settlement_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
+    sold_by_name = serializers.SerializerMethodField()
+    posted_by_name = serializers.CharField(source='posted_by.username', read_only=True, default='')
+    balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    def get_sold_by_name(self, obj):
+        u = obj.sold_by
+        if not u:
+            return ''
+        return u.get_full_name() or u.username
+
+    class Meta:
+        model = SalesLedgerEntry
+        fields = '__all__'
+        read_only_fields = tuple(
+            f.name for f in SalesLedgerEntry._meta.fields if f.name != 'id'
+        )

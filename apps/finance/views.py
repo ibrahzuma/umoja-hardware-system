@@ -24,12 +24,12 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from .forms import ExpenseForm
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
-    BankAccount, PettyCashTransaction, OtherPayment,
+    BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
 )
 from .serializers import (
     ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer,
     TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer,
-    PettyCashTransactionSerializer, OtherPaymentSerializer,
+    PettyCashTransactionSerializer, OtherPaymentSerializer, SalesLedgerEntrySerializer,
 )
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
@@ -771,3 +771,94 @@ class ExpenseReportExportView(LoginRequiredMixin, TemplateView):
         if fmt == 'pdf':
             return _export_pdf(qs, request.GET)
         raise Http404("Unknown export format")
+
+
+# ----------------------------------------------------------------------------
+# Accounting — the sales the books still have to take up
+# ----------------------------------------------------------------------------
+
+def can_use_accounting(user):
+    """Who works the sales ledger: Accounts, and admins. One rule for the
+    template view, the API and the sidebar entry."""
+    return bool(
+        user and user.is_authenticated
+        and (is_privileged(user) or getattr(user, 'is_accountant', False))
+    )
+
+
+class IsAccounting(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return can_use_accounting(request.user)
+
+
+class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only by design: the ledger reports the till rather than editing it.
+    The only things that move are `post` and `query`."""
+    queryset = SalesLedgerEntry.objects.select_related(
+        'sale', 'branch', 'sold_by', 'posted_by'
+    ).all()
+    serializer_class = SalesLedgerEntrySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+    filterset_fields = ['status', 'settlement', 'branch', 'sold_by']
+
+    @action(detail=True, methods=['post'])
+    def post_entry(self, request, pk=None):
+        """Accounts take the sale up. The figures freeze from here."""
+        entry = self.get_object()
+        if entry.status == 'posted':
+            return Response({'detail': 'That sale is already posted.'}, status=400)
+
+        entry.status = 'posted'
+        entry.posted_by = request.user
+        entry.posted_at = timezone.now()
+        note = (request.data.get('note') or '').strip()
+        if note:
+            entry.note = note
+        entry.save(update_fields=['status', 'posted_by', 'posted_at', 'note', 'updated_at'])
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=['post'])
+    def query(self, request, pk=None):
+        """Something does not look right. Flag it with a note and tell whoever
+        made the sale; it can still be posted once it is sorted out."""
+        entry = self.get_object()
+        if entry.status == 'posted':
+            return Response(
+                {'detail': 'That sale is already posted. Reverse it in the books instead.'},
+                status=400,
+            )
+
+        entry.status = 'queried'
+        entry.note = (request.data.get('note') or '').strip()
+        entry.save(update_fields=['status', 'note', 'updated_at'])
+
+        notify(
+            entry.sold_by,
+            f"Accounts have queried invoice {entry.invoice_number}",
+            entry.note or 'No reason was given.',
+            url='/sales/sales/',
+            level='warning',
+        )
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """The stat cards: how much is waiting, and how it was settled."""
+        qs = self.filter_queryset(self.get_queryset())
+        by_status = {row['status']: row for row in
+                     qs.values('status').annotate(n=Count('id'), total=Sum('total_amount'))}
+        pending = by_status.get('pending') or {}
+        return Response({
+            'pending_count': pending.get('n') or 0,
+            'pending_value': str(pending.get('total') or Decimal('0')),
+            'posted_count': (by_status.get('posted') or {}).get('n') or 0,
+            'queried_count': (by_status.get('queried') or {}).get('n') or 0,
+            'total_count': qs.count(),
+        })
+
+
+class SalesLedgerView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    template_name = 'finance/sales_ledger.html'
+
+    def test_func(self):
+        return can_use_accounting(self.request.user)

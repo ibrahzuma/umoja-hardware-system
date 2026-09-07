@@ -290,3 +290,83 @@ class OtherPayment(models.Model):
 
     def __str__(self):
         return f"{self.payee} - {self.amount} ({self.get_payment_type_display()})"
+
+
+# ---------------------------------------------------------------------------
+# Accounting — every sale, however it was settled, lands here to be posted
+# ---------------------------------------------------------------------------
+
+class SalesLedgerEntry(models.Model):
+    """One row per sale, waiting on Accounts.
+
+    Every sale made at the till arrives here as `pending`, whatever way it was
+    settled — paid in cash, part paid on a deposit, or wholly on credit. The
+    accountant works the list and **posts** each one, which is what says the
+    books have taken it up; anything that does not look right can be **queried**
+    with a note and posted later once it is sorted out.
+
+    The row is a snapshot, kept in step with the sale while it is still
+    pending or queried. Once posted it freezes: a posted figure is what the
+    books were told, and it must not quietly move afterwards. Only
+    `sale_status` keeps following, so a sale cancelled after posting shows up
+    as needing a reversal rather than vanishing.
+
+    The link is the invoice number, as in the CRM register: the FK is there for
+    convenience but nothing cascades off it.
+    """
+    SETTLEMENTS = (
+        ('paid', 'Paid'),
+        ('part_paid', 'Part Paid'),
+        ('credit', 'On Credit'),
+    )
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('posted', 'Posted'),
+        ('queried', 'Queried'),
+    )
+
+    invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
+    sale = models.ForeignKey('sales.Sale', on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='ledger_entries')
+
+    sale_date = models.DateField(db_index=True)
+    customer_name = models.CharField(max_length=200, blank=True)
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='sales_ledger_entries')
+    sold_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='sales_ledger_entries')
+
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    settlement = models.CharField(max_length=12, choices=SETTLEMENTS, default='credit', db_index=True)
+    methods = models.CharField(max_length=120, blank=True,
+                               help_text="How it was paid, e.g. 'Cash, Mobile Money'")
+    sale_status = models.CharField(max_length=20, blank=True,
+                                   help_text="The sale's own state at last sync")
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+    posted_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='posted_sales_entries')
+    posted_at = models.DateTimeField(null=True, blank=True)
+    note = models.TextField(blank=True, help_text="Accountant's note, most useful on a query")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-sale_date', '-id']
+        verbose_name = 'Sales Ledger Entry'
+        verbose_name_plural = 'Sales Ledger Entries'
+
+    @property
+    def balance(self):
+        return (self.total_amount or 0) - (self.amount_paid or 0)
+
+    @property
+    def is_open(self):
+        """Still the accountant's to change. A posted row is closed."""
+        return self.status in ('pending', 'queried')
+
+    def __str__(self):
+        return f"{self.invoice_number} - {self.total_amount} ({self.get_status_display()})"
