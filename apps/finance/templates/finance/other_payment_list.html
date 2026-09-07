@@ -69,10 +69,24 @@
                     <option value="">All months</option>
                 </select>
             </div>
+            <div class="col-md-3">
+                <select id="payeeFilter" class="form-select" onchange="render()">
+                    <option value="">All payees</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select id="bankFilter" class="form-select" onchange="render()">
+                    <option value="">Any account</option>
+                    <option value="cash">Cash / no account</option>
+                </select>
+            </div>
         </div>
-        <div class="form-check form-switch mt-3 mb-0">
-            <input class="form-check-input" type="checkbox" id="byPayee" onchange="render()">
-            <label class="form-check-label small text-muted" for="byPayee">Totals per payee</label>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="byPayee" onchange="render()">
+                <label class="form-check-label small text-muted" for="byPayee">Totals per payee</label>
+            </div>
+            <small class="text-muted" id="paymentCount"></small>
         </div>
     </div>
 </div>
@@ -225,14 +239,47 @@
 
             payments = await payRes.json();
             MonthGroup.populateSelect(document.getElementById('monthFilter'), payments, 'payment_date');
-            fillSelect('bank', await bankRes.json(), 'Select account...');
+            populatePayeeFilter();
+
+            const banks = await bankRes.json();
+            fillSelect('bank', banks, 'Select account...');
             fillSelect('branch', await branchRes.json(), 'My branch');
+
+            // The bank *filter* keeps its "Cash / no account" option ahead of
+            // the accounts themselves, so it is built by hand.
+            const bankFilter = document.getElementById('bankFilter');
+            const keepBank = bankFilter.value;
+            bankFilter.innerHTML = '<option value="">Any account</option>' +
+                '<option value="cash">Cash / no account</option>';
+            (banks || []).forEach(b => {
+                bankFilter.innerHTML += '<option value="' + b.id + '">' + escapeHtml(b.name) + '</option>';
+            });
+            if (keepBank) bankFilter.value = keepBank;
+
             render();
         } catch (e) {
             console.error(e);
             document.getElementById('tableBody').innerHTML =
                 '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load payments.</td></tr>';
         }
+    }
+
+    // Payees come from the payments on hand, so the dropdown never offers a
+    // choice that matches nothing.
+    function populatePayeeFilter() {
+        const select = document.getElementById('payeeFilter');
+        const keep = select.value;
+        const names = [];
+        payments.forEach(p => {
+            const name = p.payee || '';
+            if (name && names.indexOf(name) === -1) names.push(name);
+        });
+        names.sort((a, b) => a.localeCompare(b));
+        select.innerHTML = '<option value="">All payees</option>';
+        names.forEach(n => {
+            select.innerHTML += '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>';
+        });
+        if (keep && names.indexOf(keep) !== -1) select.value = keep;
     }
 
     function fillSelect(id, items, placeholder) {
@@ -248,14 +295,18 @@
         const type = document.getElementById('typeFilter').value;
         const method = document.getElementById('methodFilter').value;
         const month = document.getElementById('monthFilter').value;
+        const payee = document.getElementById('payeeFilter').value;
+        const bank = document.getElementById('bankFilter').value;
 
         const rows = payments.filter(p => {
-            const haystack = [p.payee, p.reference, p.description]
+            const haystack = [p.payee, p.reference, p.description, p.created_by_name]
                 .map(v => (v || '').toLowerCase()).join(' ');
             return haystack.includes(term)
                 && (type ? p.payment_type === type : true)
                 && (method ? p.method === method : true)
-                && (month ? MonthGroup.key(p.payment_date) === month : true);
+                && (month ? MonthGroup.key(p.payment_date) === month : true)
+                && (payee ? (p.payee || '') === payee : true)
+                && (bank ? (bank === 'cash' ? !p.bank : String(p.bank) === bank) : true);
         });
 
         const now = new Date();
@@ -271,6 +322,8 @@
         document.getElementById('statTotal').innerText = money(total);
         document.getElementById('statMonth').innerText = money(thisMonth);
         document.getElementById('statCount').innerText = rows.length;
+        document.getElementById('paymentCount').innerText =
+            rows.length + ' of ' + payments.length + ' payments  |  ' + money(total);
 
         const tbody = document.getElementById('tableBody');
         tbody.innerHTML = '';

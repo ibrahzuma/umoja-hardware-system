@@ -75,7 +75,11 @@ See `DEPLOYMENT.md` for one-time server setup.
     picked freely; `/api/supplier-payments/payable_orders/` is the list the form is built from, and it carries
     every order with a supplier, drafts included, minus cancelled ones and the ones already paid off; the screen
     is the **cashier's alone** — not Afisa Ugavi, who raises the order, and not the accountant —
-    `can_record_supplier_payment` and `CanRecordSupplierPayment` are the one rule),
+    `can_record_supplier_payment` and `CanRecordSupplierPayment` are the one rule. **A recorded payment is a
+    request:** it lands `pending` and only an Admin's `approve` makes it `paid` (`reject` sends it back). Only
+    approved money reduces a balance — `payable_orders` and `by_supplier` report the rest as `pending_amount` —
+    so never total `SupplierPayment.amount` without filtering `status='paid'`. Queue:
+    `/finance/supplier-payments/approvals/`),
     `TaxPayment` (VAT/PAYE/SDL/…), `PaymentReceipt` (customer payment tracking / debtors),
     plus the **Cashier desk**: `PettyCashTransaction` (the counter float — 'in' top-ups vs 'out' vouchers, balance
     derived) and `OtherPayment` (payouts that are neither a supplier invoice nor a tax). One predicate,

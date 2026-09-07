@@ -4,13 +4,18 @@ from datetime import date
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Sum, Count, Max
+from django.db.models import Sum, Count, Max, Q
 from django.http import HttpResponse, Http404
-from apps.users.permissions import IsAccountant, CanRecordSupplierPayment, CanHandleCash, is_privileged
+from apps.users.permissions import (
+    IsAccountant, CanRecordSupplierPayment, CanHandleCash, IsAdminOrSuperUser, is_privileged,
+)
 from apps.sales.models import Sale
 from apps.inventory.models import Branch, PurchaseOrder, Supplier
 from .models import Expense, ExpenseCategory
 from django.shortcuts import render
+from django.utils import timezone
+from django.contrib.auth import get_user_model
+from apps.core.notify import notify
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -72,16 +77,84 @@ class IncomeViewSet(viewsets.ModelViewSet):
     serializer_class = IncomeSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+def _notify_admins_of_payment(payment, actor):
+    """Tell the Admins a payment is waiting on them.
+
+    Every admin gets the notice — approval is not one person's desk, and a
+    payment sitting unseen is the whole point of the queue.
+    """
+    User = get_user_model()
+    admins = User.objects.filter(is_active=True).filter(
+        Q(is_superuser=True) | Q(role='admin') | Q(groups__name='Admin')
+    ).distinct()
+    who = actor.get_full_name() or actor.username
+    for admin in admins:
+        notify(
+            admin,
+            "Supplier payment needs approval",
+            f"{who} recorded {payment.amount} to {payment.supplier}"
+            + (f" against PO #{payment.purchase_order_id}" if payment.purchase_order_id else "")
+            + ".",
+            url='/finance/supplier-payments/approvals/',
+            level='warning',
+        )
+
+
 class SupplierPaymentViewSet(viewsets.ModelViewSet):
     queryset = SupplierPayment.objects.select_related(
         'supplier', 'purchase_order', 'created_by'
     ).order_by('-payment_date', '-id')
     serializer_class = SupplierPaymentSerializer
     permission_classes = [permissions.IsAuthenticated, CanRecordSupplierPayment]
-    filterset_fields = ['supplier', 'purchase_order', 'method']
+    filterset_fields = ['supplier', 'purchase_order', 'method', 'status']
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        """A recorded payment is a request. It waits for an Admin."""
+        payment = serializer.save(created_by=self.request.user, status='pending')
+        _notify_admins_of_payment(payment, self.request.user)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def approve(self, request, pk=None):
+        """Admin turns a pending payment into settled money."""
+        return self._decide(request, 'paid')
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def reject(self, request, pk=None):
+        """Admin sends a payment back. It counts against nothing."""
+        return self._decide(request, 'rejected')
+
+    def _decide(self, request, new_status):
+        payment = self.get_object()
+        if payment.status != 'pending':
+            return Response(
+                {'detail': f"That payment is already {payment.get_status_display().lower()}."},
+                status=400,
+            )
+
+        payment.status = new_status
+        payment.approved_by = request.user
+        payment.approved_at = timezone.now()
+        payment.decision_note = (request.data.get('note') or '').strip()
+        payment.save(update_fields=['status', 'approved_by', 'approved_at', 'decision_note'])
+
+        verb = 'approved' if new_status == 'paid' else 'rejected'
+        notify(
+            payment.created_by,
+            f"Supplier payment {verb}",
+            f"Your {payment.amount} payment to {payment.supplier} was {verb}"
+            + (f": {payment.decision_note}" if payment.decision_note else "."),
+            url='/finance/supplier-payments/',
+            level='success' if new_status == 'paid' else 'warning',
+        )
+        return Response(self.get_serializer(payment).data)
+
+    @action(detail=False, methods=['get'],
+            permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
+    def pending(self, request):
+        """The Admin's approval queue, oldest request first — the one that has
+        been waiting longest is the one to look at."""
+        qs = self.get_queryset().filter(status='pending').order_by('created_at', 'id')
+        return Response(self.get_serializer(qs, many=True).data)
 
     @action(detail=False, methods=['get'])
     def payable_orders(self, request):
@@ -96,12 +169,19 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
 
         GET ?settled=0 (the default) hides orders that have been paid off; an
         order nobody has paid against yet always shows, whatever its total.
+
+        Only *approved* payments reduce a balance. Money a cashier has recorded
+        but no Admin has approved is reported separately as `pending_amount`,
+        so the order still reads as owing while it waits.
         """
         orders = (PurchaseOrder.objects
                   .exclude(status='cancelled')
                   .filter(supplier__isnull=False)
                   .select_related('supplier', 'created_by')
-                  .annotate(paid_total=Sum('payments__amount'))
+                  .annotate(
+                      paid_total=Sum('payments__amount', filter=Q(payments__status='paid')),
+                      pending_total=Sum('payments__amount', filter=Q(payments__status='pending')),
+                  )
                   .order_by('-created_at', '-id'))
 
         include_settled = (request.query_params.get('settled') or '').strip() in ('1', 'true', 'yes')
@@ -110,6 +190,7 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
         for po in orders:
             total = po.total_amount or Decimal('0')
             paid = po.paid_total or Decimal('0')
+            pending = po.pending_total or Decimal('0')
             balance = total - paid
             # Settled means money has actually gone out and cleared the order —
             # not merely that the order totals zero.
@@ -126,6 +207,7 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'status_display': po.get_status_display(),
                 'total_amount': str(total),
                 'paid_amount': str(paid),
+                'pending_amount': str(pending),
                 'balance': str(balance),
                 'settled': bool(paid > 0 and balance <= 0),
                 'raised_by': (raised_by.get_full_name() or raised_by.username) if raised_by else '',
@@ -139,8 +221,9 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
 
         Ordered totals come from the same orders `payable_orders` offers
         (cancelled ones excluded, since nothing is owed on them). Paid totals
-        count every payment on record for that supplier, including any not tied
-        to an order, so the figure matches the payment ledger.
+        count every *approved* payment for that supplier, including any not
+        tied to an order; what a cashier has recorded but no Admin has approved
+        is reported separately as `pending_amount` and owes nothing yet.
 
         GET ?month=YYYY-MM narrows *payments* to that month, leaving the
         ordered figure whole — "what did we pay Steel Ltd in September" is the
@@ -148,7 +231,8 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
         """
         month = (request.query_params.get('month') or '').strip()
 
-        payments = SupplierPayment.objects.all()
+        payments = SupplierPayment.objects.filter(status='paid')
+        awaiting = SupplierPayment.objects.filter(status='pending')
         if month:
             try:
                 year, mon = (int(part) for part in month.split('-'))
@@ -160,9 +244,14 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
             row['supplier']: row for row in
             payments.values('supplier').annotate(total=Sum('amount'), n=Count('id'))
         }
+        pending_by_supplier = {
+            row['supplier']: row for row in
+            awaiting.values('supplier').annotate(total=Sum('amount'), n=Count('id'))
+        }
         last_paid = {
             row['supplier']: row['last'] for row in
-            SupplierPayment.objects.values('supplier').annotate(last=Max('payment_date'))
+            SupplierPayment.objects.filter(status='paid')
+            .values('supplier').annotate(last=Max('payment_date'))
         }
 
         ordered = (PurchaseOrder.objects
@@ -172,13 +261,14 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                    .annotate(total=Sum('total_amount'), n=Count('id')))
         ordered_by_supplier = {row['supplier']: row for row in ordered}
 
-        supplier_ids = set(ordered_by_supplier) | set(paid_by_supplier)
+        supplier_ids = set(ordered_by_supplier) | set(paid_by_supplier) | set(pending_by_supplier)
         names = dict(Supplier.objects.filter(id__in=supplier_ids).values_list('id', 'name'))
 
         rows = []
         for sid in supplier_ids:
             o = ordered_by_supplier.get(sid) or {}
             p = paid_by_supplier.get(sid) or {}
+            w = pending_by_supplier.get(sid) or {}
             order_total = o.get('total') or Decimal('0')
             paid_total = p.get('total') or Decimal('0')
             rows.append({
@@ -188,6 +278,8 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
                 'ordered_amount': str(order_total),
                 'payment_count': p.get('n') or 0,
                 'paid_amount': str(paid_total),
+                'pending_count': w.get('n') or 0,
+                'pending_amount': str(w.get('total') or Decimal('0')),
                 'balance': str(order_total - paid_total),
                 'last_payment': last_paid.get(sid),
             })
@@ -210,6 +302,15 @@ class SupplierPaymentListView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
 
     def test_func(self):
         return can_record_supplier_payment(self.request.user)
+
+
+class SupplierPaymentApprovalView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """The Admin's queue. Cashiers record; only an Admin turns it into paid."""
+    template_name = 'finance/supplier_payment_approvals.html'
+
+    def test_func(self):
+        u = self.request.user
+        return u.is_superuser or getattr(u, 'is_admin_role', False)
 
 
 class SupplierAccountListView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):

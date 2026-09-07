@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+
+{% block title %}Payment Approvals{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Payment Approvals</h2>
+        <p class="text-muted mb-0 small">Supplier payments the cash desk has recorded. Nothing counts against an
+            order until you approve it.</p>
+    </div>
+    <button class="btn btn-outline-secondary" onclick="loadPending()">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6">
+        <div class="card shadow-sm border-0 border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Waiting On You</h6>
+                <h3 class="fw-bold mb-0" id="statCount">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6">
+        <div class="card shadow-sm border-0 border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Value Held Up</h6>
+                <h3 class="fw-bold mb-0 text-danger" id="statValue">TZS 0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Recorded</th>
+                        <th>Order</th>
+                        <th>Supplier</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>By</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-end pe-4">Decision</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="8" class="text-center py-4">Loading payments awaiting approval...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted small mt-3 mb-0">
+    Approving marks the payment <strong>Paid</strong> and reduces the order's balance. Rejecting sends it back to
+    the cashier and it counts against nothing.
+</p>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let pending = [];
+
+    document.addEventListener('DOMContentLoaded', loadPending);
+
+    function money(v) {
+        return 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function loadPending() {
+        try {
+            const res = await fetch('/api/supplier-payments/pending/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            pending = await res.json();
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load the queue.</td></tr>';
+        }
+    }
+
+    function render() {
+        const tbody = document.getElementById('tableBody');
+        const held = pending.reduce((s, p) => s + Number(p.amount || 0), 0);
+        document.getElementById('statCount').innerText = pending.length;
+        document.getElementById('statValue').innerText = money(held);
+
+        tbody.innerHTML = '';
+        if (pending.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">' +
+                'Nothing is waiting for approval.</td></tr>';
+            return;
+        }
+
+        pending.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="ps-4">${p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                <td>${p.po_number
+                    ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
+                    : '<small class="text-muted">-</small>'}</td>
+                <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
+                <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
+                <td>${escapeHtml(p.reference || '-')}</td>
+                <td><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+                <td class="text-end fw-bold">${money(p.amount)}</td>
+                <td class="text-end pe-4 text-nowrap">
+                    <button class="btn btn-sm btn-success me-1" onclick="decide(${p.id}, 'approve')">
+                        <i class="bi bi-check-lg"></i> Approve
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="decide(${p.id}, 'reject')">
+                        <i class="bi bi-x-lg"></i> Reject
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function decide(id, what) {
+        const payment = pending.find(p => p.id === id);
+        const approving = what === 'approve';
+
+        const result = await Swal.fire({
+            title: approving ? 'Approve this payment?' : 'Reject this payment?',
+            html: payment
+                ? '<b>' + money(payment.amount) + '</b> to ' + escapeHtml(payment.supplier_name)
+                  + (approving
+                      ? '<br><small class="text-muted">It becomes Paid and reduces the order balance.</small>'
+                      : '<br><small class="text-muted">It goes back to the cashier and counts against nothing.</small>')
+                : '',
+            icon: approving ? 'question' : 'warning',
+            input: 'text',
+            inputPlaceholder: approving ? 'Note (optional)' : 'Reason for rejecting (optional)',
+            showCancelButton: true,
+            confirmButtonText: approving ? 'Approve' : 'Reject',
+            confirmButtonColor: approving ? '#198754' : '#dc3545',
+        });
+        if (!result.isConfirmed) return;
+
+        try {
+            const res = await fetch('/api/supplier-payments/' + id + '/' + what + '/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ note: result.value || '' })
+            });
+
+            if (res.ok) {
+                Swal.fire('Done', approving ? 'Payment approved' : 'Payment rejected', 'success');
+                loadPending();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not record the decision', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not record the decision', 'error');
+        }
+    }
+</script>
+{% endblock %}

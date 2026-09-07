@@ -68,10 +68,18 @@
                     <option value="">All months</option>
                 </select>
             </div>
+            <div class="col-md-2">
+                <select id="categoryFilter" class="form-select" onchange="render()">
+                    <option value="">All categories</option>
+                </select>
+            </div>
         </div>
-        <div class="form-check form-switch mt-3 mb-0">
-            <input class="form-check-input" type="checkbox" id="byCategory" onchange="render()">
-            <label class="form-check-label small text-muted" for="byCategory">Totals per category</label>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="byCategory" onchange="render()">
+                <label class="form-check-label small text-muted" for="byCategory">Totals per category</label>
+            </div>
+            <small class="text-muted" id="entryCount"></small>
         </div>
     </div>
 </div>
@@ -193,6 +201,7 @@
 
             entries = await entryRes.json();
             MonthGroup.populateSelect(document.getElementById('monthFilter'), entries, 'date');
+            populateCategoryFilter();
             populate('branchFilter', await branchRes.json(), 'All branches');
             populate('branch', null, null, 'branchFilter');
             populate('category', await catRes.json(), 'Uncategorized');
@@ -225,20 +234,44 @@
         });
     }
 
+    // Categories come from the entries on hand, so the dropdown never offers a
+    // choice that matches nothing.
+    function populateCategoryFilter() {
+        const select = document.getElementById('categoryFilter');
+        const keep = select.value;
+        const names = [];
+        entries.forEach(e => {
+            const name = e.entry_type === 'in' ? 'Top-up' : (e.category_name || 'Uncategorized');
+            if (names.indexOf(name) === -1) names.push(name);
+        });
+        names.sort();
+        select.innerHTML = '<option value="">All categories</option>';
+        names.forEach(n => {
+            select.innerHTML += '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>';
+        });
+        if (keep && names.indexOf(keep) !== -1) select.value = keep;
+    }
+
+    function bucketOf(e) {
+        return e.entry_type === 'in' ? 'Top-up' : (e.category_name || 'Uncategorized');
+    }
+
     function visible() {
         const term = document.getElementById('searchInput').value.toLowerCase();
         const type = document.getElementById('typeFilter').value;
         const branch = document.getElementById('branchFilter').value;
         const month = document.getElementById('monthFilter').value;
+        const category = document.getElementById('categoryFilter').value;
 
         return entries.filter(e => {
-            const haystack = [e.voucher_number, e.description, e.payee, e.reference]
+            const haystack = [e.voucher_number, e.description, e.payee, e.reference, e.created_by_name]
                 .map(v => (v || '').toLowerCase()).join(' ');
             const matchesTerm = haystack.includes(term);
             const matchesType = type ? e.entry_type === type : true;
             const matchesBranch = branch ? String(e.branch) === branch : true;
             const matchesMonth = month ? MonthGroup.key(e.date) === month : true;
-            return matchesTerm && matchesType && matchesBranch && matchesMonth;
+            const matchesCategory = category ? bucketOf(e) === category : true;
+            return matchesTerm && matchesType && matchesBranch && matchesMonth && matchesCategory;
         });
     }
 
@@ -259,6 +292,8 @@
         document.getElementById('statIn').innerText = money(totalIn);
         document.getElementById('statOut').innerText = money(totalOut);
         document.getElementById('statBalance').innerText = money(totalIn - totalOut);
+        document.getElementById('entryCount').innerText =
+            rows.length + ' of ' + entries.length + ' entries  |  balance ' + money(totalIn - totalOut);
 
         if (rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No petty cash entries yet</td></tr>';
@@ -294,9 +329,7 @@
     // One row per category inside the month — what the float actually went on.
     // Top-ups have no category, so they are counted under "Top-up".
     function appendCategoryTotals(tbody, group) {
-        const labelled = group.map(e => Object.assign({}, e, {
-            _bucket: e.entry_type === 'in' ? 'Top-up' : (e.category_name || 'Uncategorized')
-        }));
+        const labelled = group.map(e => Object.assign({}, e, { _bucket: bucketOf(e) }));
 
         MonthGroup.totalsBy(labelled, '_bucket', 'amount').forEach(t => {
             const isIn = t.name === 'Top-up';

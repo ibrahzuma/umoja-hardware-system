@@ -21,6 +21,8 @@ urlpatterns = [
     
     path('supplier-payments/', views.SupplierPaymentListView.as_view(), name='supplier_payment_list'),
     path('supplier-payments/by-supplier/', views.SupplierAccountListView.as_view(), name='supplier_accounts'),
+    path('supplier-payments/approvals/', views.SupplierPaymentApprovalView.as_view(),
+         name='supplier_payment_approvals'),
 
     # Cashier desk
     path('petty-cash/', views.PettyCashListView.as_view(), name='petty_cash'),

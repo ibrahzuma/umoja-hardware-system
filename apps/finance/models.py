@@ -58,12 +58,22 @@ class SupplierPayment(models.Model):
     purchase orders Afisa Ugavi raised, and the supplier follows from it. The
     FK is nullable only so payments recorded before this rule (and the rare
     off-order settlement) still have a home — new payments come in with it set.
+
+    A payment the cashier records is a *request*, not a settlement: it lands as
+    `pending` and only an Admin turns it into `paid`. Until then it counts
+    against nothing — `payable_orders` and `by_supplier` total the paid ones —
+    so an order's balance never falls on an entry nobody has approved.
     """
     PAYMENT_METHODS = (
         ('cash', 'Cash'),
         ('bank_transfer', 'Bank Transfer'),
         ('check', 'Check'),
         ('mobile_money', 'Mobile Money'),
+    )
+    STATUS_CHOICES = (
+        ('pending', 'Pending Approval'),
+        ('paid', 'Paid'),
+        ('rejected', 'Rejected'),
     )
     supplier = models.ForeignKey('inventory.Supplier', on_delete=models.CASCADE, related_name='payments')
     purchase_order = models.ForeignKey('inventory.PurchaseOrder', on_delete=models.SET_NULL, null=True, blank=True,
@@ -77,8 +87,22 @@ class SupplierPayment(models.Model):
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', db_index=True)
+    approved_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='approved_supplier_payments',
+                                    help_text="Admin who approved or rejected it")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True, help_text="Admin's reason, most useful on a rejection")
+
+    class Meta:
+        ordering = ['-payment_date', '-id']
+
+    @property
+    def is_paid(self):
+        return self.status == 'paid'
+
     def __str__(self):
-        return f"Payment to {self.supplier} - {self.amount}"
+        return f"Payment to {self.supplier} - {self.amount} ({self.get_status_display()})"
 
 class TaxPayment(models.Model):
     TAX_TYPES = (

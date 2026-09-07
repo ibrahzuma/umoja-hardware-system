@@ -347,6 +347,7 @@ adding another duplicate will not make two menus spring open at once.
     {% if user.is_superuser or user.is_admin_role %}
     <li class="section-title">Administration</li>
     <li><a href="{% url 'inventory:po_delivery_approvals' %}"><i class="bi bi-clipboard2-check"></i> Delivery Approvals</a></li>
+    <li><a href="{% url 'finance:supplier_payment_approvals' %}"><i class="bi bi-patch-check"></i> Payment Approvals</a></li>
     <li>
         <a href="#usersSubmenu" data-bs-toggle="collapse" aria-expanded="false" class="dropdown-toggle">
             <i class="bi bi-person-badge"></i> Users &amp; Roles

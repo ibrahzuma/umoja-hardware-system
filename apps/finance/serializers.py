@@ -35,6 +35,8 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     po_number = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.username', read_only=True, default='')
 
     def get_po_number(self, obj):
         return f"PO #{obj.purchase_order_id}" if obj.purchase_order_id else ''
@@ -43,7 +45,10 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
         model = SupplierPayment
         fields = '__all__'
         # The order is what the payer picks; the supplier follows from it.
+        # Status is not the payer's to set — it moves only through the Admin's
+        # approve/reject actions on the viewset.
         extra_kwargs = {'supplier': {'required': False}}
+        read_only_fields = ('status', 'approved_by', 'approved_at', 'decision_note', 'created_by')
 
     def validate(self, attrs):
         order = attrs.get('purchase_order')
