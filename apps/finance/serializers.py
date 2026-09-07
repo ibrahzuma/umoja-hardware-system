@@ -37,6 +37,7 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
     po_number = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.username', read_only=True, default='')
+    is_editable = serializers.BooleanField(read_only=True)
 
     def get_po_number(self, obj):
         return f"PO #{obj.purchase_order_id}" if obj.purchase_order_id else ''
@@ -48,7 +49,8 @@ class SupplierPaymentSerializer(serializers.ModelSerializer):
         # Status is not the payer's to set — it moves only through the Admin's
         # approve/reject actions on the viewset.
         extra_kwargs = {'supplier': {'required': False}}
-        read_only_fields = ('status', 'approved_by', 'approved_at', 'decision_note', 'created_by')
+        read_only_fields = ('status', 'approved_by', 'approved_at', 'decision_note',
+                            'cashier_note', 'resubmitted_at', 'created_by')
 
     def validate(self, attrs):
         order = attrs.get('purchase_order')

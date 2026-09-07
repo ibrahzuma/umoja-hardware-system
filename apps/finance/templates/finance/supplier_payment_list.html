@@ -117,14 +117,72 @@
                         <th>Status</th>
                         <th class="text-end">Amount</th>
                         <th class="pe-4">Recorded By</th>
+                        <th class="text-end pe-4"></th>
                     </tr>
                 </thead>
                 <tbody id="paymentTableBody">
                     <tr>
-                        <td colspan="7" class="text-center py-4">Loading payments...</td>
+                        <td colspan="8" class="text-center py-4">Loading payments...</td>
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- Fix a rejected payment and send it back -->
+<div class="modal fade" id="fixModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Fix &amp; Resubmit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle"></i> The Admin rejected this</div>
+                    <div id="fixReason" class="small"></div>
+                </div>
+                <form id="fixForm">
+                    <input type="hidden" id="fixId">
+                    <div class="mb-3">
+                        <label class="form-label">Order</label>
+                        <input type="text" class="form-control" id="fixOrder" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Amount</label>
+                        <input type="number" step="0.01" min="1" class="form-control" id="fixAmount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Date</label>
+                        <input type="date" class="form-control" id="fixDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" id="fixMethod" required>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="cash">Cash</option>
+                            <option value="check">Check</option>
+                            <option value="mobile_money">Mobile Money</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reference</label>
+                        <input type="text" class="form-control" id="fixReference"
+                            placeholder="Check No, Transaction ID">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Your answer to the Admin</label>
+                        <textarea class="form-control" id="fixNote" rows="2"
+                            placeholder="What you changed, or why it stands as it is"></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-send"></i> Send back for approval
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -199,10 +257,13 @@
     // Payments already made, grouped into months by the table below.
     let payments = [];
     let modal;
+    let fixModal;
 
     document.addEventListener('DOMContentLoaded', function () {
         modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+        fixModal = new bootstrap.Modal(document.getElementById('fixModal'));
         document.getElementById('paymentForm').addEventListener('submit', handleSubmit);
+        document.getElementById('fixForm').addEventListener('submit', handleResubmit);
         document.getElementById('paymentDate').valueAsDate = new Date();
         loadOrders();
         loadPayments();
@@ -375,7 +436,7 @@
         } catch (e) {
             console.error(e);
             document.getElementById('paymentTableBody').innerHTML =
-                '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load payments.</td></tr>';
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load payments.</td></tr>';
         }
     }
 
@@ -401,7 +462,7 @@
 
         tbody.innerHTML = '';
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No payments found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No payments found</td></tr>';
             return;
         }
 
@@ -427,6 +488,7 @@
                 </td>
                 <td class="text-end fw-bold">${money(total)}</td>
                 <td class="pe-4"></td>
+                <td class="pe-4"></td>
             `;
             tbody.appendChild(head);
 
@@ -440,6 +502,7 @@
                         <td colspan="2"><small class="text-muted">${t.count}
                             payment${t.count === 1 ? '' : 's'}</small></td>
                         <td class="text-end fw-bold">${money(t.amount)}</td>
+                        <td class="pe-4"></td>
                         <td class="pe-4"></td>
                     `;
                     tbody.appendChild(tr);
@@ -468,11 +531,84 @@
             <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
             <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
             <td>${statusBadge(p)}${p.decision_note
-                ? '<div><small class="text-muted">' + escapeHtml(p.decision_note) + '</small></div>' : ''}</td>
+                ? '<div><small class="text-muted">Admin: ' + escapeHtml(p.decision_note) + '</small></div>' : ''}
+                ${p.resubmitted_at && p.cashier_note
+                ? '<div><small class="text-muted">You: ' + escapeHtml(p.cashier_note) + '</small></div>' : ''}</td>
             <td class="text-end fw-bold">${money(p.amount)}</td>
             <td class="pe-4"><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
+            <td class="text-end pe-4">
+                ${p.status === 'rejected'
+                ? '<button class="btn btn-sm btn-outline-primary text-nowrap" onclick="openFix(' + p.id + ')">'
+                  + '<i class="bi bi-arrow-repeat"></i> Fix &amp; resubmit</button>'
+                : ''}
+            </td>
         `;
         tbody.appendChild(tr);
+    }
+
+    // A rejection comes back here: the cashier answers the Admin's note, amends
+    // whatever was wrong, and the entry goes round again as pending.
+    function openFix(paymentId) {
+        const p = payments.find(x => x.id === paymentId);
+        if (!p) return;
+
+        document.getElementById('fixId').value = p.id;
+        document.getElementById('fixReason').innerText =
+            p.decision_note || 'No reason was given.';
+        document.getElementById('fixOrder').value =
+            (p.po_number ? p.po_number + ' - ' : '') + (p.supplier_name || '');
+        document.getElementById('fixAmount').value = p.amount;
+        document.getElementById('fixDate').value = p.payment_date || '';
+        document.getElementById('fixMethod').value = p.method || 'bank_transfer';
+        document.getElementById('fixReference').value = p.reference || '';
+        document.getElementById('fixNote').value = '';
+        fixModal.show();
+    }
+
+    async function handleResubmit(e) {
+        e.preventDefault();
+        const id = document.getElementById('fixId').value;
+
+        const amended = {
+            amount: document.getElementById('fixAmount').value,
+            payment_date: document.getElementById('fixDate').value,
+            method: document.getElementById('fixMethod').value,
+            reference: document.getElementById('fixReference').value,
+        };
+
+        try {
+            // Save the corrections first, then send it back — so what the Admin
+            // sees next is the amended entry, not the one they rejected.
+            const patch = await fetch('/api/supplier-payments/' + id + '/', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(amended)
+            });
+            if (!patch.ok) {
+                const err = await patch.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || JSON.stringify(err), 'error');
+                return;
+            }
+
+            const res = await fetch('/api/supplier-payments/' + id + '/resubmit/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ note: document.getElementById('fixNote').value })
+            });
+
+            if (res.ok) {
+                fixModal.hide();
+                Swal.fire('Sent back', 'The Admin has it again for approval', 'success');
+                loadOrders();
+                loadPayments();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not resubmit the payment', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            Swal.fire('Error', 'Could not resubmit the payment', 'error');
+        }
     }
 
     function openModal(orderId) {

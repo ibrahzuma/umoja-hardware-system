@@ -4,6 +4,7 @@ from datetime import date
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from django.db.models import Sum, Count, Max, Q
 from django.http import HttpResponse, Http404
 from apps.users.permissions import (
@@ -77,7 +78,7 @@ class IncomeViewSet(viewsets.ModelViewSet):
     serializer_class = IncomeSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
-def _notify_admins_of_payment(payment, actor):
+def _notify_admins_of_payment(payment, actor, resubmitted=False):
     """Tell the Admins a payment is waiting on them.
 
     Every admin gets the notice — approval is not one person's desk, and a
@@ -88,16 +89,18 @@ def _notify_admins_of_payment(payment, actor):
         Q(is_superuser=True) | Q(role='admin') | Q(groups__name='Admin')
     ).distinct()
     who = actor.get_full_name() or actor.username
+    against = f" against PO #{payment.purchase_order_id}" if payment.purchase_order_id else ""
+    if resubmitted:
+        title = "Rejected payment sent back for approval"
+        body = (f"{who} answered your note on {payment.amount} to {payment.supplier}{against}"
+                + (f": {payment.cashier_note}" if payment.cashier_note else "."))
+    else:
+        title = "Supplier payment needs approval"
+        body = f"{who} recorded {payment.amount} to {payment.supplier}{against}."
+
     for admin in admins:
-        notify(
-            admin,
-            "Supplier payment needs approval",
-            f"{who} recorded {payment.amount} to {payment.supplier}"
-            + (f" against PO #{payment.purchase_order_id}" if payment.purchase_order_id else "")
-            + ".",
-            url='/finance/supplier-payments/approvals/',
-            level='warning',
-        )
+        notify(admin, title, body,
+               url='/finance/supplier-payments/approvals/', level='warning')
 
 
 class SupplierPaymentViewSet(viewsets.ModelViewSet):
@@ -112,6 +115,45 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
         """A recorded payment is a request. It waits for an Admin."""
         payment = serializer.save(created_by=self.request.user, status='pending')
         _notify_admins_of_payment(payment, self.request.user)
+
+    def perform_update(self, serializer):
+        """Settled money is closed. A payment still in the loop can be amended
+        — that is how the cashier answers a rejection about the figure itself."""
+        if not serializer.instance.is_editable:
+            raise ValidationError(
+                {'detail': "A payment that has been paid can no longer be edited."})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not instance.is_editable:
+            raise ValidationError(
+                {'detail': "A payment that has been paid can no longer be deleted."})
+        instance.delete()
+
+    @action(detail=True, methods=['post'])
+    def resubmit(self, request, pk=None):
+        """The cashier answers a rejection and sends the payment round again.
+
+        The Admin's note is kept, so when it comes back they see their own
+        objection beside the reply to it.
+        """
+        payment = self.get_object()
+        if payment.status != 'rejected':
+            return Response(
+                {'detail': "Only a rejected payment goes back for another look."},
+                status=400,
+            )
+
+        payment.status = 'pending'
+        payment.cashier_note = (request.data.get('note') or '').strip()
+        payment.resubmitted_at = timezone.now()
+        payment.approved_by = None
+        payment.approved_at = None
+        payment.save(update_fields=['status', 'cashier_note', 'resubmitted_at',
+                                    'approved_by', 'approved_at'])
+
+        _notify_admins_of_payment(payment, request.user, resubmitted=True)
+        return Response(self.get_serializer(payment).data)
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, IsAdminOrSuperUser])
     def approve(self, request, pk=None):
@@ -137,14 +179,16 @@ class SupplierPaymentViewSet(viewsets.ModelViewSet):
         payment.decision_note = (request.data.get('note') or '').strip()
         payment.save(update_fields=['status', 'approved_by', 'approved_at', 'decision_note'])
 
-        verb = 'approved' if new_status == 'paid' else 'rejected'
+        approved = new_status == 'paid'
+        verb = 'approved' if approved else 'rejected'
         notify(
             payment.created_by,
             f"Supplier payment {verb}",
             f"Your {payment.amount} payment to {payment.supplier} was {verb}"
-            + (f": {payment.decision_note}" if payment.decision_note else "."),
+            + (f": {payment.decision_note}" if payment.decision_note else ".")
+            + ("" if approved else " Amend it and send it back."),
             url='/finance/supplier-payments/',
-            level='success' if new_status == 'paid' else 'warning',
+            level='success' if approved else 'warning',
         )
         return Response(self.get_serializer(payment).data)
 

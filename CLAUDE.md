@@ -76,7 +76,10 @@ See `DEPLOYMENT.md` for one-time server setup.
     every order with a supplier, drafts included, minus cancelled ones and the ones already paid off; the screen
     is the **cashier's alone** — not Afisa Ugavi, who raises the order, and not the accountant —
     `can_record_supplier_payment` and `CanRecordSupplierPayment` are the one rule. **A recorded payment is a
-    request:** it lands `pending` and only an Admin's `approve` makes it `paid` (`reject` sends it back). Only
+    request:** it lands `pending` and only an Admin's `approve` makes it `paid`. `reject` is not the end of the
+    line — it goes back to the cashier, who amends the entry (only `pending`/`rejected` rows are editable, see
+    `is_editable`) and `resubmit`s it as pending with a reply; the Admin's `decision_note` is kept through the
+    loop beside the cashier's `cashier_note`. Only
     approved money reduces a balance — `payable_orders` and `by_supplier` report the rest as `pending_amount` —
     so never total `SupplierPayment.amount` without filtering `status='paid'`. Queue:
     `/finance/supplier-payments/approvals/`),

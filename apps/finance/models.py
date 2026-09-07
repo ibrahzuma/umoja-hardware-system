@@ -94,12 +94,24 @@ class SupplierPayment(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     decision_note = models.TextField(blank=True, help_text="Admin's reason, most useful on a rejection")
 
+    # A rejection is not the end of the line: it goes back to the cashier, who
+    # answers the Admin's note (amending the entry if that is what was wrong)
+    # and sends it round again. The Admin's note is kept through the loop so
+    # they can see their own objection beside the reply to it.
+    cashier_note = models.TextField(blank=True, help_text="Cashier's answer to a rejection")
+    resubmitted_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ['-payment_date', '-id']
 
     @property
     def is_paid(self):
         return self.status == 'paid'
+
+    @property
+    def is_editable(self):
+        """Settled money is closed. Anything still in the loop can be amended."""
+        return self.status in ('pending', 'rejected')
 
     def __str__(self):
         return f"Payment to {self.supplier} - {self.amount} ({self.get_status_display()})"

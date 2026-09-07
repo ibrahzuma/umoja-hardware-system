@@ -114,7 +114,17 @@
                 <td>${p.po_number
                     ? '<span class="badge bg-light text-dark border">' + escapeHtml(p.po_number) + '</span>'
                     : '<small class="text-muted">-</small>'}</td>
-                <td class="fw-medium">${escapeHtml(p.supplier_name)}</td>
+                <td class="fw-medium">${escapeHtml(p.supplier_name)}
+                    ${p.resubmitted_at
+                    ? '<div><span class="badge bg-info text-dark">Sent back to you</span></div>'
+                    : ''}
+                    ${p.resubmitted_at && p.decision_note
+                    ? '<div><small class="text-muted">You said: ' + escapeHtml(p.decision_note) + '</small></div>'
+                    : ''}
+                    ${p.cashier_note
+                    ? '<div><small class="text-muted">Cashier: ' + escapeHtml(p.cashier_note) + '</small></div>'
+                    : ''}
+                </td>
                 <td>${escapeHtml((p.method || '').replace('_', ' ').toUpperCase())}</td>
                 <td>${escapeHtml(p.reference || '-')}</td>
                 <td><small class="text-muted">${escapeHtml(p.created_by_name || '-')}</small></td>
