@@ -1399,6 +1399,9 @@ class VoucherFormView(AccountingAccessMixin, TemplateView):
             'prefix': Voucher.PREFIX[voucher_type],
             'blurb': VOUCHER_BLURBS[voucher_type],
             'is_invoice': voucher_type in Voucher.INVOICE_TYPES,
+            # The VAT Fill helper is a sales-desk convenience; a purchase is
+            # keyed straight from the supplier's invoice, line by line.
+            'has_vat_box': voucher_type == 'sales',
             'party_kind': 'customer' if voucher_type == 'sales' else 'supplier',
             'debit_kinds': json.dumps(_rule_kinds(debit_rule)),
             'credit_kinds': json.dumps(_rule_kinds(credit_rule)),

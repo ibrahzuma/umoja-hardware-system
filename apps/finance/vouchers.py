@@ -379,8 +379,11 @@ def _clean_header(voucher_type, header, lines):
       same type may carry it; the EFD number, when given, is likewise unique
       (for purchases, per supplier — every supplier's machine numbers its own
       receipts);
-    * a customer/supplier ledger on the party side must belong to the party
-      named on the voucher, and naming a party is required as soon as one is;
+    * the party is read off the party side: the customer (or supplier)
+      whose ledger sits there is the one the invoice belongs to, and every
+      party ledger on that side must be the same party's. A header may still
+      name the party (the API and the bulk upload do) — then the ledger has
+      to be that party's;
     * the payment status is read off the party side: all money ledgers is
       cash or bank, all party ledger is credit, a mix is partly paid;
     * `vat_amount` is the part of the goods side on tax ledgers, `net_amount`
@@ -401,6 +404,23 @@ def _clean_header(voucher_type, header, lines):
         raise ValidationError({'invoice_number': (
             f'Invoice {invoice_number} is already in the books on another '
             f'{voucher_type} voucher.')})
+
+    party_lines = [l for l in lines if l[1] == party_side]
+    party_ledger_lines = [l for l in party_lines if l[0].kind == party_kind]
+    if party_ledger_lines:
+        if party is None:
+            party = getattr(party_ledger_lines[0][0], party_kind, None)
+            if party is None:
+                raise ValidationError({'lines': (
+                    f"{party_ledger_lines[0][0].name} is not linked to a {party_kind}; a "
+                    f"{voucher_type} voucher must be on a {party_kind}'s own ledger.")})
+        own = getattr(party, 'ledger', None)
+        for account, *_ in party_ledger_lines:
+            if own is None or account.id != own.id:
+                raise ValidationError({'lines': (
+                    f'{account.name} is not the ledger of {party.name}; a {voucher_type} '
+                    f'voucher can only be on one {party_kind}.')})
+
     if efd_number:
         clash = posted.filter(efd_number__iexact=efd_number)
         if voucher_type == 'purchase' and party is not None:
@@ -408,18 +428,6 @@ def _clean_header(voucher_type, header, lines):
         if clash.exists():
             raise ValidationError({'efd_number': (
                 f'EFD receipt {efd_number} is already in the books on {clash.first().number}.')})
-
-    party_lines = [l for l in lines if l[1] == party_side]
-    party_ledger_lines = [l for l in party_lines if l[0].kind == party_kind]
-    if party_ledger_lines:
-        if party is None:
-            raise ValidationError({key: f'Pick the {party_kind} this invoice belongs to.'})
-        own = getattr(party, 'ledger', None)
-        for account, *_ in party_ledger_lines:
-            if own is None or account.id != own.id:
-                raise ValidationError({'lines': (
-                    f'{account.name} is not the ledger of {party.name}; a {voucher_type} '
-                    f'voucher can only be on the {party_kind} it names.')})
 
     money_lines = [l for l in party_lines if l[0].is_money]
     if party_ledger_lines and money_lines:
@@ -448,8 +456,10 @@ def _clean_header(voucher_type, header, lines):
 def post_voucher(voucher_type, date, description, raw_lines, user, header=None):
     """Validate and post a voucher, returning it. Raises ValidationError.
 
-    `header` is only read for Sales and Purchase vouchers: the party
-    (`customer` / `supplier` id), `invoice_number` and `efd_number`."""
+    `header` is only read for Sales and Purchase vouchers: `invoice_number`,
+    `efd_number` and, optionally, the party (`customer` / `supplier` id) —
+    when it is left out the party is the one whose ledger is on the party
+    side."""
     if voucher_type not in Voucher.PREFIX:
         raise ValidationError({'voucher_type': 'Unknown voucher type.'})
     if not date:

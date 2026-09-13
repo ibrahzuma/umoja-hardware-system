@@ -414,11 +414,26 @@ class InvoiceVoucherTest(LedgerTestCase):
         res = self.sale([self.line('debit', other.ledger, 100), self.line('credit', self.sales, 100)])
         self.assertEqual(res.status_code, 400)
         self.assertIn('not the ledger of', res.json()['lines'])
-        # ...and a credit sale must name one at all.
+
+    def test_customer_is_read_off_the_debit_side(self):
+        # The form has no customer box: the customer whose ledger is debited
+        # is the one the invoice is on.
         res = self.sale([self.line('debit', self.customer_ledger, 100), self.line('credit', self.sales, 100)],
                         customer='')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()['customer'], self.customer.id)
+        self.assertEqual(res.json()['customer_name'], self.customer.name)
+        # Two customers' ledgers on one invoice is two invoices.
+        other = Customer.objects.create(name='Somebody Else')
+        res = self.sale([self.line('debit', self.customer_ledger, 50), self.line('debit', other.ledger, 50),
+                         self.line('credit', self.sales, 100)], customer='', invoice_number='TWO')
         self.assertEqual(res.status_code, 400)
-        self.assertIn('customer', res.json())
+        self.assertIn('lines', res.json())
+        # A cash sale names nobody, and that is fine.
+        res = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                        customer='', invoice_number='CASH')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertIsNone(res.json()['customer'])
 
     def test_sales_voucher_sides_are_restricted(self):
         # An expense cannot be credited on a sales voucher; a supplier cannot be debited.

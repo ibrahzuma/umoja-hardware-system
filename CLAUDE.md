@@ -154,15 +154,20 @@ See `DEPLOYMENT.md` for one-time server setup.
     then writes the `Voucher`, its lines and one `GeneralLedgerEntry` per line in one transaction. Numbers are
     per type (`SV-/PU-/RV-/PV-/CV-/JV-000001`). Vouchers are never edited — `cancel_voucher` removes the GL rows
     and keeps the document.
-    **Sales and Purchase vouchers are invoices** (`Voucher.INVOICE_TYPES`, checked in `_clean_header`): they name
-    the party (`customer`/`supplier`), carry `invoice_number` (required, unique among posted vouchers of the
-    type) and `efd_number` (separate field, unique — per supplier for purchases) so the books are searchable by
-    either (`/api/vouchers/?invoice=|?efd=|?q=|?customer=|?supplier=`, `/api/general-ledger/?reference=|?efd=`,
-    and `reference` is denormalised onto every GL row). A customer/supplier ledger on the party side must be the
-    named party's. `payment_status` is *read off the lines*, never typed: all money ledgers on the party side is
-    cash/bank, all party ledger is credit, a mix is partly paid; `vat_amount` is the tax-ledger part of the goods
-    side, `net_amount` the rest. The form's VAT box (exclusive ⇄ inclusive at `SystemSettings.tax_rate`) writes
-    the goods and VAT lines and lets the difference fall on the party side. **These vouchers do not create a
+    **Sales and Purchase vouchers are invoices** (`Voucher.INVOICE_TYPES`, checked in `_clean_header`): they
+    carry `invoice_number` (required, unique among posted vouchers of the type) and `efd_number` (separate
+    field, unique — per supplier for purchases) so the books are searchable by either
+    (`/api/vouchers/?invoice=|?efd=|?q=|?customer=|?supplier=`, `/api/general-ledger/?reference=|?efd=`,
+    and `reference` is denormalised onto every GL row). **The party is read off the lines, not typed twice**:
+    the customer (sales, debit side) or supplier (purchase, credit side) whose ledger sits on the party side is
+    the one the invoice is on, every party ledger there must be the same party's, and a cash invoice names
+    nobody. The form has no customer/supplier box for that reason; the API and the bulk upload may still send
+    `customer`/`supplier` and then the ledger has to be that party's. `payment_status` is likewise *read off
+    the lines*, never typed: all money ledgers on the party side is cash/bank, all party ledger is credit, a
+    mix is partly paid; `vat_amount` is the tax-ledger part of the goods side, `net_amount` the rest. The
+    **Sales** form's VAT box (exclusive ⇄ inclusive at `SystemSettings.tax_rate`) writes the goods and VAT
+    lines and lets the difference fall on the party side; the Purchase form has no such box — a supplier's
+    invoice is keyed line by line. **These vouchers do not create a
     `Sale` or `PurchaseOrder`** — they are the books' own record of an invoice (back-dated work, or anything the
     till never saw); the ledger still never drives the shop floor.
     A customer credited on a Receipt (or a supplier debited on a Payment) is offered its outstanding

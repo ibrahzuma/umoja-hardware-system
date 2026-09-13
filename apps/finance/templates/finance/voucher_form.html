@@ -49,13 +49,9 @@
                 <input type="date" id="vDate" class="form-control" value="{{ today }}" required>
             </div>
             {% if is_invoice %}
-            <div class="col-md-3">
-                <label class="form-label small text-muted">{% if voucher_type == 'sales' %}Customer{% else %}Supplier{% endif %}</label>
-                <select id="vParty" class="form-select" onchange="onParty(this.value)">
-                    <option value="">— pick {% if voucher_type == 'sales' %}a customer{% else %}a supplier{% endif %} —</option>
-                </select>
-            </div>
-            <div class="col-md-3">
+            <!-- No customer/supplier box: the party is whoever's ledger sits on the
+                 {% if voucher_type == 'sales' %}debit{% else %}credit{% endif %} side, and the server reads it off that line. -->
+            <div class="col-md-5">
                 <label class="form-label small text-muted">
                     {% if voucher_type == 'sales' %}Sales Invoice No.{% else %}Purchase Invoice No.{% endif %}
                     <span class="text-danger">*</span></label>
@@ -63,7 +59,7 @@
                        placeholder="{% if voucher_type == 'sales' %}Our invoice number{% else %}The supplier's invoice number{% endif %}"
                        onchange="render()">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label class="form-label small text-muted">
                     {% if voucher_type == 'sales' %}EFD RCT No.{% else %}Purchase EFD RCT No.{% endif %}</label>
                 <input type="text" id="vEfd" class="form-control" maxlength="50" placeholder="EFD receipt number, if any">
@@ -78,8 +74,8 @@
     </div>
 </div>
 
-{% if is_invoice %}
-<!-- VAT: type the exclusive or inclusive figure and the goods side is written for you -->
+{% if has_vat_box %}
+<!-- VAT (sales only): type the exclusive or inclusive figure and the goods side is written for you -->
 <div class="card mb-3 border-0 bg-light">
     <div class="card-body py-2">
         <div class="row g-2 align-items-end">
@@ -222,6 +218,7 @@
 <script>
     const VOUCHER_TYPE = '{{ voucher_type }}';
     const IS_INVOICE = {{ is_invoice|yesno:"true,false" }};
+    const HAS_VAT_BOX = {{ has_vat_box|yesno:"true,false" }};   // the Fill helper: sales vouchers only
     const PARTY_KIND = '{{ party_kind }}';               // customer on a sales voucher, supplier on a purchase
     const PARTY_SIDE = VOUCHER_TYPE === 'sales' ? 'debit' : 'credit';
     const GOODS_SIDE = VOUCHER_TYPE === 'sales' ? 'credit' : 'debit';
@@ -244,7 +241,7 @@
         document.getElementById('debitHint').innerText = hint('debit');
         document.getElementById('creditHint').innerText = hint('credit');
         await loadAccounts();
-        if (IS_INVOICE) setupInvoice();
+        if (HAS_VAT_BOX) setupVatBox();
         resetForm();
     });
 
@@ -280,23 +277,12 @@
         }
     }
 
-    // ---- Sales / Purchase: the party, the invoice, VAT ----------------------
+    // ---- Sales / Purchase: the invoice, VAT --------------------------------
+    // The party is never picked up here: the customer (or supplier) whose
+    // ledger the user puts on the party side is the one the invoice is on,
+    // and the server reads it off that line.
 
-    function partyLedgers() {
-        return allAccounts.filter(a => a.kind === PARTY_KIND && a[PARTY_KIND]);
-    }
-    function partyLedger() {
-        const partyId = document.getElementById('vParty').value;
-        return partyLedgers().find(a => String(a[PARTY_KIND]) === String(partyId)) || null;
-    }
-
-    function setupInvoice() {
-        const sel = document.getElementById('vParty');
-        partyLedgers().sort((a, b) => a.name.localeCompare(b.name)).forEach(a => {
-            const o = document.createElement('option');
-            o.value = a[PARTY_KIND]; o.textContent = a.name;
-            sel.appendChild(o);
-        });
+    function setupVatBox() {
         const goods = document.getElementById('vatGoods');
         const goodsKinds = VOUCHER_TYPE === 'sales' ? ['income'] : ['expense', 'asset'];
         allAccounts.filter(a => goodsKinds.includes(a.kind)).forEach(a => {
@@ -313,21 +299,6 @@
             if (want.test(a.name)) o.selected = true;
             vat.appendChild(o);
         });
-    }
-
-    /* Picking the party puts their ledger on the party side: on the open
-       line there if it has no account yet, otherwise on a new line. A cash
-       sale simply changes that line's account to the bank or cash book. */
-    function onParty(value) {
-        const ledger = partyLedger();
-        if (!ledger) { render(); return; }
-        // A party ledger already on the side? Swap it for the new party's.
-        const sideLines = lines.filter(l => l.side === PARTY_SIDE);
-        const existing = sideLines.find(l => (accountById[l.account] || {}).kind === PARTY_KIND);
-        const open = existing || sideLines.find(l => !l.account);
-        if (open) open.account = String(ledger.id);
-        else lines.push({ ...newLine(PARTY_SIDE, 0, false), account: String(ledger.id) });
-        balance();
     }
 
     function vatFrom(which) {
@@ -397,9 +368,8 @@
     function resetForm() {
         lines = [newLine('debit', 0, false), newLine('credit', 0, false)];
         document.getElementById('vDescription').value = '';
-        if (IS_INVOICE) {
-            ['vParty', 'vInvoice', 'vEfd', 'vatNet', 'vatAmount', 'vatTotal'].forEach(id => document.getElementById(id).value = '');
-        }
+        if (IS_INVOICE) ['vInvoice', 'vEfd'].forEach(id => document.getElementById(id).value = '');
+        if (HAS_VAT_BOX) ['vatNet', 'vatAmount', 'vatTotal'].forEach(id => document.getElementById(id).value = '');
         render();
     }
 
@@ -657,7 +627,6 @@
             })),
         };
         if (IS_INVOICE) {
-            body[PARTY_KIND] = document.getElementById('vParty').value || null;
             body.invoice_number = document.getElementById('vInvoice').value.trim();
             body.efd_number = document.getElementById('vEfd').value.trim();
         }
