@@ -104,6 +104,7 @@
                             <th class="ps-4">Date</th>
                             <th>Voucher</th>
                             <th>Type</th>
+                            <th>Invoice</th>
                             <th>Description</th>
                             <th class="num">Debit</th>
                             <th class="num">Credit</th>
@@ -159,8 +160,9 @@
     const DETAIL_URL = '{% url "finance:voucher_detail" 0 %}';
     const STATEMENT_URL = '{% url "finance:general_ledger" %}';
     const PRESELECT = '{{ selected_account }}';
-    const TYPE_BADGE = { receipt: 'bg-success', payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
-    const TYPE_LABEL = { receipt: 'Receipt', payment: 'Payment', contra: 'Contra', journal: 'Journal' };
+    const TYPE_BADGE = { sales: 'bg-primary', purchase: 'bg-warning text-dark', receipt: 'bg-success',
+                         payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
+    const TYPE_LABEL = { sales: 'Sales', purchase: 'Purchase', receipt: 'Receipt', payment: 'Payment', contra: 'Contra', journal: 'Journal' };
     let accounts = [];
 
     document.addEventListener('DOMContentLoaded', async function () {
@@ -243,7 +245,7 @@
 
     async function loadStatement(id) {
         const body = document.getElementById('stBody');
-        body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Loading…</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">Loading…</td></tr>';
         try {
             const res = await fetch('/api/ledger-accounts/' + id + '/statement/' + range());
             if (!res.ok) throw new Error('status ' + res.status);
@@ -262,7 +264,7 @@
 
             body.innerHTML = '';
             if (!s.rows.length) {
-                body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No entries in this period</td></tr>';
+                body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No entries in this period</td></tr>';
                 return;
             }
             s.rows.forEach(r => {
@@ -271,6 +273,7 @@
                     '<td class="ps-4">' + escapeHtml(r.date) + '</td>' +
                     '<td><a href="' + detailUrl(r.voucher) + '" class="fw-bold text-decoration-none">' + escapeHtml(r.voucher_number) + '</a></td>' +
                     '<td><span class="badge ' + (TYPE_BADGE[r.voucher_type] || 'bg-secondary') + '">' + (TYPE_LABEL[r.voucher_type] || r.voucher_type) + '</span></td>' +
+                    '<td class="small">' + escapeHtml(r.reference || '') + '</td>' +
                     '<td class="small">' + escapeHtml(r.description) + '</td>' +
                     '<td class="num">' + fmt(r.debit) + '</td>' +
                     '<td class="num">' + fmt(r.credit) + '</td>' +
@@ -279,7 +282,7 @@
             });
         } catch (e) {
             console.error(e);
-            body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load the statement.</td></tr>';
+            body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load the statement.</td></tr>';
         }
     }
 

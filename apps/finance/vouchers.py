@@ -8,10 +8,13 @@ owed on it. Everything it accepts is written in one transaction — voucher,
 lines, allocations and GL rows — so the ledger can never hold half a voucher.
 
 Outstanding figures for allocation are derived, never stored, in the same
-spirit as the CRM and supplier-credit balances:
+spirit as the CRM and supplier-credit balances. An invoice is one of three
+things — a till sale, a purchase order, or a Sales/Purchase voucher posted
+here — and each is owed what is left after what has already been set against it:
 
-    invoice owed = sale total − till payments − earlier voucher allocations
-    bill owed    = order total − approved supplier payments − earlier allocations
+    till sale owed      = sale total − till payments − earlier voucher allocations
+    purchase order owed = order total − approved supplier payments − earlier allocations
+    invoice voucher owed = the part left on the customer/supplier ledger − earlier allocations
 
 Nothing here writes back to a sale, a purchase order or a supplier payment.
 The ledger mirrors the shop floor; it does not drive it.
@@ -48,7 +51,8 @@ DEFAULT_LEDGERS = (
     ('expense', 'Rent'),
     ('expense', 'Utilities'),
     ('asset', 'Stock'),
-    ('tax', 'VAT Payable'),
+    ('tax', 'Output VAT'),
+    ('tax', 'Input VAT'),
     ('tax', 'PAYE Payable'),
     ('liability', 'Loans'),
     ('equity', 'Capital'),
@@ -72,6 +76,13 @@ def sync_chart_of_accounts():
             .filter(bank_account__isnull=True, customer__isnull=True, supplier__isnull=True)
             .exists()):
         for kind, name in DEFAULT_LEDGERS:
+            LedgerAccount.objects.create(kind=kind, name=name)
+            created += 1
+
+    # The two VAT ledgers the Sales and Purchase vouchers split tax into are
+    # wanted even in a chart seeded before they were part of the defaults.
+    for kind, name in (('tax', 'Output VAT'), ('tax', 'Input VAT')):
+        if not LedgerAccount.objects.filter(kind=kind, name__iexact=name).exists():
             LedgerAccount.objects.create(kind=kind, name=name)
             created += 1
 
@@ -141,8 +152,50 @@ def _allocated_by(field, ids):
     return {row[field]: row['t'] or ZERO for row in rows}
 
 
+def _row(target, obj_id, reference, date, total, paid):
+    """One open invoice or bill, in the shape the allocation screen shows:
+    number, date, original amount, already settled, still outstanding.
+    `target` names which link an allocation to it sets."""
+    return {
+        'target': target,
+        'id': obj_id,
+        'reference': reference,
+        'date': date,
+        'total': str(total),
+        'paid': str(paid),
+        'outstanding': str(total - paid),
+    }
+
+
+def _outstanding_invoice_vouchers(voucher_type, party_field, party, ledger, side):
+    """Sales (or Purchase) vouchers posted for this party whose customer (or
+    supplier) ledger still carries a balance. What is owed on an invoice
+    voucher is the part that went on the party ledger — a cash sale left
+    nothing there — less what later vouchers have set against it."""
+    vouchers = (Voucher.objects
+                .filter(voucher_type=voucher_type, status='posted', **{party_field: party})
+                .order_by('date', 'id'))
+    ids = [v.id for v in vouchers]
+    on_ledger = {
+        row['voucher']: row['t'] or ZERO
+        for row in VoucherLine.objects
+        .filter(voucher__in=ids, account=ledger, side=side)
+        .values('voucher').annotate(t=Sum('amount'))
+    }
+    allocated = _allocated_by('voucher', ids)
+    rows = []
+    for v in vouchers:
+        total = on_ledger.get(v.id, ZERO)
+        paid = allocated.get(v.id, ZERO)
+        if total - paid <= 0:
+            continue
+        rows.append(_row('voucher', v.id, v.invoice_number or v.number, v.date.isoformat(), total, paid))
+    return rows
+
+
 def outstanding_invoices(customer):
-    """The customer's invoices that still carry a balance, oldest first."""
+    """The customer's invoices that still carry a balance, oldest first:
+    till sales and Sales vouchers alike."""
     sales = (Sale.objects.filter(customer=customer)
              .exclude(status='cancelled')
              .annotate(till_paid=Sum('transactions__amount',
@@ -153,22 +206,19 @@ def outstanding_invoices(customer):
     for sale in sales:
         total = sale.total_amount or ZERO
         paid = (sale.till_paid or ZERO) + allocated.get(sale.id, ZERO)
-        balance = total - paid
-        if balance <= 0:
+        if total - paid <= 0:
             continue
-        rows.append({
-            'id': sale.id,
-            'reference': sale.invoice_number,
-            'date': sale.created_at.date().isoformat(),
-            'total': str(total),
-            'paid': str(paid),
-            'outstanding': str(balance),
-        })
+        rows.append(_row('sale', sale.id, sale.invoice_number, sale.created_at.date().isoformat(), total, paid))
+    ledger = getattr(customer, 'ledger', None)
+    if ledger is not None:
+        rows += _outstanding_invoice_vouchers('sales', 'customer', customer, ledger, 'debit')
+    rows.sort(key=lambda r: (r['date'], r['id']))
     return rows
 
 
 def outstanding_bills(supplier):
-    """The supplier's purchase orders that still carry a balance, oldest first.
+    """The supplier's bills that still carry a balance, oldest first: purchase
+    orders and Purchase vouchers alike.
 
     Every live order counts, drafts included — those are placed orders waiting
     for delivery, and the money on them is owed (see statements._creditors).
@@ -188,17 +238,14 @@ def outstanding_bills(supplier):
     for order in orders:
         total = order.total_amount or ZERO
         settled = paid.get(order.id, ZERO) + allocated.get(order.id, ZERO)
-        balance = total - settled
-        if balance <= 0:
+        if total - settled <= 0:
             continue
-        rows.append({
-            'id': order.id,
-            'reference': f'PO-{order.id}',
-            'date': order.order_date.isoformat() if order.order_date else '',
-            'total': str(total),
-            'paid': str(settled),
-            'outstanding': str(balance),
-        })
+        rows.append(_row('purchase_order', order.id, f'PO-{order.id}',
+                         order.order_date.isoformat() if order.order_date else '', total, settled))
+    ledger = getattr(supplier, 'ledger', None)
+    if ledger is not None:
+        rows += _outstanding_invoice_vouchers('purchase', 'supplier', supplier, ledger, 'credit')
+    rows.sort(key=lambda r: (r['date'], r['id']))
     return rows
 
 
@@ -280,31 +327,129 @@ def _clean_lines(voucher_type, raw_lines):
     return cleaned
 
 
+ALLOCATION_TARGETS = ('sale', 'purchase_order', 'voucher')
+
+
 def _check_allocations(account, allocations):
     """Each allocation must point at one of the ledger's own open invoices or
-    bills and stay within what is still owed on it."""
-    owed = {row['id']: row for row in outstanding_for(account)}
+    bills — by `sale`, `purchase_order` or `voucher` id — and stay within what
+    is still owed on it. Returns (target field, id, reference, amount)."""
+    owed = {(row['target'], row['id']): row for row in outstanding_for(account)}
     out = []
     for raw, amount in allocations:
-        target = raw.get('sale') if account.kind == 'customer' else raw.get('purchase_order')
+        target = next((t for t in ALLOCATION_TARGETS if raw.get(t) not in (None, '')), None)
         try:
-            target = int(target)
+            target_id = int(raw.get(target))
         except (TypeError, ValueError):
             raise ValidationError({'lines': f'{account.name}: an allocation is missing its invoice.'})
-        row = owed.get(target)
+        row = owed.get((target, target_id))
         if row is None:
             raise ValidationError({'lines': f'{account.name}: that invoice has nothing outstanding.'})
         if amount > Decimal(row['outstanding']):
             raise ValidationError({'lines': (
                 f"{row['reference']}: only {row['outstanding']} is outstanding, "
                 f"cannot allocate {amount}.")})
-        out.append((target, row['reference'], amount))
+        out.append((target, target_id, row['reference'], amount))
     return out
 
 
+# ---------------------------------------------------------------------------
+# Sales and Purchase vouchers: the invoice header
+# ---------------------------------------------------------------------------
+
+def _party_for(voucher_type, header):
+    """The customer (sales) or supplier (purchase) named on the voucher."""
+    if voucher_type == 'sales':
+        model, key = Customer, 'customer'
+    else:
+        model, key = Supplier, 'supplier'
+    raw = (header or {}).get(key)
+    if raw in (None, ''):
+        return key, None
+    try:
+        return key, model.objects.get(pk=int(raw))
+    except (TypeError, ValueError, model.DoesNotExist):
+        raise ValidationError({key: f'Pick the {key} from the list.'})
+
+
+def _clean_header(voucher_type, header, lines):
+    """What a Sales or Purchase voucher carries beyond its lines, checked:
+
+    * the invoice number is required, and no other posted voucher of the
+      same type may carry it; the EFD number, when given, is likewise unique
+      (for purchases, per supplier — every supplier's machine numbers its own
+      receipts);
+    * a customer/supplier ledger on the party side must belong to the party
+      named on the voucher, and naming a party is required as soon as one is;
+    * the payment status is read off the party side: all money ledgers is
+      cash or bank, all party ledger is credit, a mix is partly paid;
+    * `vat_amount` is the part of the goods side on tax ledgers, `net_amount`
+      the rest.
+    """
+    header = header or {}
+    party_side, goods_side = ('debit', 'credit') if voucher_type == 'sales' else ('credit', 'debit')
+    party_kind = 'customer' if voucher_type == 'sales' else 'supplier'
+    key, party = _party_for(voucher_type, header)
+
+    invoice_number = (header.get('invoice_number') or '').strip()[:50]
+    efd_number = (header.get('efd_number') or '').strip()[:50]
+    label = 'sales invoice number' if voucher_type == 'sales' else "supplier's invoice number"
+    if not invoice_number:
+        raise ValidationError({'invoice_number': f'Enter the {label}.'})
+    posted = Voucher.objects.filter(voucher_type=voucher_type, status='posted')
+    if posted.filter(invoice_number__iexact=invoice_number).exists():
+        raise ValidationError({'invoice_number': (
+            f'Invoice {invoice_number} is already in the books on another '
+            f'{voucher_type} voucher.')})
+    if efd_number:
+        clash = posted.filter(efd_number__iexact=efd_number)
+        if voucher_type == 'purchase' and party is not None:
+            clash = clash.filter(supplier=party)
+        if clash.exists():
+            raise ValidationError({'efd_number': (
+                f'EFD receipt {efd_number} is already in the books on {clash.first().number}.')})
+
+    party_lines = [l for l in lines if l[1] == party_side]
+    party_ledger_lines = [l for l in party_lines if l[0].kind == party_kind]
+    if party_ledger_lines:
+        if party is None:
+            raise ValidationError({key: f'Pick the {party_kind} this invoice belongs to.'})
+        own = getattr(party, 'ledger', None)
+        for account, *_ in party_ledger_lines:
+            if own is None or account.id != own.id:
+                raise ValidationError({'lines': (
+                    f'{account.name} is not the ledger of {party.name}; a {voucher_type} '
+                    f'voucher can only be on the {party_kind} it names.')})
+
+    money_lines = [l for l in party_lines if l[0].is_money]
+    if party_ledger_lines and money_lines:
+        payment_status = 'partly_paid'
+    elif party_ledger_lines:
+        payment_status = 'credit'
+    elif money_lines and all(l[0].kind == 'cash' for l in money_lines):
+        payment_status = 'cash'
+    else:
+        payment_status = 'bank'
+
+    vat = sum((l[2] for l in lines if l[1] == goods_side and l[0].kind == 'tax'), ZERO)
+    total = sum((l[2] for l in lines if l[1] == 'debit'), ZERO)
+    return {
+        'customer': party if voucher_type == 'sales' else None,
+        'supplier': party if voucher_type == 'purchase' else None,
+        'invoice_number': invoice_number,
+        'efd_number': efd_number,
+        'payment_status': payment_status,
+        'vat_amount': vat,
+        'net_amount': total - vat,
+    }
+
+
 @transaction.atomic
-def post_voucher(voucher_type, date, description, raw_lines, user):
-    """Validate and post a voucher, returning it. Raises ValidationError."""
+def post_voucher(voucher_type, date, description, raw_lines, user, header=None):
+    """Validate and post a voucher, returning it. Raises ValidationError.
+
+    `header` is only read for Sales and Purchase vouchers: the party
+    (`customer` / `supplier` id), `invoice_number` and `efd_number`."""
     if voucher_type not in Voucher.PREFIX:
         raise ValidationError({'voucher_type': 'Unknown voucher type.'})
     if not date:
@@ -320,24 +465,25 @@ def post_voucher(voucher_type, date, description, raw_lines, user):
             f'Debits ({total_debit}) and credits ({total_credit}) do not balance — '
             f'difference {abs(total_debit - total_credit)}.')})
 
+    extra = _clean_header(voucher_type, header, lines) if voucher_type in Voucher.INVOICE_TYPES else {}
+
     voucher = Voucher.objects.create(
         voucher_type=voucher_type, date=date, description=(description or '').strip(),
-        total=total_debit, created_by=user,
+        total=total_debit, created_by=user, **extra,
     )
     for position, (account, side, amount, narration, allocations) in enumerate(lines):
         line = VoucherLine.objects.create(
             voucher=voucher, account=account, side=side, amount=amount,
             narration=narration, position=position,
         )
-        for target, reference, alloc_amount in _check_allocations(account, allocations):
+        for target, target_id, reference, alloc_amount in _check_allocations(account, allocations):
             VoucherAllocation.objects.create(
-                line=line, reference=reference, amount=alloc_amount,
-                sale_id=target if account.kind == 'customer' else None,
-                purchase_order_id=target if account.kind == 'supplier' else None,
+                line=line, reference=reference, amount=alloc_amount, **{f'{target}_id': target_id},
             )
         GeneralLedgerEntry.objects.create(
             voucher=voucher, line=line, account=account, date=voucher.date,
             voucher_type=voucher_type, voucher_number=voucher.number,
+            reference=voucher.invoice_number,
             description=(narration or voucher.description)[:300],
             debit=amount if side == 'debit' else ZERO,
             credit=amount if side == 'credit' else ZERO,
@@ -413,6 +559,7 @@ def account_statement(account, date_from=None, date_to=None):
             'voucher': e.voucher_id,
             'voucher_number': e.voucher_number,
             'voucher_type': e.voucher_type,
+            'reference': e.reference,
             'description': e.description,
             'debit': str(e.debit),
             'credit': str(e.credit),

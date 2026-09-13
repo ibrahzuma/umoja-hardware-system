@@ -146,15 +146,31 @@ See `DEPLOYMENT.md` for one-time server setup.
     every ledger has a `kind`, and the kind decides which dropdown it sits in: `bank`/`cash` are the *money*
     kinds, everything else is *non-money*. Bank accounts, customers and suppliers are never typed in twice —
     each grows a ledger on save (`signals.py` → `ensure_ledger_for`; `sync_chart_of_accounts()` backfills and
-    seeds the default ledgers). Four voucher types, told apart only by `Voucher.RULES` (which kinds may sit on
-    each side): **Receipt** Dr money / Cr non-money, **Payment** Dr non-money / Cr money, **Contra** money both
-    sides, **Journal** anything. `post_voucher` is the only writer: it refuses an unbalanced voucher, a ledger on
-    a side its type forbids, and any allocation past what is owed, then writes the `Voucher`, its lines and one
-    `GeneralLedgerEntry` per line in one transaction. Numbers are per type (`RV-/PV-/CV-/JV-000001`). Vouchers
-    are never edited — `cancel_voucher` removes the GL rows and keeps the document. A customer credited on a
-    Receipt (or a supplier debited on a Payment) is offered its outstanding invoices/bills for allocation
-    (`/api/ledger-accounts/<id>/outstanding/`); outstanding = total − till/approved payments − earlier posted
-    allocations, derived, never stored. The form (`voucher_form.html`) follows the spec's entry rule: whenever
+    seeds the default ledgers, Output VAT and Input VAT among them). Six voucher types, told apart by
+    `Voucher.RULES` (which kinds may sit on each side): **Sales** Dr customer/money / Cr income+tax,
+    **Purchase** Dr expense/asset/tax / Cr supplier/money, **Receipt** Dr money / Cr non-money, **Payment** Dr
+    non-money / Cr money, **Contra** money both sides, **Journal** anything. `post_voucher` is the only writer: it
+    refuses an unbalanced voucher, a ledger on a side its type forbids, and any allocation past what is owed,
+    then writes the `Voucher`, its lines and one `GeneralLedgerEntry` per line in one transaction. Numbers are
+    per type (`SV-/PU-/RV-/PV-/CV-/JV-000001`). Vouchers are never edited — `cancel_voucher` removes the GL rows
+    and keeps the document.
+    **Sales and Purchase vouchers are invoices** (`Voucher.INVOICE_TYPES`, checked in `_clean_header`): they name
+    the party (`customer`/`supplier`), carry `invoice_number` (required, unique among posted vouchers of the
+    type) and `efd_number` (separate field, unique — per supplier for purchases) so the books are searchable by
+    either (`/api/vouchers/?invoice=|?efd=|?q=|?customer=|?supplier=`, `/api/general-ledger/?reference=|?efd=`,
+    and `reference` is denormalised onto every GL row). A customer/supplier ledger on the party side must be the
+    named party's. `payment_status` is *read off the lines*, never typed: all money ledgers on the party side is
+    cash/bank, all party ledger is credit, a mix is partly paid; `vat_amount` is the tax-ledger part of the goods
+    side, `net_amount` the rest. The form's VAT box (exclusive ⇄ inclusive at `SystemSettings.tax_rate`) writes
+    the goods and VAT lines and lets the difference fall on the party side. **These vouchers do not create a
+    `Sale` or `PurchaseOrder`** — they are the books' own record of an invoice (back-dated work, or anything the
+    till never saw); the ledger still never drives the shop floor.
+    A customer credited on a Receipt (or a supplier debited on a Payment) is offered its outstanding
+    invoices/bills for allocation (`/api/ledger-accounts/<id>/outstanding/`): till sales, purchase orders *and*
+    posted Sales/Purchase vouchers, each row tagged with its `target` (`sale`/`purchase_order`/`voucher`) which
+    is the FK the `VoucherAllocation` sets. Outstanding = total − till/approved payments − earlier posted
+    allocations (for an invoice voucher: the part on the party ledger − allocations), derived, never stored.
+    The form (`voucher_form.html`) follows the spec's entry rule: whenever
     the sides differ, the difference is written into the next empty amount field on the short side (a new line
     only when none is open) and the user picks its account; a system-written amount re-sizes as the other lines
     change until the user types over it; Post is disabled until Total Debit = Total Credit, and the server

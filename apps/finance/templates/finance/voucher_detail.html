@@ -49,6 +49,34 @@
             </div>
         </div>
 
+        {% if voucher.is_invoice %}
+        <div class="row g-3 mb-4 small">
+            <div class="col-sm-3">
+                <div class="text-muted">{% if voucher.voucher_type == 'sales' %}Customer{% else %}Supplier{% endif %}</div>
+                <strong>{{ voucher.party.name|default:"—" }}</strong>
+            </div>
+            <div class="col-sm-3">
+                <div class="text-muted">{% if voucher.voucher_type == 'sales' %}Sales Invoice No.{% else %}Purchase Invoice No.{% endif %}</div>
+                <strong>{{ voucher.invoice_number|default:"—" }}</strong>
+            </div>
+            <div class="col-sm-3">
+                <div class="text-muted">EFD RCT No.</div>
+                <strong>{{ voucher.efd_number|default:"—" }}</strong>
+            </div>
+            <div class="col-sm-3">
+                <div class="text-muted">Payment status</div>
+                <strong>{{ voucher.get_payment_status_display|default:"—" }}</strong>
+            </div>
+            {% if voucher.vat_amount %}
+            <div class="col-sm-12 text-muted">
+                VAT-exclusive {{ voucher.net_amount|floatformat:2|intcomma }} ·
+                VAT {{ voucher.vat_amount|floatformat:2|intcomma }} ·
+                VAT-inclusive {{ voucher.total|floatformat:2|intcomma }}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% if voucher.description %}
         <p class="mb-4"><span class="text-muted">Description:</span> {{ voucher.description }}</p>
         {% endif %}

@@ -284,7 +284,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
 class VoucherAllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoucherAllocation
-        fields = ['id', 'sale', 'purchase_order', 'reference', 'amount']
+        fields = ['id', 'sale', 'purchase_order', 'voucher', 'reference', 'amount']
 
 
 class VoucherLineSerializer(serializers.ModelSerializer):
@@ -304,6 +304,10 @@ class VoucherSerializer(serializers.ModelSerializer):
     raw lines — see VoucherViewSet.create."""
     voucher_type_display = serializers.CharField(source='get_voucher_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
+    customer_name = serializers.CharField(source='customer.name', read_only=True, default='')
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True, default='')
+    party_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     cancelled_by_name = serializers.SerializerMethodField()
     lines = VoucherLineSerializer(many=True, read_only=True)
@@ -313,7 +317,11 @@ class VoucherSerializer(serializers.ModelSerializer):
         model = Voucher
         fields = [
             'id', 'number', 'voucher_type', 'voucher_type_display', 'date', 'description',
-            'total', 'status', 'status_display', 'created_by', 'created_by_name', 'created_at',
+            'total', 'status', 'status_display',
+            'customer', 'customer_name', 'supplier', 'supplier_name', 'party_name',
+            'invoice_number', 'efd_number', 'payment_status', 'payment_status_display',
+            'net_amount', 'vat_amount',
+            'created_by', 'created_by_name', 'created_at',
             'cancelled_by', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
             'lines', 'accounts_summary',
         ]
@@ -325,6 +333,10 @@ class VoucherSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return self._name(obj.created_by)
+
+    def get_party_name(self, obj):
+        party = obj.party
+        return party.name if party else ''
 
     def get_cancelled_by_name(self, obj):
         return self._name(obj.cancelled_by)
@@ -345,4 +357,4 @@ class GeneralLedgerEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = GeneralLedgerEntry
         fields = ['id', 'voucher', 'account', 'account_code', 'account_name', 'account_kind',
-                  'date', 'voucher_type', 'voucher_number', 'description', 'debit', 'credit']
+                  'date', 'voucher_type', 'voucher_number', 'reference', 'description', 'debit', 'credit']

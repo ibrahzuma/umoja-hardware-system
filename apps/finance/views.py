@@ -1,4 +1,5 @@
 import io
+import json
 from decimal import Decimal, InvalidOperation
 from datetime import date
 from rest_framework import viewsets, permissions, mixins
@@ -19,6 +20,7 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from apps.core.notify import notify
+from apps.core.models import SystemSettings
 from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
 from .statements import profit_and_loss, cash_flow, balance_sheet, period_from
 from django.urls import reverse_lazy
@@ -1216,11 +1218,11 @@ class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
                      mixins.ListModelMixin, viewsets.GenericViewSet):
     """Vouchers are written once. No update, no delete — a wrong one is
     cancelled, which is an action here, not an edit."""
-    queryset = Voucher.objects.select_related('created_by', 'cancelled_by').prefetch_related(
+    queryset = Voucher.objects.select_related('created_by', 'cancelled_by', 'customer', 'supplier').prefetch_related(
         'lines__account', 'lines__allocations').all()
     serializer_class = VoucherSerializer
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
-    filterset_fields = ['voucher_type', 'status']
+    filterset_fields = ['voucher_type', 'status', 'customer', 'supplier', 'payment_status']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -1231,12 +1233,25 @@ class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
             qs = qs.filter(date__lte=p['to'])
         if p.get('account'):
             qs = qs.filter(lines__account_id=p['account']).distinct()
+        # The invoice controls: find a voucher by either of its two references.
+        if p.get('invoice'):
+            qs = qs.filter(invoice_number__iexact=p['invoice'])
+        if p.get('efd'):
+            qs = qs.filter(efd_number__iexact=p['efd'])
+        if p.get('q'):
+            q = p['q']
+            qs = qs.filter(
+                Q(number__icontains=q) | Q(description__icontains=q) |
+                Q(invoice_number__icontains=q) | Q(efd_number__icontains=q) |
+                Q(customer__name__icontains=q) | Q(supplier__name__icontains=q)
+            )
         return qs
 
     def create(self, request, *args, **kwargs):
+        d = request.data
         voucher = vouchers.post_voucher(
-            request.data.get('voucher_type'), request.data.get('date'),
-            request.data.get('description'), request.data.get('lines'), request.user,
+            d.get('voucher_type'), d.get('date'), d.get('description'), d.get('lines'), request.user,
+            header={k: d.get(k) for k in ('customer', 'supplier', 'invoice_number', 'efd_number')},
         )
         voucher = self.get_queryset().get(pk=voucher.pk)
         return Response(self.get_serializer(voucher).data, status=201)
@@ -1266,7 +1281,7 @@ class GeneralLedgerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = GeneralLedgerEntry.objects.select_related('account').all()
     serializer_class = GeneralLedgerEntrySerializer
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
-    filterset_fields = ['account', 'voucher_type', 'voucher']
+    filterset_fields = ['account', 'voucher_type', 'voucher', 'reference']
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -1275,6 +1290,8 @@ class GeneralLedgerViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(date__gte=p['from'])
         if p.get('to'):
             qs = qs.filter(date__lte=p['to'])
+        if p.get('efd'):
+            qs = qs.filter(voucher__efd_number__iexact=p['efd'])
         return qs
 
     @action(detail=False, methods=['get'])
@@ -1311,6 +1328,11 @@ class VoucherListView(AccountingAccessMixin, TemplateView):
 
 
 VOUCHER_BLURBS = {
+    'sales': ('An invoice we raised', 'Debit the customer for a credit sale, or the bank account or cash book '
+                                      'for a cash sale; credit the sales ledger and, where it applies, Output VAT.'),
+    'purchase': ('An invoice we received', 'Debit purchases, stock or the expense and, where it applies, Input VAT; '
+                                           'credit the supplier for a credit purchase, or the bank account or '
+                                           'cash book paid from.'),
     'receipt': ('Money coming in', 'Debit the bank account or cash book that received it; '
                                    'credit where it came from: a customer, income, or any other ledger.'),
     'payment': ('Money going out', 'Debit what it was for: a supplier, an expense, tax, or any other '
@@ -1321,13 +1343,14 @@ VOUCHER_BLURBS = {
 }
 
 
-def _rule_group(rule):
-    """Which `?group=` the dropdown for this side asks the API for."""
+def _rule_kinds(rule):
+    """The ledger kinds one side of the form may offer, as a list for the
+    page's JS — or None for every kind."""
     if rule is None:
-        return 'all'
+        return None
     if rule == 'non_money':
-        return 'non_money'
-    return 'money'
+        return [k for k, _ in LedgerAccount.KINDS if k not in LedgerAccount.MONEY_KINDS]
+    return list(rule)
 
 
 class VoucherFormView(AccountingAccessMixin, TemplateView):
@@ -1340,13 +1363,17 @@ class VoucherFormView(AccountingAccessMixin, TemplateView):
         vouchers.sync_chart_of_accounts()
         ctx = super().get_context_data(**kwargs)
         debit_rule, credit_rule = Voucher.RULES[voucher_type]
+        settings_row = SystemSettings.objects.first()
         ctx.update({
             'voucher_type': voucher_type,
             'voucher_type_display': dict(Voucher.TYPES)[voucher_type],
             'prefix': Voucher.PREFIX[voucher_type],
             'blurb': VOUCHER_BLURBS[voucher_type],
-            'debit_group': _rule_group(debit_rule),
-            'credit_group': _rule_group(credit_rule),
+            'is_invoice': voucher_type in Voucher.INVOICE_TYPES,
+            'party_kind': 'customer' if voucher_type == 'sales' else 'supplier',
+            'debit_kinds': json.dumps(_rule_kinds(debit_rule)),
+            'credit_kinds': json.dumps(_rule_kinds(credit_rule)),
+            'tax_rate': str(settings_row.tax_rate if settings_row else 18),
             'today': date.today().isoformat(),
             'voucher_types': Voucher.TYPES,
         })

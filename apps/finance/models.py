@@ -579,12 +579,21 @@ class LedgerAccount(models.Model):
 class Voucher(models.Model):
     """One double-entry document: a set of lines whose debits equal credits.
 
-    Four kinds, told apart only by which ledgers each side may use:
+    Six kinds, told apart by which ledgers each side may use:
 
-        Receipt   Dr bank/cash        Cr anything else   (money coming in)
-        Payment   Dr anything else    Cr bank/cash       (money going out)
-        Contra    Dr bank/cash        Cr bank/cash       (moving our own money)
-        Journal   Dr any ledger       Cr any ledger      (everything else)
+        Sales     Dr customer/bank/cash      Cr income/tax          (an invoice we raised)
+        Purchase  Dr expense/asset/tax       Cr supplier/bank/cash  (an invoice we got)
+        Receipt   Dr bank/cash               Cr anything else       (money coming in)
+        Payment   Dr anything else           Cr bank/cash           (money going out)
+        Contra    Dr bank/cash               Cr bank/cash           (moving our own money)
+        Journal   Dr any ledger              Cr any ledger          (everything else)
+
+    A Sales or Purchase voucher also names the party and carries the invoice
+    number and the EFD receipt number as two separate fields, so the books
+    can be searched by either. Its payment status is read off its lines —
+    all money ledgers on the party side is cash/bank, all customer/supplier
+    is credit, a mix is partly paid — and the part left on the customer or
+    supplier ledger is what a later Receipt or Payment is allocated against.
 
     A voucher is posted the moment it is saved — `vouchers.post_voucher` checks
     that the two sides balance, that every ledger is allowed where it was used,
@@ -595,24 +604,38 @@ class Voucher(models.Model):
     the audit trail.
     """
     TYPES = (
+        ('sales', 'Sales'),
+        ('purchase', 'Purchase'),
         ('receipt', 'Receipt'),
         ('payment', 'Payment'),
         ('contra', 'Contra'),
         ('journal', 'Journal'),
     )
-    PREFIX = {'receipt': 'RV', 'payment': 'PV', 'contra': 'CV', 'journal': 'JV'}
+    PREFIX = {'sales': 'SV', 'purchase': 'PU', 'receipt': 'RV', 'payment': 'PV',
+              'contra': 'CV', 'journal': 'JV'}
     # Which kinds of ledger may sit on the debit and credit side of each type:
     # a tuple of kinds, 'non_money' for everything but bank/cash, or None for
     # any ledger.
     RULES = {
+        'sales': (('customer',) + LedgerAccount.MONEY_KINDS, ('income', 'tax')),
+        'purchase': (('expense', 'asset', 'tax'), ('supplier',) + LedgerAccount.MONEY_KINDS),
         'receipt': (LedgerAccount.MONEY_KINDS, 'non_money'),
         'payment': ('non_money', LedgerAccount.MONEY_KINDS),
         'contra': (LedgerAccount.MONEY_KINDS, LedgerAccount.MONEY_KINDS),
         'journal': (None, None),
     }
+    # The two types that are an invoice, and so carry a party, an invoice
+    # number, an EFD number and a payment status.
+    INVOICE_TYPES = ('sales', 'purchase')
     STATUS_CHOICES = (
         ('posted', 'Posted'),
         ('cancelled', 'Cancelled'),
+    )
+    PAYMENT_STATUS = (
+        ('cash', 'Cash'),
+        ('bank', 'Bank'),
+        ('credit', 'Credit'),
+        ('partly_paid', 'Partly Paid'),
     )
 
     voucher_type = models.CharField(max_length=10, choices=TYPES, db_index=True)
@@ -623,6 +646,22 @@ class Voucher(models.Model):
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0,
                                 help_text="Total of the debit side (which equals the credit side)")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='posted', db_index=True)
+
+    # Sales and Purchase vouchers only.
+    customer = models.ForeignKey('sales.Customer', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='vouchers')
+    supplier = models.ForeignKey('inventory.Supplier', on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name='vouchers')
+    invoice_number = models.CharField(max_length=50, blank=True, db_index=True,
+                                      help_text="Our sales invoice number, or the supplier's invoice number")
+    efd_number = models.CharField(max_length=50, blank=True, db_index=True,
+                                  help_text="EFD receipt (RCT) number, kept apart from the invoice number")
+    payment_status = models.CharField(max_length=12, choices=PAYMENT_STATUS, blank=True,
+                                      help_text="Read off the lines at posting")
+    net_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                     help_text="VAT-exclusive amount")
+    vat_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                     help_text="The part of the total on tax ledgers")
 
     created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
                                    related_name='vouchers')
@@ -643,6 +682,14 @@ class Voucher(models.Model):
                 n += 1
             self.number = f"{prefix}-{n:06d}"
         super().save(*args, **kwargs)
+
+    @property
+    def is_invoice(self):
+        return self.voucher_type in self.INVOICE_TYPES
+
+    @property
+    def party(self):
+        return self.customer or self.supplier
 
     def __str__(self):
         return f"{self.number} ({self.get_voucher_type_display()}) {self.total}"
@@ -671,7 +718,9 @@ class VoucherAllocation(models.Model):
 
     A customer ledger credited on a Receipt is money the customer has paid;
     the accountant says which invoices it clears. A supplier ledger debited on
-    a Payment is the mirror image against purchase orders. The link is kept by
+    a Payment is the mirror image against bills. An invoice is one of three
+    things: a till sale, a purchase order, or a Sales/Purchase voucher posted
+    in the books — exactly one of the three links is set. The link is kept by
     reference as well as by FK, as everywhere else in the books, so the
     allocation still reads sensibly if the sale or order is later removed.
     """
@@ -680,7 +729,10 @@ class VoucherAllocation(models.Model):
                              related_name='voucher_allocations')
     purchase_order = models.ForeignKey('inventory.PurchaseOrder', on_delete=models.SET_NULL,
                                        null=True, blank=True, related_name='voucher_allocations')
-    reference = models.CharField(max_length=50, help_text="Invoice number or PO number")
+    voucher = models.ForeignKey(Voucher, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='settlements',
+                                help_text="The Sales or Purchase voucher this settles")
+    reference = models.CharField(max_length=50, help_text="Invoice number, PO number or voucher number")
     amount = models.DecimalField(max_digits=14, decimal_places=2)
 
     class Meta:
@@ -704,6 +756,8 @@ class GeneralLedgerEntry(models.Model):
     date = models.DateField(db_index=True)
     voucher_type = models.CharField(max_length=10, choices=Voucher.TYPES)
     voucher_number = models.CharField(max_length=20, db_index=True)
+    reference = models.CharField(max_length=50, blank=True, db_index=True,
+                                 help_text="Invoice number of a Sales/Purchase voucher")
     description = models.CharField(max_length=300, blank=True)
     debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)

@@ -6,9 +6,9 @@
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h2 class="text-primary fw-bold mb-1">Vouchers</h2>
-        <p class="text-muted mb-0 small">Every entry in the books starts as a voucher: a Receipt for money in, a
-            Payment for money out, a Contra to move our own money, a Journal for anything else. Each one is posted
-            to the General Ledger the moment it balances.</p>
+        <p class="text-muted mb-0 small">Every entry in the books starts as a voucher: a Sales or Purchase voucher for
+            an invoice, a Receipt for money in, a Payment for money out, a Contra to move our own money, a Journal for
+            anything else. Each one is posted to the General Ledger the moment it balances.</p>
     </div>
     <div class="btn-group">
         <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
@@ -28,13 +28,13 @@
 <!-- Stats -->
 <div class="row g-3 mb-4">
     {% for key, label in voucher_types %}
-    <div class="col-sm-6 col-lg-3">
+    <div class="col-sm-6 col-lg-2">
         <a href="{% url 'finance:voucher_new' key %}" class="text-decoration-none text-reset">
         <div class="card shadow-sm border-0 border-start border-4
-            {% if key == 'receipt' %}border-success{% elif key == 'payment' %}border-danger{% elif key == 'contra' %}border-info{% else %}border-secondary{% endif %}">
+            {% if key == 'sales' %}border-primary{% elif key == 'purchase' %}border-warning{% elif key == 'receipt' %}border-success{% elif key == 'payment' %}border-danger{% elif key == 'contra' %}border-info{% else %}border-secondary{% endif %}">
             <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">{{ label }}s</h6>
-                <h3 class="fw-bold mb-0" id="stat-{{ key }}-total">TZS 0</h3>
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">{% if key == 'sales' %}Sales{% else %}{{ label }}s{% endif %}</h6>
+                <h5 class="fw-bold mb-0" id="stat-{{ key }}-total">TZS 0</h5>
                 <small class="text-muted"><span id="stat-{{ key }}-count">0</span> posted</small>
             </div>
         </div>
@@ -49,7 +49,7 @@
         <div class="row g-2">
             <div class="col-md-3">
                 <input type="text" id="searchInput" class="form-control"
-                       placeholder="Search number, description, ledger…" onkeyup="render()">
+                       placeholder="Number, invoice, EFD, customer, supplier, ledger…" onkeyup="render()">
             </div>
             <div class="col-md-2">
                 <select id="typeFilter" class="form-select" onchange="render()">
@@ -86,6 +86,8 @@
                         <th class="ps-4">Date</th>
                         <th>Number</th>
                         <th>Type</th>
+                        <th>Invoice / EFD</th>
+                        <th>Party</th>
                         <th>Debit</th>
                         <th>Credit</th>
                         <th>Description</th>
@@ -96,7 +98,7 @@
                     </tr>
                 </thead>
                 <tbody id="tableBody">
-                    <tr><td colspan="10" class="text-center py-4 text-muted">Loading…</td></tr>
+                    <tr><td colspan="12" class="text-center py-4 text-muted">Loading…</td></tr>
                 </tbody>
             </table>
         </div>
@@ -108,7 +110,9 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     let vouchers = [];
-    const TYPE_BADGE = { receipt: 'bg-success', payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
+    const TYPE_BADGE = { sales: 'bg-primary', purchase: 'bg-warning text-dark', receipt: 'bg-success',
+                         payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
+    const PAY_BADGE = { cash: 'bg-success', bank: 'bg-success', credit: 'bg-danger', partly_paid: 'bg-warning text-dark' };
     const DETAIL_URL = '{% url "finance:voucher_detail" 0 %}';
 
     document.addEventListener('DOMContentLoaded', load);
@@ -148,7 +152,7 @@
         } catch (e) {
             console.error(e);
             document.getElementById('tableBody').innerHTML =
-                '<tr><td colspan="10" class="text-center py-4 text-danger">Could not load the vouchers.</td></tr>';
+                '<tr><td colspan="12" class="text-center py-4 text-danger">Could not load the vouchers.</td></tr>';
         }
     }
 
@@ -157,7 +161,7 @@
         const type = document.getElementById('typeFilter').value;
         const status = document.getElementById('statusFilter').value;
         return vouchers.filter(v => {
-            const hay = [v.number, v.description, v.created_by_name,
+            const hay = [v.number, v.description, v.created_by_name, v.invoice_number, v.efd_number, v.party_name,
                          ...(v.accounts_summary.debit || []), ...(v.accounts_summary.credit || [])]
                 .map(x => (x || '').toLowerCase()).join(' ');
             return hay.includes(term)
@@ -173,7 +177,7 @@
         document.getElementById('entryCount').innerText = rows.length + ' of ' + vouchers.length + '  |  ' + money(total);
         tbody.innerHTML = '';
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No vouchers found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted">No vouchers found</td></tr>';
             return;
         }
         rows.forEach(v => {
@@ -182,7 +186,11 @@
             tr.innerHTML =
                 '<td class="ps-4">' + escapeHtml(v.date) + '</td>' +
                 '<td><a href="' + detailUrl(v.id) + '" class="fw-bold text-decoration-none">' + escapeHtml(v.number) + '</a></td>' +
-                '<td><span class="badge ' + (TYPE_BADGE[v.voucher_type] || 'bg-secondary') + '">' + escapeHtml(v.voucher_type_display) + '</span></td>' +
+                '<td><span class="badge ' + (TYPE_BADGE[v.voucher_type] || 'bg-secondary') + '">' + escapeHtml(v.voucher_type_display) + '</span>' +
+                    (v.payment_status ? '<br><span class="badge ' + (PAY_BADGE[v.payment_status] || 'bg-secondary') + ' mt-1">' + escapeHtml(v.payment_status_display) + '</span>' : '') + '</td>' +
+                '<td class="small">' + (v.invoice_number ? '<strong>' + escapeHtml(v.invoice_number) + '</strong>' : '') +
+                    (v.efd_number ? '<br><span class="text-muted">EFD ' + escapeHtml(v.efd_number) + '</span>' : '') + '</td>' +
+                '<td class="small">' + escapeHtml(v.party_name) + '</td>' +
                 '<td class="small">' + v.accounts_summary.debit.map(escapeHtml).join('<br>') + '</td>' +
                 '<td class="small">' + v.accounts_summary.credit.map(escapeHtml).join('<br>') + '</td>' +
                 '<td class="small">' + escapeHtml(v.description) + '</td>' +

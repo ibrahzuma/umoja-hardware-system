@@ -5,11 +5,16 @@
 {% block extra_css %}
 <style>
     .voucher-side .table td { vertical-align: top; }
+    /* Fixed layout so the outstanding-invoices row (one cell across all columns) scrolls inside the card
+       instead of stretching it. */
+    .lines-table { table-layout: fixed; }
     .voucher-side .form-select, .voucher-side .form-control { min-width: 0; }
     .amount-input { text-align: right; font-variant-numeric: tabular-nums; }
     .line-auto .amount-input { background: #fff8e1; }
-    .alloc-box { background: #f8f9fa; border: 1px dashed #ced4da; border-radius: .375rem; }
-    .alloc-box .amount-input { max-width: 150px; }
+    .alloc-box { background: #f8f9fa; border: 1px dashed #ced4da; border-radius: .375rem; overflow-x: auto; }
+    .alloc-box .amount-input { max-width: 120px; min-width: 90px; }
+    .alloc-box table { min-width: 0; }
+    .alloc-box td, .alloc-box th { white-space: nowrap; }
     .totals-bar { position: sticky; bottom: 0; z-index: 5; }
     .diff-ok { color: #198754; }
     .diff-bad { color: #dc3545; }
@@ -43,7 +48,28 @@
                 <label class="form-label small text-muted">Date of Transaction <span class="text-danger">*</span></label>
                 <input type="date" id="vDate" class="form-control" value="{{ today }}" required>
             </div>
-            <div class="col-md-9">
+            {% if is_invoice %}
+            <div class="col-md-3">
+                <label class="form-label small text-muted">{% if voucher_type == 'sales' %}Customer{% else %}Supplier{% endif %}</label>
+                <select id="vParty" class="form-select" onchange="onParty(this.value)">
+                    <option value="">— pick {% if voucher_type == 'sales' %}a customer{% else %}a supplier{% endif %} —</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">
+                    {% if voucher_type == 'sales' %}Sales Invoice No.{% else %}Purchase Invoice No.{% endif %}
+                    <span class="text-danger">*</span></label>
+                <input type="text" id="vInvoice" class="form-control" maxlength="50"
+                       placeholder="{% if voucher_type == 'sales' %}Our invoice number{% else %}The supplier's invoice number{% endif %}"
+                       onchange="render()">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">
+                    {% if voucher_type == 'sales' %}EFD RCT No.{% else %}Purchase EFD RCT No.{% endif %}</label>
+                <input type="text" id="vEfd" class="form-control" maxlength="50" placeholder="EFD receipt number, if any">
+            </div>
+            {% endif %}
+            <div class="{% if is_invoice %}col-md-12{% else %}col-md-9{% endif %}">
                 <label class="form-label small text-muted">Description</label>
                 <input type="text" id="vDescription" class="form-control" maxlength="500"
                        placeholder="What this voucher is for">
@@ -51,6 +77,51 @@
         </div>
     </div>
 </div>
+
+{% if is_invoice %}
+<!-- VAT: type the exclusive or inclusive figure and the goods side is written for you -->
+<div class="card mb-3 border-0 bg-light">
+    <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">VAT-exclusive</label>
+                <input type="text" inputmode="decimal" id="vatNet" class="form-control form-control-sm amount-input"
+                       placeholder="0" onchange="vatFrom('net')">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small text-muted mb-0">VAT %</label>
+                <input type="text" inputmode="decimal" id="vatRate" class="form-control form-control-sm amount-input"
+                       value="{{ tax_rate }}" onchange="vatFrom('net')">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">VAT amount</label>
+                <input type="text" inputmode="decimal" id="vatAmount" class="form-control form-control-sm amount-input"
+                       placeholder="0" onchange="vatFrom('vat')">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">VAT-inclusive total</label>
+                <input type="text" inputmode="decimal" id="vatTotal" class="form-control form-control-sm amount-input"
+                       placeholder="0" onchange="vatFrom('total')">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">{% if voucher_type == 'sales' %}Sales ledger{% else %}Purchases ledger{% endif %}</label>
+                <select id="vatGoods" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">{% if voucher_type == 'sales' %}Output VAT ledger{% else %}Input VAT ledger{% endif %}</label>
+                <select id="vatLedger" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-1">
+                <button class="btn btn-sm btn-outline-primary w-100" onclick="applyVat()" title="Write the goods and VAT lines">
+                    <i class="bi bi-arrow-down-square"></i> Fill</button>
+            </div>
+        </div>
+        <small class="text-muted">Optional. Where VAT applies, type either the exclusive or the inclusive figure and press
+            Fill: the {% if voucher_type == 'sales' %}credit{% else %}debit{% endif %} side gets a goods line and a VAT line, and the
+            difference is carried to the {% if voucher_type == 'sales' %}customer or bank{% else %}supplier or bank{% endif %} for you.</small>
+    </div>
+</div>
+{% endif %}
 
 <div class="row g-3">
     <!-- Debit side -->
@@ -65,7 +136,7 @@
                     <i class="bi bi-plus"></i> Line</button>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm mb-0" data-no-paginate>
+                <table class="table table-sm mb-0 lines-table" data-no-paginate>
                     <thead class="bg-light">
                         <tr><th class="ps-3" style="width:55%">Account</th><th class="text-end">Debit Amount</th><th style="width:40px"></th></tr>
                     </thead>
@@ -93,7 +164,7 @@
                     <i class="bi bi-plus"></i> Line</button>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm mb-0" data-no-paginate>
+                <table class="table table-sm mb-0 lines-table" data-no-paginate>
                     <thead class="bg-light">
                         <tr><th class="ps-3" style="width:55%">Account</th><th class="text-end">Credit Amount</th><th style="width:40px"></th></tr>
                     </thead>
@@ -126,6 +197,7 @@
                 <small class="text-muted text-uppercase fw-bold">Difference</small>
                 <div class="fs-5 fw-bold" id="barDiff">0</div>
                 <small id="barDiffNote" class="text-muted"></small>
+                {% if is_invoice %}<div><span class="badge bg-secondary" id="barPayStatus"></span></div>{% endif %}
             </div>
             <div class="col-sm-3 col-6 text-end">
                 <button class="btn btn-outline-secondary me-1" onclick="resetForm()">Clear</button>
@@ -149,25 +221,41 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     const VOUCHER_TYPE = '{{ voucher_type }}';
-    const GROUPS = { debit: '{{ debit_group }}', credit: '{{ credit_group }}' };
-    const HINTS = {
-        money: 'bank accounts and cash books',
-        non_money: 'all ledgers except bank accounts and cash books',
-        all: 'all ledgers',
+    const IS_INVOICE = {{ is_invoice|yesno:"true,false" }};
+    const PARTY_KIND = '{{ party_kind }}';               // customer on a sales voucher, supplier on a purchase
+    const PARTY_SIDE = VOUCHER_TYPE === 'sales' ? 'debit' : 'credit';
+    const GOODS_SIDE = VOUCHER_TYPE === 'sales' ? 'credit' : 'debit';
+    // The ledger kinds each side may offer (null = every kind), from Voucher.RULES.
+    const KINDS = { debit: {{ debit_kinds|safe }}, credit: {{ credit_kinds|safe }} };
+    const KIND_WORDS = {
+        bank: 'bank accounts', cash: 'cash books', customer: 'customers', supplier: 'suppliers',
+        income: 'income ledgers', expense: 'expense ledgers', asset: 'asset ledgers',
+        liability: 'liability ledgers', tax: 'tax ledgers', equity: 'equity ledgers',
     };
 
-    // Ledgers offered on each side, and the lines the user has built so far.
+    // Every active ledger, and the lines the user has built so far.
+    let allAccounts = [];
     const accounts = { debit: [], credit: [] };
     const accountById = {};
-    let lines = [];           // {uid, side, account, amount, auto, allocations:[{id, amount}], outstanding:[]}
+    let lines = [];           // {uid, side, account, amount, auto, allocations:[{key, target, id, amount}], outstanding:[]}
     let uidSeq = 1;
 
     document.addEventListener('DOMContentLoaded', async function () {
-        document.getElementById('debitHint').innerText = HINTS[GROUPS.debit];
-        document.getElementById('creditHint').innerText = HINTS[GROUPS.credit];
+        document.getElementById('debitHint').innerText = hint('debit');
+        document.getElementById('creditHint').innerText = hint('credit');
         await loadAccounts();
+        if (IS_INVOICE) setupInvoice();
         resetForm();
     });
+
+    function hint(side) {
+        const kinds = KINDS[side];
+        if (!kinds) return 'all ledgers';
+        const money = ['bank', 'cash'];
+        if (kinds.length === 2 && money.every(k => kinds.includes(k))) return 'bank accounts and cash books';
+        if (kinds.length === 8 && !kinds.some(k => money.includes(k))) return 'all ledgers except bank accounts and cash books';
+        return kinds.map(k => KIND_WORDS[k] || k).join(', ');
+    }
 
     function fmt(v) {
         return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -182,15 +270,107 @@
     }
 
     async function loadAccounts() {
+        try {
+            const res = await fetch('/api/ledger-accounts/?is_active=true');
+            allAccounts = res.ok ? await res.json() : [];
+        } catch (e) { console.error(e); allAccounts = []; }
+        allAccounts.forEach(a => accountById[a.id] = a);
         for (const side of ['debit', 'credit']) {
-            const group = GROUPS[side];
-            const url = '/api/ledger-accounts/?is_active=true' + (group === 'all' ? '' : '&group=' + group);
-            try {
-                const res = await fetch(url);
-                accounts[side] = res.ok ? await res.json() : [];
-            } catch (e) { console.error(e); accounts[side] = []; }
-            accounts[side].forEach(a => accountById[a.id] = a);
+            accounts[side] = KINDS[side] ? allAccounts.filter(a => KINDS[side].includes(a.kind)) : allAccounts;
         }
+    }
+
+    // ---- Sales / Purchase: the party, the invoice, VAT ----------------------
+
+    function partyLedgers() {
+        return allAccounts.filter(a => a.kind === PARTY_KIND && a[PARTY_KIND]);
+    }
+    function partyLedger() {
+        const partyId = document.getElementById('vParty').value;
+        return partyLedgers().find(a => String(a[PARTY_KIND]) === String(partyId)) || null;
+    }
+
+    function setupInvoice() {
+        const sel = document.getElementById('vParty');
+        partyLedgers().sort((a, b) => a.name.localeCompare(b.name)).forEach(a => {
+            const o = document.createElement('option');
+            o.value = a[PARTY_KIND]; o.textContent = a.name;
+            sel.appendChild(o);
+        });
+        const goods = document.getElementById('vatGoods');
+        const goodsKinds = VOUCHER_TYPE === 'sales' ? ['income'] : ['expense', 'asset'];
+        allAccounts.filter(a => goodsKinds.includes(a.kind)).forEach(a => {
+            const o = document.createElement('option');
+            o.value = a.id; o.textContent = a.code + '  ' + a.name;
+            if (/^(sales|purchases)/i.test(a.name)) o.selected = true;
+            goods.appendChild(o);
+        });
+        const vat = document.getElementById('vatLedger');
+        const want = VOUCHER_TYPE === 'sales' ? /output/i : /input/i;
+        allAccounts.filter(a => a.kind === 'tax').forEach(a => {
+            const o = document.createElement('option');
+            o.value = a.id; o.textContent = a.code + '  ' + a.name;
+            if (want.test(a.name)) o.selected = true;
+            vat.appendChild(o);
+        });
+    }
+
+    /* Picking the party puts their ledger on the party side: on the open
+       line there if it has no account yet, otherwise on a new line. A cash
+       sale simply changes that line's account to the bank or cash book. */
+    function onParty(value) {
+        const ledger = partyLedger();
+        if (!ledger) { render(); return; }
+        // A party ledger already on the side? Swap it for the new party's.
+        const sideLines = lines.filter(l => l.side === PARTY_SIDE);
+        const existing = sideLines.find(l => (accountById[l.account] || {}).kind === PARTY_KIND);
+        const open = existing || sideLines.find(l => !l.account);
+        if (open) open.account = String(ledger.id);
+        else lines.push({ ...newLine(PARTY_SIDE, 0, false), account: String(ledger.id) });
+        balance();
+    }
+
+    function vatFrom(which) {
+        const rate = num(document.getElementById('vatRate').value) / 100;
+        let net = num(document.getElementById('vatNet').value);
+        let vat = num(document.getElementById('vatAmount').value);
+        let total = num(document.getElementById('vatTotal').value);
+        if (which === 'net') { vat = Math.round(net * rate * 100) / 100; total = Math.round((net + vat) * 100) / 100; }
+        else if (which === 'total') { net = Math.round(total / (1 + rate) * 100) / 100; vat = Math.round((total - net) * 100) / 100; }
+        else if (which === 'vat') { total = Math.round((net + vat) * 100) / 100; }
+        document.getElementById('vatNet').value = net ? fmt(net) : '';
+        document.getElementById('vatAmount').value = vat ? fmt(vat) : '';
+        document.getElementById('vatTotal').value = total ? fmt(total) : '';
+    }
+
+    /* Write the goods side from the VAT box: one line on the sales (or
+       purchases) ledger for the net amount, one on the VAT ledger for the
+       tax, replacing whatever the goods side held. The difference then lands
+       on the party side by the usual rule. */
+    function applyVat() {
+        vatFrom(document.getElementById('vatNet').value ? 'net' : 'total');
+        const net = num(document.getElementById('vatNet').value);
+        const vat = num(document.getElementById('vatAmount').value);
+        const goodsAcct = document.getElementById('vatGoods').value;
+        const vatAcct = document.getElementById('vatLedger').value;
+        if (net <= 0) { Swal.fire('Nothing to fill', 'Type the VAT-exclusive or the VAT-inclusive amount first.', 'info'); return; }
+        if (!goodsAcct) { Swal.fire('No ledger', 'Pick the ledger the goods go to.', 'warning'); return; }
+        lines = lines.filter(l => l.side !== GOODS_SIDE);
+        lines.push({ ...newLine(GOODS_SIDE, net, false), account: goodsAcct });
+        if (vat > 0 && vatAcct) lines.push({ ...newLine(GOODS_SIDE, vat, false), account: vatAcct });
+        balance();
+    }
+
+    // Read off the party side the way the server will: all money is cash or
+    // bank, all on the party ledger is credit, a mix is partly paid.
+    function paymentStatus() {
+        const side = lines.filter(l => l.side === PARTY_SIDE && l.account && num(l.amount) > 0);
+        const party = side.filter(l => (accountById[l.account] || {}).kind === PARTY_KIND);
+        const money = side.filter(l => ['bank', 'cash'].includes((accountById[l.account] || {}).kind));
+        if (!side.length) return '';
+        if (party.length && money.length) return 'Partly Paid';
+        if (party.length) return 'Credit';
+        return money.every(l => accountById[l.account].kind === 'cash') ? 'Cash' : 'Bank';
     }
 
     function accountOptions(side, selected) {
@@ -217,6 +397,9 @@
     function resetForm() {
         lines = [newLine('debit', 0, false), newLine('credit', 0, false)];
         document.getElementById('vDescription').value = '';
+        if (IS_INVOICE) {
+            ['vParty', 'vInvoice', 'vEfd', 'vatNet', 'vatAmount', 'vatTotal'].forEach(id => document.getElementById(id).value = '');
+        }
         render();
     }
 
@@ -300,14 +483,19 @@
         return Math.round(line.allocations.reduce((s, a) => s + num(a.amount), 0) * 100) / 100;
     }
 
-    function setAllocation(uid, targetId, value) {
+    // An open invoice is one of three things — a till sale, a purchase order
+    // or a Sales/Purchase voucher — so it is known by its target and id.
+    function rowKey(r) { return r.target + ':' + r.id; }
+
+    function setAllocation(uid, key, value) {
         const line = lines.find(l => l.uid === uid);
         if (!line) return;
-        const row = (line.outstanding || []).find(r => r.id === targetId);
+        const row = (line.outstanding || []).find(r => rowKey(r) === key);
+        if (!row) return;
         let amount = Math.max(0, num(value));
-        if (row) amount = Math.min(amount, num(row.outstanding));
-        line.allocations = line.allocations.filter(a => a.id !== targetId);
-        if (amount > 0) line.allocations.push({ id: targetId, amount });
+        amount = Math.min(amount, num(row.outstanding));
+        line.allocations = line.allocations.filter(a => a.key !== key);
+        if (amount > 0) line.allocations.push({ key, target: row.target, id: row.id, amount });
         // Allocating more than the line carries is refused by the server;
         // catch it here so the form never looks right when it is not.
         clampAllocations(line);
@@ -332,7 +520,7 @@
         for (const row of line.outstanding) {
             if (room <= 0) break;
             const take = Math.min(room, num(row.outstanding));
-            line.allocations.push({ id: row.id, amount: take });
+            line.allocations.push({ key: rowKey(row), target: row.target, id: row.id, amount: take });
             room = Math.round((room - take) * 100) / 100;
         }
         render();
@@ -360,10 +548,17 @@
             ? (td > 0 ? 'Balanced' : '')
             : (diff > 0 ? 'Credit side is short' : 'Debit side is short');
 
-        const complete = lines.length >= 2 && td > 0 && diff === 0
+        let complete = lines.length >= 2 && td > 0 && diff === 0
             && lines.every(l => l.account && num(l.amount) > 0)
             && lines.filter(l => l.side === 'debit').length > 0
             && lines.filter(l => l.side === 'credit').length > 0;
+        if (IS_INVOICE) {
+            const status = paymentStatus();
+            const badge = document.getElementById('barPayStatus');
+            badge.innerText = status;
+            badge.hidden = !status;
+            if (!document.getElementById('vInvoice').value.trim()) complete = false;
+        }
         document.getElementById('postBtn').disabled = !complete;
     }
 
@@ -414,21 +609,29 @@
                    ' has no outstanding ' + what + '.</div>';
         }
         const left = Math.round((num(line.amount) - allocated(line)) * 100) / 100;
+        const what1 = acct.kind === 'customer' ? 'Invoice' : 'Bill';
         let html = '<div class="alloc-box p-2">' +
             '<div class="d-flex justify-content-between align-items-center mb-1">' +
                 '<small class="fw-bold">Outstanding ' + what + ' — allocate this ' + line.side + '</small>' +
                 '<button class="btn btn-link btn-sm p-0" onclick="autoAllocate(' + line.uid + ')">oldest first</button>' +
             '</div>' +
-            '<table class="table table-sm table-borderless mb-1 small" data-no-paginate><tbody>';
+            '<table class="table table-sm table-borderless mb-1 small" data-no-paginate>' +
+            '<thead><tr class="text-muted">' +
+                '<th class="ps-0 fw-normal">' + what1 + ' No. / date</th>' +
+                '<th class="text-end fw-normal">Original / paid</th>' +
+                '<th class="text-end fw-normal">Outstanding</th><th class="text-end fw-normal" style="width:110px">Allocate</th>' +
+            '</tr></thead><tbody>';
         rows.forEach(r => {
-            const a = line.allocations.find(x => x.id === r.id);
+            const key = rowKey(r);
+            const a = line.allocations.find(x => x.key === key);
             html += '<tr>' +
-                '<td class="ps-0"><strong>' + escapeHtml(r.reference) + '</strong> <span class="text-muted">' + escapeHtml(r.date) + '</span></td>' +
-                '<td class="text-end text-muted">owed ' + fmt(r.outstanding) + '</td>' +
-                '<td class="text-end" style="width:160px"><input type="text" inputmode="decimal" ' +
+                '<td class="ps-0"><strong>' + escapeHtml(r.reference) + '</strong><br><span class="text-muted">' + escapeHtml(r.date) + '</span></td>' +
+                '<td class="text-end">' + fmt(r.total) + '<br><span class="text-muted">paid ' + fmt(r.paid) + '</span></td>' +
+                '<td class="text-end fw-bold">' + fmt(r.outstanding) + '</td>' +
+                '<td class="text-end"><input type="text" inputmode="decimal" ' +
                     'class="form-control form-control-sm amount-input" placeholder="0" ' +
                     'value="' + (a ? fmt(a.amount) : '') + '" ' +
-                    'onchange="setAllocation(' + line.uid + ', ' + r.id + ', this.value)"></td>' +
+                    'onchange="setAllocation(' + line.uid + ', \'' + key + '\', this.value)"></td>' +
             '</tr>';
         });
         html += '</tbody></table>' +
@@ -442,27 +645,31 @@
     // ---- posting ----------------------------------------------------------
 
     function payload() {
-        return {
+        const body = {
             voucher_type: VOUCHER_TYPE,
             date: document.getElementById('vDate').value,
             description: document.getElementById('vDescription').value,
-            lines: lines.map(l => {
-                const acct = accountById[l.account] || {};
-                return {
-                    side: l.side,
-                    account: l.account,
-                    amount: num(l.amount).toFixed(2),
-                    allocations: l.allocations.map(a => acct.kind === 'customer'
-                        ? { sale: a.id, amount: a.amount.toFixed(2) }
-                        : { purchase_order: a.id, amount: a.amount.toFixed(2) }),
-                };
-            }),
+            lines: lines.map(l => ({
+                side: l.side,
+                account: l.account,
+                amount: num(l.amount).toFixed(2),
+                allocations: l.allocations.map(a => ({ [a.target]: a.id, amount: a.amount.toFixed(2) })),
+            })),
         };
+        if (IS_INVOICE) {
+            body[PARTY_KIND] = document.getElementById('vParty').value || null;
+            body.invoice_number = document.getElementById('vInvoice').value.trim();
+            body.efd_number = document.getElementById('vEfd').value.trim();
+        }
+        return body;
     }
 
     async function postVoucher() {
         const date = document.getElementById('vDate').value;
         if (!date) { Swal.fire('Missing date', 'Give the voucher a date of transaction.', 'warning'); return; }
+        if (IS_INVOICE && !document.getElementById('vInvoice').value.trim()) {
+            Swal.fire('Missing invoice number', 'Enter the invoice number this voucher records.', 'warning'); return;
+        }
         const btn = document.getElementById('postBtn');
         btn.disabled = true;
         try {
@@ -473,7 +680,8 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                const msg = data.lines || data.detail || data.date || data.voucher_type || data.error
+                const msg = data.lines || data.detail || data.date || data.invoice_number || data.efd_number
+                          || data.customer || data.supplier || data.voucher_type || data.error
                           || 'The voucher could not be posted.';
                 Swal.fire('Not posted', Array.isArray(msg) ? msg.join('<br>') : String(msg), 'error');
                 render();
@@ -482,6 +690,9 @@
             const result = await Swal.fire({
                 title: 'Posted ' + data.number,
                 html: '<div class="fs-4 fw-bold">TZS ' + fmt(data.total) + '</div>' +
+                      (data.invoice_number ? '<div class="small">Invoice <strong>' + escapeHtml(data.invoice_number) + '</strong>' +
+                          (data.efd_number ? ' · EFD ' + escapeHtml(data.efd_number) : '') +
+                          (data.payment_status_display ? ' · ' + escapeHtml(data.payment_status_display) : '') + '</div>' : '') +
                       '<small class="text-muted">' + escapeHtml(data.voucher_type_display) + ' voucher dated ' +
                       escapeHtml(data.date) + '. Its entries are in the General Ledger.</small>',
                 icon: 'success',

@@ -59,11 +59,13 @@ class VoucherLineInline(admin.TabularInline):
 
 @admin.register(Voucher)
 class VoucherAdmin(admin.ModelAdmin):
-    list_display = ('number', 'voucher_type', 'date', 'total', 'status', 'created_by', 'created_at')
-    list_filter = ('voucher_type', 'status', 'date')
-    search_fields = ('number', 'description')
+    list_display = ('number', 'voucher_type', 'date', 'invoice_number', 'efd_number', 'payment_status',
+                    'total', 'status', 'created_by', 'created_at')
+    list_filter = ('voucher_type', 'status', 'payment_status', 'date')
+    search_fields = ('number', 'description', 'invoice_number', 'efd_number', 'customer__name', 'supplier__name')
     readonly_fields = ('number', 'voucher_type', 'date', 'total', 'status', 'created_by', 'created_at',
-                       'cancelled_by', 'cancelled_at', 'cancel_reason')
+                       'customer', 'supplier', 'invoice_number', 'efd_number', 'payment_status',
+                       'net_amount', 'vat_amount', 'cancelled_by', 'cancelled_at', 'cancel_reason')
     inlines = [VoucherLineInline]
     date_hierarchy = 'date'
 
@@ -73,9 +75,9 @@ class VoucherAdmin(admin.ModelAdmin):
 
 @admin.register(GeneralLedgerEntry)
 class GeneralLedgerEntryAdmin(admin.ModelAdmin):
-    list_display = ('date', 'voucher_number', 'account', 'debit', 'credit', 'description')
+    list_display = ('date', 'voucher_number', 'reference', 'account', 'debit', 'credit', 'description')
     list_filter = ('voucher_type', 'account__kind', 'date')
-    search_fields = ('voucher_number', 'description', 'account__name', 'account__code')
+    search_fields = ('voucher_number', 'reference', 'description', 'account__name', 'account__code')
     date_hierarchy = 'date'
 
     def has_add_permission(self, request):

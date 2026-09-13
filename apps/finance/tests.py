@@ -341,3 +341,181 @@ class ReadingTheLedgerTest(LedgerTestCase):
         res = self.client.delete(f'/api/ledger-accounts/{self.sales.id}/')
         self.assertEqual(res.status_code, 400)
         self.assertTrue(LedgerAccount.objects.filter(pk=self.sales.pk).exists())
+
+
+class InvoiceVoucherTest(LedgerTestCase):
+    """Sales and Purchase vouchers: the party, the two reference numbers, the
+    payment status read off the lines, VAT, and settlement by Receipt/Payment."""
+
+    def setUp(self):
+        super().setUp()
+        self.output_vat = LedgerAccount.objects.get(name='Output VAT')
+        self.input_vat = LedgerAccount.objects.get(name='Input VAT')
+        self.purchases = LedgerAccount.objects.get(name='Purchases')
+
+    def sale(self, lines, **header):
+        header.setdefault('customer', self.customer.id)
+        header.setdefault('invoice_number', 'INV-2026-001')
+        self.client.force_login(self.accountant)
+        return self.client.post('/api/vouchers/', {
+            'voucher_type': 'sales', 'date': '2026-09-10', 'lines': lines, **header,
+        }, content_type='application/json')
+
+    def test_credit_sale_with_vat_posts_and_reads_as_credit(self):
+        res = self.sale([
+            self.line('debit', self.customer_ledger, 1180000),
+            self.line('credit', self.sales, 1000000),
+            self.line('credit', self.output_vat, 180000),
+        ], efd_number='EFD-777')
+        self.assertEqual(res.status_code, 201, res.content)
+        d = res.json()
+        self.assertEqual(d['number'], 'SV-000001')
+        self.assertEqual(d['payment_status'], 'credit')
+        self.assertEqual(d['invoice_number'], 'INV-2026-001')
+        self.assertEqual(d['efd_number'], 'EFD-777')
+        self.assertEqual(Decimal(d['net_amount']), Decimal('1000000'))
+        self.assertEqual(Decimal(d['vat_amount']), Decimal('180000'))
+        self.assertEqual(d['customer_name'], self.customer.name)
+        # The invoice number rides on every GL row of the voucher.
+        self.assertEqual(set(GeneralLedgerEntry.objects.filter(voucher_id=d['id'])
+                             .values_list('reference', flat=True)), {'INV-2026-001'})
+
+    def test_cash_bank_and_partly_paid_are_read_off_the_debit_side(self):
+        cash = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                         invoice_number='C-1').json()
+        bank = self.sale([self.line('debit', self.bank_ledger, 100), self.line('credit', self.sales, 100)],
+                         invoice_number='B-1').json()
+        part = self.sale([self.line('debit', self.bank_ledger, 60), self.line('debit', self.customer_ledger, 40),
+                          self.line('credit', self.sales, 100)], invoice_number='P-1').json()
+        self.assertEqual((cash['payment_status'], bank['payment_status'], part['payment_status']),
+                         ('cash', 'bank', 'partly_paid'))
+
+    def test_invoice_number_is_required_and_unique_per_type(self):
+        res = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                        invoice_number='')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('invoice_number', res.json())
+        self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)])
+        dup = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)])
+        self.assertEqual(dup.status_code, 400)
+        self.assertIn('already in the books', dup.json()['invoice_number'])
+        self.assertEqual(Voucher.objects.filter(voucher_type='sales').count(), 1)
+
+    def test_duplicate_efd_number_is_refused(self):
+        self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                  invoice_number='A', efd_number='RCT-1')
+        dup = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                        invoice_number='B', efd_number='rct-1')
+        self.assertEqual(dup.status_code, 400)
+        self.assertIn('efd_number', dup.json())
+
+    def test_customer_ledger_must_belong_to_the_named_customer(self):
+        other = Customer.objects.create(name='Somebody Else')
+        res = self.sale([self.line('debit', other.ledger, 100), self.line('credit', self.sales, 100)])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('not the ledger of', res.json()['lines'])
+        # ...and a credit sale must name one at all.
+        res = self.sale([self.line('debit', self.customer_ledger, 100), self.line('credit', self.sales, 100)],
+                        customer='')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('customer', res.json())
+
+    def test_sales_voucher_sides_are_restricted(self):
+        # An expense cannot be credited on a sales voucher; a supplier cannot be debited.
+        res = self.sale([self.line('debit', self.cash, 100), self.line('credit', self.rent, 100)])
+        self.assertEqual(res.status_code, 400)
+        res = self.sale([self.line('debit', self.supplier_ledger, 100), self.line('credit', self.sales, 100)])
+        self.assertEqual(res.status_code, 400)
+
+    def test_credit_sale_is_settled_by_a_receipt(self):
+        sv = self.sale([
+            self.line('debit', self.bank_ledger, 200000),          # deposit
+            self.line('debit', self.customer_ledger, 800000),      # the rest on credit
+            self.line('credit', self.sales, 1000000),
+        ]).json()
+        open_items = vouchers.outstanding_invoices(self.customer)
+        self.assertEqual([(r['target'], r['reference'], Decimal(r['outstanding'])) for r in open_items],
+                         [('voucher', 'INV-2026-001', Decimal('800000'))])
+        self.assertEqual(Decimal(open_items[0]['total']), Decimal('800000'))
+
+        res = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 300000),
+            self.line('credit', self.customer_ledger, 300000,
+                      allocations=[{'voucher': sv['id'], 'amount': '300000'}]),
+        ])
+        self.assertEqual(res.status_code, 201, res.content)
+        alloc = next(l for l in res.json()['lines'] if l['side'] == 'credit')['allocations'][0]
+        self.assertEqual(alloc['voucher'], sv['id'])
+        self.assertEqual(alloc['reference'], 'INV-2026-001')
+        self.assertEqual(Decimal(vouchers.outstanding_invoices(self.customer)[0]['outstanding']),
+                         Decimal('500000'))
+        # Over-allocation against it is refused like any other invoice.
+        res = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 600000),
+            self.line('credit', self.customer_ledger, 600000,
+                      allocations=[{'voucher': sv['id'], 'amount': '600000'}]),
+        ])
+        self.assertEqual(res.status_code, 400)
+
+    def test_purchase_voucher_and_its_payment(self):
+        self.client.force_login(self.accountant)
+        res = self.client.post('/api/vouchers/', {
+            'voucher_type': 'purchase', 'date': '2026-09-10', 'supplier': self.supplier.id,
+            'invoice_number': 'KS-4471', 'efd_number': 'RCT-9', 'lines': [
+                self.line('debit', self.purchases, 500000),
+                self.line('debit', self.input_vat, 90000),
+                self.line('credit', self.supplier_ledger, 590000),
+            ]}, content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        d = res.json()
+        self.assertEqual(d['number'], 'PU-000001')
+        self.assertEqual(d['payment_status'], 'credit')
+        self.assertEqual(Decimal(d['vat_amount']), Decimal('90000'))
+        self.assertEqual(d['supplier_name'], self.supplier.name)
+
+        bills = vouchers.outstanding_bills(self.supplier)
+        self.assertEqual([(b['target'], b['reference'], Decimal(b['outstanding'])) for b in bills],
+                         [('voucher', 'KS-4471', Decimal('590000'))])
+        res = self.post('payment', [
+            self.line('debit', self.supplier_ledger, 590000, allocations=[{'voucher': d['id'], 'amount': '590000'}]),
+            self.line('credit', self.bank_ledger, 590000),
+        ])
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(vouchers.outstanding_bills(self.supplier), [])
+
+        # The same supplier cannot hand us the same EFD receipt twice; another supplier can.
+        again = self.client.post('/api/vouchers/', {
+            'voucher_type': 'purchase', 'date': '2026-09-11', 'supplier': self.supplier.id,
+            'invoice_number': 'KS-4472', 'efd_number': 'RCT-9', 'lines': [
+                self.line('debit', self.purchases, 100), self.line('credit', self.cash, 100)]},
+            content_type='application/json')
+        self.assertEqual(again.status_code, 400)
+        other = Supplier.objects.create(name='Other Supplies')
+        res = self.client.post('/api/vouchers/', {
+            'voucher_type': 'purchase', 'date': '2026-09-11', 'supplier': other.id,
+            'invoice_number': 'OS-1', 'efd_number': 'RCT-9', 'lines': [
+                self.line('debit', self.purchases, 100), self.line('credit', self.cash, 100)]},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_vouchers_are_found_by_invoice_efd_and_party(self):
+        self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                  invoice_number='FIND-ME', efd_number='EFD-42')
+        self.sale([self.line('debit', self.cash, 100), self.line('credit', self.sales, 100)],
+                  invoice_number='OTHER')
+        self.client.force_login(self.accountant)
+        self.assertEqual([v['invoice_number'] for v in self.client.get('/api/vouchers/?invoice=find-me').json()],
+                         ['FIND-ME'])
+        self.assertEqual([v['invoice_number'] for v in self.client.get('/api/vouchers/?efd=EFD-42').json()],
+                         ['FIND-ME'])
+        self.assertEqual(len(self.client.get(f'/api/vouchers/?customer={self.customer.id}').json()), 2)
+        self.assertEqual([v['invoice_number'] for v in self.client.get('/api/vouchers/?q=mwananchi').json()],
+                         ['OTHER', 'FIND-ME'])
+        gl = self.client.get('/api/general-ledger/?reference=FIND-ME').json()
+        self.assertEqual(len(gl), 2)
+        self.assertEqual(len(self.client.get('/api/general-ledger/?efd=EFD-42').json()), 2)
+
+    def test_the_form_pages_open(self):
+        self.client.force_login(self.accountant)
+        self.assertEqual(self.client.get('/finance/vouchers/new/sales/').status_code, 200)
+        self.assertEqual(self.client.get('/finance/vouchers/new/purchase/').status_code, 200)
