@@ -3,6 +3,7 @@ import json
 from decimal import Decimal, InvalidOperation
 from datetime import date
 from rest_framework import viewsets, permissions, mixins
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -1261,6 +1262,34 @@ class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
         voucher = vouchers.cancel_voucher(self.get_object(), request.user,
                                           request.data.get('reason') or '')
         return Response(self.get_serializer(voucher).data)
+
+    @action(detail=False, methods=['get'])
+    def import_template(self, request):
+        """The Excel workbook to fill in for a bulk upload, with the current
+        chart of accounts on its own sheet to copy codes from."""
+        from . import voucher_imports
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="voucher_import_template.xlsx"'
+        voucher_imports.build_template().save(response)
+        return response
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def bulk_upload(self, request):
+        """Post many vouchers (and ledgers) from an .xlsx or .csv. `commit=false`
+        (the default) is a dry run: the same checks, nothing kept. The file
+        lands whole or not at all — the report names the rows to fix."""
+        from . import voucher_imports
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'detail': 'No file uploaded.'}, status=400)
+        flag = lambda name: str(request.data.get(name, '')).lower() in ('1', 'true', 'yes', 'on')
+        try:
+            report = voucher_imports.run(upload, request.user, commit=flag('commit'),
+                                         create_parties=flag('create_parties'))
+        except voucher_imports.ImportError_ as exc:
+            return Response({'detail': str(exc)}, status=400)
+        return Response(report)
 
     @action(detail=False, methods=['get'])
     def summary(self, request):

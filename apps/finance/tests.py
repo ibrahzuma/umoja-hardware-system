@@ -519,3 +519,163 @@ class InvoiceVoucherTest(LedgerTestCase):
         self.client.force_login(self.accountant)
         self.assertEqual(self.client.get('/finance/vouchers/new/sales/').status_code, 200)
         self.assertEqual(self.client.get('/finance/vouchers/new/purchase/').status_code, 200)
+
+
+class BulkImportTest(LedgerTestCase):
+    """The spreadsheet route into the books: same checks as the form, whole
+    file or nothing."""
+
+    HEADERS = ['Ref', 'Type', 'Date', 'Ledger', 'Side', 'Amount', 'Description',
+               'Party', 'Invoice No', 'EFD No', 'Against', 'Narration']
+
+    def workbook(self, voucher_rows, ledger_rows=None):
+        import io
+        from openpyxl import Workbook
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Vouchers'
+        ws.append(self.HEADERS)
+        for r in voucher_rows:
+            ws.append(r)
+        if ledger_rows is not None:
+            ls = wb.create_sheet('Ledgers')
+            ls.append(['Code', 'Name', 'Kind', 'Opening Balance', 'Opening Side', 'Notes'])
+            for r in ledger_rows:
+                ls.append(r)
+        buf = io.BytesIO()
+        wb.save(buf)
+        return SimpleUploadedFile('books.xlsx', buf.getvalue())
+
+    def upload(self, file, commit=False, create_parties=False):
+        self.client.force_login(self.accountant)
+        return self.client.post('/api/vouchers/bulk_upload/', {
+            'file': file, 'commit': 'true' if commit else 'false',
+            'create_parties': 'true' if create_parties else 'false',
+        })
+
+    GOOD = [
+        ['1', 'Sales', '2026-07-03', 'Customer', 'Dr', 1180000, 'Cement', 'Mwananchi Traders', 'INV-0451', 'EFD-1', '', ''],
+        ['1', 'Sales', '2026-07-03', 'Sales Revenue', 'Cr', 1000000, '', '', '', '', '', ''],
+        ['1', 'Sales', '2026-07-03', 'Output VAT', 'Cr', 180000, '', '', '', '', '', ''],
+        ['2', 'Receipt', '2026-07-20', 'CRDB Main', 'Dr', 500000, 'Part payment', '', '', '', '', ''],
+        ['2', 'Receipt', '2026-07-20', 'Mwananchi Traders', 'Cr', 500000, '', '', '', '', 'INV-0451', ''],
+        ['3', 'Payment', '31/07/2026', 'Rent', 'Dr', 800000, 'July rent', '', '', '', '', ''],
+        ['3', 'Payment', '31/07/2026', 'CRDB Main', 'Cr', 800000, '', '', '', '', '', ''],
+    ]
+
+    def test_template_downloads_with_the_chart_of_accounts(self):
+        from openpyxl import load_workbook
+        import io
+        self.client.force_login(self.accountant)
+        res = self.client.get('/api/vouchers/import_template/')
+        self.assertEqual(res.status_code, 200)
+        wb = load_workbook(io.BytesIO(res.content))
+        self.assertEqual(wb.sheetnames, ['Vouchers', 'Ledgers', 'Ledger List', 'How to fill'])
+        codes = [r[0] for r in wb['Ledger List'].iter_rows(min_row=2, values_only=True)]
+        self.assertIn(self.bank_ledger.code, codes)
+        self.assertIn(self.customer_ledger.code, codes)
+
+    def test_dry_run_reports_and_keeps_nothing(self):
+        res = self.upload(self.workbook(self.GOOD))
+        self.assertEqual(res.status_code, 200, res.content)
+        r = res.json()
+        self.assertTrue(r['ok'])
+        self.assertFalse(r['committed'])
+        self.assertEqual((r['posted'], r['failed']), (3, 0))
+        self.assertEqual([v['type'] for v in r['vouchers']], ['sales', 'receipt', 'payment'])
+        self.assertEqual(r['vouchers'][0]['rows'], '2–4')
+        self.assertEqual(Decimal(r['total']), Decimal('2480000'))
+        self.assertEqual(Voucher.objects.count(), 0)
+        self.assertEqual(GeneralLedgerEntry.objects.count(), 0)
+
+    def test_commit_posts_the_whole_file_in_date_order_with_allocations(self):
+        res = self.upload(self.workbook(self.GOOD), commit=True)
+        r = res.json()
+        self.assertTrue(r['committed'], r)
+        self.assertEqual([v['number'] for v in r['vouchers']], ['SV-000001', 'RV-000001', 'PV-000001'])
+        sv = Voucher.objects.get(number='SV-000001')
+        self.assertEqual(sv.customer, self.customer)
+        self.assertEqual(sv.invoice_number, 'INV-0451')
+        self.assertEqual(sv.payment_status, 'credit')
+        self.assertEqual(sv.vat_amount, Decimal('180000'))
+        # The receipt row said "Against INV-0451": 1,180,000 owed less 500,000.
+        self.assertEqual(Decimal(vouchers.outstanding_invoices(self.customer)[0]['outstanding']),
+                         Decimal('680000'))
+        self.assertEqual(Voucher.objects.get(number='PV-000001').date.isoformat(), '2026-07-31')
+        self.assertEqual(Decimal(vouchers.trial_balance()['difference']), Decimal('0'))
+
+    def test_one_bad_voucher_blocks_the_file(self):
+        rows = self.GOOD + [
+            ['9', 'Journal', '2026-08-01', 'Rent', 'Dr', 100, 'Unbalanced', '', '', '', '', ''],
+            ['9', 'Journal', '2026-08-01', 'Capital', 'Cr', 90, '', '', '', '', '', ''],
+            ['10', 'Receipt', '2026-08-02', 'No Such Ledger', 'Dr', 100, '', '', '', '', '', ''],
+            ['10', 'Receipt', '2026-08-02', 'Sales Revenue', 'Cr', 100, '', '', '', '', '', ''],
+        ]
+        res = self.upload(self.workbook(rows), commit=True)
+        r = res.json()
+        self.assertFalse(r['ok'])
+        self.assertFalse(r['committed'])
+        self.assertEqual((r['posted'], r['failed']), (3, 2))
+        bad = {v['ref']: v['message'] for v in r['vouchers'] if v['status'] == 'error'}
+        self.assertIn('do not balance', bad['9'])
+        self.assertIn('No Such Ledger', bad['10'])
+        self.assertEqual(Voucher.objects.count(), 0)          # the three good ones were rolled back too
+
+    def test_unreadable_rows_are_named(self):
+        rows = [['1', 'Rocket', '2026-07-03', 'Rent', 'Dr', 100, '', '', '', '', '', ''],
+                ['1', 'Payment', 'someday', 'Rent', 'Dr', 100, '', '', '', '', '', ''],
+                ['1', 'Payment', '2026-07-03', 'Rent', 'Sideways', 100, '', '', '', '', '', ''],
+                ['1', 'Payment', '2026-07-03', 'Rent', 'Dr', 'lots', '', '', '', '', '', ''],
+                ['2', 'Payment', '2026-07-03', 'Rent', 'Dr', 100, '', '', '', '', '', ''],
+                ['2', 'Payment', '2026-07-03', 'CRDB Main', 'Cr', 100, '', '', '', '', '', '']]
+        r = self.upload(self.workbook(rows)).json()
+        self.assertEqual(len(r['errors']), 4)
+        self.assertTrue(all(e.startswith('Vouchers row') for e in r['errors']))
+        self.assertFalse(r['ok'])
+        self.assertEqual(r['posted'], 1)
+
+    def test_missing_party_is_refused_unless_creation_is_allowed(self):
+        rows = [['1', 'Purchase', '2026-07-05', 'Purchases', 'Dr', 250000, '', 'New Steel Ltd', 'NS-77', '', '', ''],
+                ['1', 'Purchase', '2026-07-05', 'Supplier', 'Cr', 250000, '', '', '', '', '', '']]
+        r = self.upload(self.workbook(rows), commit=True).json()
+        self.assertFalse(r['committed'])
+        self.assertIn('add them first', r['vouchers'][0]['message'])
+        r = self.upload(self.workbook(rows), commit=True, create_parties=True).json()
+        self.assertTrue(r['committed'], r)
+        supplier = Supplier.objects.get(name='New Steel Ltd')
+        self.assertEqual(supplier.ledger.kind, 'supplier')
+        self.assertEqual(Decimal(vouchers.outstanding_bills(supplier)[0]['outstanding']), Decimal('250000'))
+
+    def test_ledgers_sheet_creates_ledgers_and_sets_opening_balances(self):
+        ledgers = [['', 'Equity Bank', 'bank', 2500000, 'Dr', 'Opening'],
+                   ['', 'Capital', 'equity', 2500000, 'Cr', ''],
+                   ['', 'Somebody', 'customer', 0, '', '']]           # not allowed here
+        rows = [['1', 'Payment', '2026-07-05', 'Rent', 'Dr', 100000, '', '', '', '', '', ''],
+                ['1', 'Payment', '2026-07-05', 'Equity Bank', 'Cr', 100000, '', '', '', '', '', '']]
+        r = self.upload(self.workbook(rows, ledgers), commit=True).json()
+        self.assertFalse(r['committed'])
+        self.assertTrue(any('customer and supplier ledgers' in e for e in r['errors']))
+        # Drop the offending row and it goes through — the new bank is usable on the same file.
+        r = self.upload(self.workbook(rows, ledgers[:2]), commit=True).json()
+        self.assertTrue(r['committed'], r)
+        bank = LedgerAccount.objects.get(name='Equity Bank')
+        self.assertEqual((bank.kind, bank.opening_balance, bank.opening_side), ('bank', Decimal('2500000'), 'debit'))
+        capital = LedgerAccount.objects.get(name='Capital')      # existed already: opening balance set
+        self.assertEqual((capital.opening_balance, capital.opening_side), (Decimal('2500000'), 'credit'))
+        actions = {l['name']: l['action'] for l in r['ledgers']}
+        self.assertEqual(actions['Equity Bank'], 'created')
+        self.assertIn('opening balance', actions['Capital'])
+        self.assertEqual(Decimal(vouchers.trial_balance()['difference']), Decimal('0'))
+
+    def test_csv_works_too(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        text = 'Ref,Type,Date,Ledger,Side,Amount\n1,Contra,2026-07-05,Main Cash Book,Dr,50000\n1,Contra,2026-07-05,CRDB Main,Cr,50000\n'
+        r = self.upload(SimpleUploadedFile('c.csv', text.encode('utf-8')), commit=True).json()
+        self.assertTrue(r['committed'], r)
+        self.assertEqual(Voucher.objects.get().number, 'CV-000001')
+
+    def test_only_accounts_may_import(self):
+        self.client.force_login(self.cashier)
+        res = self.client.post('/api/vouchers/bulk_upload/', {'file': self.workbook(self.GOOD)})
+        self.assertEqual(res.status_code, 403)

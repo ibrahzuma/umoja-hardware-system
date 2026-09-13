@@ -170,6 +170,14 @@ See `DEPLOYMENT.md` for one-time server setup.
     posted Sales/Purchase vouchers, each row tagged with its `target` (`sale`/`purchase_order`/`voucher`) which
     is the FK the `VoucherAllocation` sets. Outstanding = total − till/approved payments − earlier posted
     allocations (for an invoice voucher: the part on the party ledger − allocations), derived, never stored.
+    **Bulk upload** (`apps/finance/voucher_imports.py`): `GET /api/vouchers/import_template/` hands out a
+    workbook (Vouchers sheet — one row per *line*, grouped into vouchers by `Ref`+type+date; optional Ledgers
+    sheet for new ledgers / opening balances; a Ledger List sheet of the live chart), and
+    `POST /api/vouchers/bulk_upload/` (multipart: `file`, `commit`, `create_parties`) runs every voucher
+    through `post_voucher` inside one transaction — `commit=false` is a dry run, and with `commit=true` the
+    file lands **whole or not at all**; the report names the rows to fix. "Customer"/"Supplier" in the Ledger
+    column means the row's Party's own ledger; an `Against` column allocates a Receipt/Payment line to an open
+    invoice by reference. UI: the Bulk Import modal on `/finance/vouchers/`.
     The form (`voucher_form.html`) follows the spec's entry rule: whenever
     the sides differ, the difference is written into the next empty amount field on the short side (a new line
     only when none is open) and the user picks its account; a system-written amount re-sizes as the other lines

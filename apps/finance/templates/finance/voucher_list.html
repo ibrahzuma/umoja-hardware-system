@@ -18,10 +18,69 @@
             <li><a class="dropdown-item" href="{% url 'finance:voucher_new' key %}">{{ label }}</a></li>
             {% endfor %}
         </ul>
+        <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#importModal">
+            <i class="bi bi-file-earmark-arrow-up"></i> Bulk Import</button>
         <a href="{% url 'finance:general_ledger' %}" class="btn btn-outline-secondary">
             <i class="bi bi-journal-bookmark"></i> General Ledger</a>
         <a href="{% url 'finance:chart_of_accounts' %}" class="btn btn-outline-secondary">
             <i class="bi bi-diagram-3"></i> Ledgers</a>
+    </div>
+</div>
+
+<!-- Bulk import: download the template, check the file, then post it whole -->
+<div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-arrow-up"></i> Bulk import vouchers</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <div class="border rounded p-3 h-100 bg-light small">
+                            <div class="fw-bold mb-2">1 · Fill in the template</div>
+                            <p class="mb-2">One row per voucher <em>line</em>. Rows sharing a <strong>Ref</strong> are one
+                                voucher, so debits and credits of a Ref must add up. Sales and Purchase rows also take
+                                the <strong>Party</strong>, <strong>Invoice No</strong> and <strong>EFD No</strong>;
+                                a Receipt or Payment row can name the invoice it is <strong>Against</strong>.</p>
+                            <p class="mb-2">The optional <strong>Ledgers</strong> sheet creates ledgers (with opening
+                                balances) before the vouchers post. The <strong>Ledger List</strong> sheet is your
+                                current chart of accounts — copy the codes or exact names from it.</p>
+                            <a class="btn btn-sm btn-outline-primary" href="/api/vouchers/import_template/">
+                                <i class="bi bi-download"></i> Download template (.xlsx)</a>
+                        </div>
+                    </div>
+                    <div class="col-lg-8">
+                        <div class="border rounded p-3 h-100">
+                            <div class="fw-bold mb-2 small">2 · Check the file, then post it</div>
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-7">
+                                    <input type="file" id="importFile" class="form-control" accept=".xlsx,.xlsm,.csv">
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="importCreateParties">
+                                        <label class="form-check-label small" for="importCreateParties">
+                                            Create missing customers and suppliers</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 d-flex gap-2 align-items-center">
+                                <button class="btn btn-outline-primary" id="importCheckBtn" onclick="runImport(false)">
+                                    <i class="bi bi-search"></i> Check file</button>
+                                <button class="btn btn-success" id="importPostBtn" onclick="runImport(true)" disabled>
+                                    <i class="bi bi-check2-circle"></i> Post <span id="importPostCount"></span> vouchers</button>
+                                <span class="small text-muted ms-2" id="importStatus"></span>
+                            </div>
+                            <p class="small text-muted mt-2 mb-0">Nothing is kept until every row is clean and you press Post.
+                                The file posts whole or not at all.</p>
+                        </div>
+                    </div>
+                </div>
+                <div id="importReport" class="mt-3"></div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -205,6 +264,95 @@
                 '</td>';
             tbody.appendChild(tr);
         });
+    }
+
+    // ---- bulk import ------------------------------------------------------
+
+    let importClean = false;
+
+    async function runImport(commit) {
+        const input = document.getElementById('importFile');
+        if (!input.files.length) { Swal.fire('No file', 'Choose the filled-in template first.', 'info'); return; }
+        if (commit && !importClean) { Swal.fire('Check first', 'Check the file and fix any rows before posting.', 'info'); return; }
+        const form = new FormData();
+        form.append('file', input.files[0]);
+        form.append('commit', commit ? 'true' : 'false');
+        form.append('create_parties', document.getElementById('importCreateParties').checked ? 'true' : 'false');
+        const status = document.getElementById('importStatus');
+        status.innerText = commit ? 'Posting…' : 'Checking…';
+        document.getElementById('importCheckBtn').disabled = true;
+        document.getElementById('importPostBtn').disabled = true;
+        try {
+            const res = await fetch('/api/vouchers/bulk_upload/', {
+                method: 'POST', headers: { 'X-CSRFToken': CSRF_TOKEN }, body: form,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                status.innerText = '';
+                document.getElementById('importReport').innerHTML =
+                    '<div class="alert alert-danger">' + escapeHtml(data.detail || 'The file could not be read.') + '</div>';
+                importClean = false;
+                return;
+            }
+            renderImportReport(data);
+            importClean = data.ok && !data.committed;
+            document.getElementById('importPostCount').innerText = importClean ? data.posted : '';
+            document.getElementById('importPostBtn').disabled = !importClean;
+            if (data.committed) {
+                status.innerText = '';
+                Swal.fire('Posted', data.posted + ' voucher(s) are in the books — TZS ' + Number(data.total).toLocaleString() + '.', 'success');
+                input.value = '';
+                load();
+            } else if (data.ok) {
+                status.innerText = 'Clean — ready to post.';
+            } else {
+                status.innerText = 'Fix the rows marked in red, then check again.';
+            }
+        } catch (e) {
+            console.error(e);
+            status.innerText = 'The upload failed.';
+        } finally {
+            document.getElementById('importCheckBtn').disabled = false;
+        }
+    }
+
+    function renderImportReport(r) {
+        const TYPE_LABEL = { sales: 'Sales', purchase: 'Purchase', receipt: 'Receipt', payment: 'Payment', contra: 'Contra', journal: 'Journal' };
+        let html = '';
+        const tone = r.committed ? 'success' : (r.ok ? 'primary' : 'danger');
+        html += '<div class="alert alert-' + tone + ' py-2 small mb-2">' +
+            (r.committed ? '<strong>Posted.</strong> ' : (r.ok ? '<strong>Clean.</strong> ' : '<strong>Not posted.</strong> ')) +
+            r.vouchers.length + ' voucher(s) read, ' + (r.posted) + ' would post, ' + r.failed + ' with errors' +
+            (r.errors.length ? ', ' + r.errors.length + ' row(s) could not be read' : '') +
+            ' · total TZS ' + Number(r.total).toLocaleString() +
+            (r.ledgers.length ? ' · ' + r.ledgers.length + ' ledger row(s)' : '') + '</div>';
+        if (r.errors.length) {
+            html += '<ul class="small text-danger mb-2">' + r.errors.map(e => '<li>' + escapeHtml(e) + '</li>').join('') + '</ul>';
+        }
+        if (r.ledgers.length) {
+            html += '<div class="small fw-bold mb-1">Ledgers</div><div class="table-responsive mb-2"><table class="table table-sm small mb-0" data-no-paginate><thead class="bg-light"><tr>' +
+                '<th>Row</th><th>Code</th><th>Name</th><th>Kind</th><th class="text-end">Opening</th><th>Action</th></tr></thead><tbody>';
+            r.ledgers.forEach(l => {
+                html += '<tr><td>' + l.row + '</td><td>' + escapeHtml(l.code) + '</td><td>' + escapeHtml(l.name) + '</td><td>' + escapeHtml(l.kind) +
+                    '</td><td class="text-end">' + Number(l.opening_balance).toLocaleString() + '</td><td>' + escapeHtml(l.action) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+        if (r.vouchers.length) {
+            html += '<div class="small fw-bold mb-1">Vouchers</div><div class="table-responsive"><table class="table table-sm small mb-0" data-no-paginate><thead class="bg-light"><tr>' +
+                '<th>Rows</th><th>Ref</th><th>Type</th><th>Date</th><th>Party</th><th>Invoice</th><th class="text-end">Debit</th><th class="text-end">Credit</th><th>Result</th></tr></thead><tbody>';
+            r.vouchers.forEach(v => {
+                const bad = v.status !== 'ok';
+                html += '<tr class="' + (bad ? 'table-danger' : '') + '"><td>' + escapeHtml(v.rows) + '</td><td>' + escapeHtml(v.ref) + '</td>' +
+                    '<td><span class="badge ' + (TYPE_BADGE[v.type] || 'bg-secondary') + '">' + (TYPE_LABEL[v.type] || v.type) + '</span></td>' +
+                    '<td>' + escapeHtml(v.date) + '</td><td>' + escapeHtml(v.party) + '</td><td>' + escapeHtml(v.invoice_number) + '</td>' +
+                    '<td class="text-end">' + Number(v.debit).toLocaleString() + '</td><td class="text-end">' + Number(v.credit).toLocaleString() + '</td>' +
+                    '<td>' + (bad ? '<span class="text-danger">' + escapeHtml(v.message) + '</span>'
+                                  : (v.number ? '<strong>' + escapeHtml(v.number) + '</strong>' : '<span class="text-success">ready</span>')) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+        document.getElementById('importReport').innerHTML = html;
     }
 
     async function cancelVoucher(id) {
