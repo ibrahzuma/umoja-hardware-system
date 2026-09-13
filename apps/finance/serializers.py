@@ -4,7 +4,8 @@ from django.db.models import Sum
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
     BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
-    PettyCashRequest,
+    PettyCashRequest, LedgerAccount, Voucher, VoucherLine, VoucherAllocation,
+    GeneralLedgerEntry,
 )
 from apps.sales.models import Sale
 
@@ -227,3 +228,121 @@ class PettyCashRequestSerializer(serializers.ModelSerializer):
         if value is None or value <= 0:
             raise serializers.ValidationError("Ask for more than nothing.")
         return value
+
+
+# ---------------------------------------------------------------------------
+# General ledger
+# ---------------------------------------------------------------------------
+
+class LedgerAccountSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(source='get_kind_display', read_only=True)
+    is_money = serializers.BooleanField(read_only=True)
+    normal_side = serializers.CharField(read_only=True)
+    # Filled in by the viewset from one aggregate, not one query per row.
+    balance = serializers.SerializerMethodField()
+    linked_to = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LedgerAccount
+        fields = [
+            'id', 'code', 'name', 'kind', 'kind_display', 'is_money', 'normal_side',
+            'bank_account', 'customer', 'supplier', 'linked_to',
+            'opening_balance', 'opening_side', 'is_active', 'notes', 'created_at', 'balance',
+        ]
+        read_only_fields = ['bank_account', 'customer', 'supplier', 'created_at']
+        extra_kwargs = {'code': {'required': False, 'allow_blank': True}}
+
+    def get_balance(self, obj):
+        balances = self.context.get('balances') or {}
+        signed = balances.get(obj.id)
+        if signed is None:
+            return None
+        return str(signed if obj.normal_side == 'debit' else -signed)
+
+    def get_linked_to(self, obj):
+        if obj.bank_account_id:
+            return 'bank'
+        if obj.customer_id:
+            return 'customer'
+        if obj.supplier_id:
+            return 'supplier'
+        return ''
+
+    def validate(self, attrs):
+        # A linked ledger's kind is fixed by what it is linked to.
+        instance = self.instance
+        if instance is not None and 'kind' in attrs and attrs['kind'] != instance.kind:
+            if instance.bank_account_id or instance.customer_id or instance.supplier_id:
+                raise serializers.ValidationError(
+                    {'kind': 'This ledger is linked to a bank account, customer or supplier; '
+                             'its kind cannot change.'})
+        if attrs.get('opening_balance', 0) < 0:
+            raise serializers.ValidationError({'opening_balance': 'Use the side, not a minus sign.'})
+        return attrs
+
+
+class VoucherAllocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VoucherAllocation
+        fields = ['id', 'sale', 'purchase_order', 'reference', 'amount']
+
+
+class VoucherLineSerializer(serializers.ModelSerializer):
+    account_code = serializers.CharField(source='account.code', read_only=True)
+    account_name = serializers.CharField(source='account.name', read_only=True)
+    account_kind = serializers.CharField(source='account.kind', read_only=True)
+    allocations = VoucherAllocationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VoucherLine
+        fields = ['id', 'account', 'account_code', 'account_name', 'account_kind',
+                  'side', 'amount', 'narration', 'position', 'allocations']
+
+
+class VoucherSerializer(serializers.ModelSerializer):
+    """Read shape. Posting goes through `vouchers.post_voucher`, which takes the
+    raw lines — see VoucherViewSet.create."""
+    voucher_type_display = serializers.CharField(source='get_voucher_type_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    cancelled_by_name = serializers.SerializerMethodField()
+    lines = VoucherLineSerializer(many=True, read_only=True)
+    accounts_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Voucher
+        fields = [
+            'id', 'number', 'voucher_type', 'voucher_type_display', 'date', 'description',
+            'total', 'status', 'status_display', 'created_by', 'created_by_name', 'created_at',
+            'cancelled_by', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
+            'lines', 'accounts_summary',
+        ]
+
+    def _name(self, user):
+        if not user:
+            return ''
+        return user.get_full_name() or user.username
+
+    def get_created_by_name(self, obj):
+        return self._name(obj.created_by)
+
+    def get_cancelled_by_name(self, obj):
+        return self._name(obj.cancelled_by)
+
+    def get_accounts_summary(self, obj):
+        """'Dr CRDB Main / Cr Kibo Traders' for the register listing."""
+        lines = list(obj.lines.all())
+        debits = [l.account.name for l in lines if l.side == 'debit']
+        credits = [l.account.name for l in lines if l.side == 'credit']
+        return {'debit': debits, 'credit': credits}
+
+
+class GeneralLedgerEntrySerializer(serializers.ModelSerializer):
+    account_code = serializers.CharField(source='account.code', read_only=True)
+    account_name = serializers.CharField(source='account.name', read_only=True)
+    account_kind = serializers.CharField(source='account.kind', read_only=True)
+
+    class Meta:
+        model = GeneralLedgerEntry
+        fields = ['id', 'voucher', 'account', 'account_code', 'account_name', 'account_kind',
+                  'date', 'voucher_type', 'voucher_number', 'description', 'debit', 'credit']

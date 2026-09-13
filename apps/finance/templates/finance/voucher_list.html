@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block title %}Vouchers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Vouchers</h2>
+        <p class="text-muted mb-0 small">Every entry in the books starts as a voucher: a Receipt for money in, a
+            Payment for money out, a Contra to move our own money, a Journal for anything else. Each one is posted
+            to the General Ledger the moment it balances.</p>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="bi bi-plus-lg"></i> New Voucher</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            {% for key, label in voucher_types %}
+            <li><a class="dropdown-item" href="{% url 'finance:voucher_new' key %}">{{ label }}</a></li>
+            {% endfor %}
+        </ul>
+        <a href="{% url 'finance:general_ledger' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-bookmark"></i> General Ledger</a>
+        <a href="{% url 'finance:chart_of_accounts' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-diagram-3"></i> Ledgers</a>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+    {% for key, label in voucher_types %}
+    <div class="col-sm-6 col-lg-3">
+        <a href="{% url 'finance:voucher_new' key %}" class="text-decoration-none text-reset">
+        <div class="card shadow-sm border-0 border-start border-4
+            {% if key == 'receipt' %}border-success{% elif key == 'payment' %}border-danger{% elif key == 'contra' %}border-info{% else %}border-secondary{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">{{ label }}s</h6>
+                <h3 class="fw-bold mb-0" id="stat-{{ key }}-total">TZS 0</h3>
+                <small class="text-muted"><span id="stat-{{ key }}-count">0</span> posted</small>
+            </div>
+        </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-3">
+                <input type="text" id="searchInput" class="form-control"
+                       placeholder="Search number, description, ledger…" onkeyup="render()">
+            </div>
+            <div class="col-md-2">
+                <select id="typeFilter" class="form-select" onchange="render()">
+                    <option value="">All types</option>
+                    {% for key, label in voucher_types %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="statusFilter" class="form-select" onchange="render()">
+                    <option value="posted">Posted</option>
+                    <option value="">All statuses</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="date" id="dateFrom" class="form-control" onchange="load()" title="From">
+            </div>
+            <div class="col-md-2">
+                <input type="date" id="dateTo" class="form-control" onchange="load()" title="To">
+            </div>
+            <div class="col-md-3 d-flex align-items-center justify-content-end">
+                <small class="text-muted" id="entryCount"></small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" data-export="Vouchers">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Date</th>
+                        <th>Number</th>
+                        <th>Type</th>
+                        <th>Debit</th>
+                        <th>Credit</th>
+                        <th>Description</th>
+                        <th class="text-end">Amount</th>
+                        <th>Status</th>
+                        <th>By</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="10" class="text-center py-4 text-muted">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let vouchers = [];
+    const TYPE_BADGE = { receipt: 'bg-success', payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
+    const DETAIL_URL = '{% url "finance:voucher_detail" 0 %}';
+
+    document.addEventListener('DOMContentLoaded', load);
+
+    function money(v) { return 'TZS ' + Math.round(Number(v || 0)).toLocaleString(); }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function detailUrl(id) { return DETAIL_URL.replace('/0/', '/' + id + '/'); }
+
+    function range() {
+        const q = [];
+        const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value;
+        if (f) q.push('from=' + f);
+        if (t) q.push('to=' + t);
+        return q.length ? '?' + q.join('&') : '';
+    }
+
+    async function load() {
+        try {
+            const [listRes, sumRes] = await Promise.all([
+                fetch('/api/vouchers/' + range()),
+                fetch('/api/vouchers/summary/' + range()),
+            ]);
+            if (!listRes.ok) throw new Error('status ' + listRes.status);
+            vouchers = await listRes.json();
+            if (sumRes.ok) {
+                const s = await sumRes.json();
+                Object.keys(s).forEach(t => {
+                    const c = document.getElementById('stat-' + t + '-count');
+                    const v = document.getElementById('stat-' + t + '-total');
+                    if (c) c.innerText = s[t].count;
+                    if (v) v.innerText = money(s[t].total);
+                });
+            }
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="10" class="text-center py-4 text-danger">Could not load the vouchers.</td></tr>';
+        }
+    }
+
+    function visible() {
+        const term = (document.getElementById('searchInput').value || '').toLowerCase();
+        const type = document.getElementById('typeFilter').value;
+        const status = document.getElementById('statusFilter').value;
+        return vouchers.filter(v => {
+            const hay = [v.number, v.description, v.created_by_name,
+                         ...(v.accounts_summary.debit || []), ...(v.accounts_summary.credit || [])]
+                .map(x => (x || '').toLowerCase()).join(' ');
+            return hay.includes(term)
+                && (type ? v.voucher_type === type : true)
+                && (status ? v.status === status : true);
+        });
+    }
+
+    function render() {
+        const rows = visible();
+        const tbody = document.getElementById('tableBody');
+        const total = rows.reduce((s, v) => s + (v.status === 'posted' ? Number(v.total) : 0), 0);
+        document.getElementById('entryCount').innerText = rows.length + ' of ' + vouchers.length + '  |  ' + money(total);
+        tbody.innerHTML = '';
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">No vouchers found</td></tr>';
+            return;
+        }
+        rows.forEach(v => {
+            const tr = document.createElement('tr');
+            if (v.status === 'cancelled') tr.className = 'text-muted';
+            tr.innerHTML =
+                '<td class="ps-4">' + escapeHtml(v.date) + '</td>' +
+                '<td><a href="' + detailUrl(v.id) + '" class="fw-bold text-decoration-none">' + escapeHtml(v.number) + '</a></td>' +
+                '<td><span class="badge ' + (TYPE_BADGE[v.voucher_type] || 'bg-secondary') + '">' + escapeHtml(v.voucher_type_display) + '</span></td>' +
+                '<td class="small">' + v.accounts_summary.debit.map(escapeHtml).join('<br>') + '</td>' +
+                '<td class="small">' + v.accounts_summary.credit.map(escapeHtml).join('<br>') + '</td>' +
+                '<td class="small">' + escapeHtml(v.description) + '</td>' +
+                '<td class="text-end fw-bold' + (v.status === 'cancelled' ? ' text-decoration-line-through' : '') + '">' + money(v.total) + '</td>' +
+                '<td><span class="badge ' + (v.status === 'posted' ? 'bg-success' : 'bg-dark') + '">' + escapeHtml(v.status_display) + '</span></td>' +
+                '<td class="small">' + escapeHtml(v.created_by_name) + '</td>' +
+                '<td class="text-end pe-4">' +
+                    '<a class="btn btn-sm btn-outline-primary" href="' + detailUrl(v.id) + '" title="View"><i class="bi bi-eye"></i></a> ' +
+                    (v.status === 'posted'
+                        ? '<button class="btn btn-sm btn-outline-danger" title="Cancel" onclick="cancelVoucher(' + v.id + ')"><i class="bi bi-x-circle"></i></button>'
+                        : '') +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function cancelVoucher(id) {
+        const v = vouchers.find(x => x.id === id);
+        const result = await Swal.fire({
+            title: 'Cancel ' + (v ? v.number : 'this voucher') + '?',
+            html: 'Its entries come back out of the General Ledger. The voucher itself stays on record as cancelled.',
+            icon: 'warning',
+            input: 'text',
+            inputPlaceholder: 'Why?',
+            showCancelButton: true,
+            confirmButtonText: 'Cancel voucher',
+            confirmButtonColor: '#dc3545',
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch('/api/vouchers/' + id + '/cancel/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ reason: result.value || '' }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not cancel the voucher', 'error');
+                return;
+            }
+            Swal.fire('Cancelled', 'The entries are out of the ledger.', 'success');
+            load();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not cancel the voucher', 'error');
+        }
+    }
+</script>
+{% endblock %}

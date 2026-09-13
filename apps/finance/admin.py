@@ -34,3 +34,52 @@ class OtherPaymentAdmin(admin.ModelAdmin):
     search_fields = ('payee', 'reference', 'description')
     readonly_fields = ('created_at',)
     date_hierarchy = 'payment_date'
+
+
+# --- General ledger ----------------------------------------------------------
+# Read-mostly: vouchers are posted through the API and cancelled, never edited.
+
+from .models import LedgerAccount, Voucher, VoucherLine, VoucherAllocation, GeneralLedgerEntry
+
+
+@admin.register(LedgerAccount)
+class LedgerAccountAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'kind', 'opening_balance', 'opening_side', 'is_active')
+    list_filter = ('kind', 'is_active')
+    search_fields = ('code', 'name')
+    readonly_fields = ('bank_account', 'customer', 'supplier', 'created_at')
+
+
+class VoucherLineInline(admin.TabularInline):
+    model = VoucherLine
+    extra = 0
+    can_delete = False
+    readonly_fields = ('account', 'side', 'amount', 'narration', 'position')
+
+
+@admin.register(Voucher)
+class VoucherAdmin(admin.ModelAdmin):
+    list_display = ('number', 'voucher_type', 'date', 'total', 'status', 'created_by', 'created_at')
+    list_filter = ('voucher_type', 'status', 'date')
+    search_fields = ('number', 'description')
+    readonly_fields = ('number', 'voucher_type', 'date', 'total', 'status', 'created_by', 'created_at',
+                       'cancelled_by', 'cancelled_at', 'cancel_reason')
+    inlines = [VoucherLineInline]
+    date_hierarchy = 'date'
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(GeneralLedgerEntry)
+class GeneralLedgerEntryAdmin(admin.ModelAdmin):
+    list_display = ('date', 'voucher_number', 'account', 'debit', 'credit', 'description')
+    list_filter = ('voucher_type', 'account__kind', 'date')
+    search_fields = ('voucher_number', 'description', 'account__name', 'account__code')
+    date_hierarchy = 'date'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

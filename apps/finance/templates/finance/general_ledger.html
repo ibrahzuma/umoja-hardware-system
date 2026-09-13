@@ -1,0 +1,328 @@
+{% extends 'base.html' %}
+
+{% block title %}General Ledger{% endblock %}
+
+{% block extra_css %}
+<style>
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    @media print { .no-print { display: none !important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">General Ledger</h2>
+        <p class="text-muted mb-0 small">One row per voucher line, in posting order. Pick a ledger for its
+            statement with a running balance, or read every ledger at once in the trial balance.</p>
+    </div>
+    <div class="no-print">
+        <a href="{% url 'finance:voucher_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-text"></i> Vouchers</a>
+        <a href="{% url 'finance:chart_of_accounts' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-diagram-3"></i> Ledgers</a>
+        <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+    </div>
+</div>
+
+<div class="card mb-4 no-print">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small text-muted">Ledger</label>
+                <select id="accountSelect" class="form-select" onchange="load()">
+                    <option value="">— Trial balance (all ledgers) —</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">From</label>
+                <input type="date" id="dateFrom" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">To</label>
+                <input type="date" id="dateTo" class="form-control" onchange="load()">
+            </div>
+            <div class="col-md-4">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('month')">This month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('last')">Last month</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('year')">This year</button>
+                    <button class="btn btn-outline-secondary" onclick="setPeriod('')">All time</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Statement -->
+<div id="statementPanel" hidden>
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg-3">
+            <div class="card shadow-sm border-0 border-start border-secondary border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2 small fw-bold">Opening</h6>
+                    <h3 class="fw-bold mb-0" id="stOpening">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card shadow-sm border-0 border-start border-primary border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2 small fw-bold">Debits</h6>
+                    <h3 class="fw-bold mb-0" id="stDebit">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card shadow-sm border-0 border-start border-danger border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2 small fw-bold">Credits</h6>
+                    <h3 class="fw-bold mb-0" id="stCredit">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <div class="card shadow-sm border-0 border-start border-success border-4">
+                <div class="card-body">
+                    <h6 class="text-muted text-uppercase mb-2 small fw-bold">Closing</h6>
+                    <h3 class="fw-bold mb-0" id="stClosing">0</h3>
+                    <small class="text-muted" id="stSide"></small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-white">
+            <strong id="stTitle"></strong> <span class="text-muted small" id="stPeriod"></span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" data-export="Ledger Statement">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Date</th>
+                            <th>Voucher</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th class="num">Debit</th>
+                            <th class="num">Credit</th>
+                            <th class="num pe-4">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trial balance -->
+<div id="trialPanel" hidden>
+    <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <div><strong>Trial Balance</strong> <span class="text-muted small" id="tbPeriod"></span></div>
+            <span id="tbStatus" class="badge"></span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" data-export="Trial Balance">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">Code</th>
+                            <th>Ledger</th>
+                            <th>Kind</th>
+                            <th class="num">Opening</th>
+                            <th class="num">Debits</th>
+                            <th class="num">Credits</th>
+                            <th class="num">Closing Dr</th>
+                            <th class="num pe-4">Closing Cr</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbBody"></tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="6" class="ps-4">Total</td>
+                            <td class="num" id="tbTotalDebit">0</td>
+                            <td class="num pe-4" id="tbTotalCredit">0</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const DETAIL_URL = '{% url "finance:voucher_detail" 0 %}';
+    const STATEMENT_URL = '{% url "finance:general_ledger" %}';
+    const PRESELECT = '{{ selected_account }}';
+    const TYPE_BADGE = { receipt: 'bg-success', payment: 'bg-danger', contra: 'bg-info text-dark', journal: 'bg-secondary' };
+    const TYPE_LABEL = { receipt: 'Receipt', payment: 'Payment', contra: 'Contra', journal: 'Journal' };
+    let accounts = [];
+
+    document.addEventListener('DOMContentLoaded', async function () {
+        await loadAccounts();
+        if (PRESELECT) document.getElementById('accountSelect').value = PRESELECT;
+        load();
+    });
+
+    function fmt(v) {
+        const n = Number(v || 0);
+        return n === 0 ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function detailUrl(id) { return DETAIL_URL.replace('/0/', '/' + id + '/'); }
+
+    function range() {
+        const q = [];
+        const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value;
+        if (f) q.push('from=' + f);
+        if (t) q.push('to=' + t);
+        return q.length ? '?' + q.join('&') : '';
+    }
+    function periodText() {
+        const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value;
+        if (!f && !t) return 'all time';
+        return (f ? 'from ' + f : '') + (t ? ' to ' + t : '');
+    }
+
+    function setPeriod(which) {
+        const now = new Date();
+        const iso = d => d.toISOString().slice(0, 10);
+        let from = '', to = '';
+        if (which === 'month') {
+            from = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+            to = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+        } else if (which === 'last') {
+            from = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+            to = iso(new Date(now.getFullYear(), now.getMonth(), 0));
+        } else if (which === 'year') {
+            from = iso(new Date(now.getFullYear(), 0, 1));
+            to = iso(new Date(now.getFullYear(), 11, 31));
+        }
+        document.getElementById('dateFrom').value = from;
+        document.getElementById('dateTo').value = to;
+        load();
+    }
+
+    async function loadAccounts() {
+        try {
+            const res = await fetch('/api/ledger-accounts/');
+            accounts = res.ok ? await res.json() : [];
+        } catch (e) { console.error(e); }
+        const select = document.getElementById('accountSelect');
+        const byKind = {};
+        accounts.forEach(a => { (byKind[a.kind_display] = byKind[a.kind_display] || []).push(a); });
+        Object.keys(byKind).sort().forEach(kind => {
+            const group = document.createElement('optgroup');
+            group.label = kind;
+            byKind[kind].forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = a.code + '  ' + a.name + (a.is_active ? '' : ' (closed)');
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+        });
+    }
+
+    function load() {
+        const id = document.getElementById('accountSelect').value;
+        const url = new URL(window.location);
+        if (id) url.searchParams.set('account', id); else url.searchParams.delete('account');
+        history.replaceState(null, '', url);
+        document.getElementById('statementPanel').hidden = !id;
+        document.getElementById('trialPanel').hidden = !!id;
+        return id ? loadStatement(id) : loadTrialBalance();
+    }
+
+    async function loadStatement(id) {
+        const body = document.getElementById('stBody');
+        body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">Loading…</td></tr>';
+        try {
+            const res = await fetch('/api/ledger-accounts/' + id + '/statement/' + range());
+            if (!res.ok) throw new Error('status ' + res.status);
+            const s = await res.json();
+            const a = s.account;
+            const sideWord = v => Number(v) === 0 ? '' : (Number(v) > 0 ? a.normal_side : (a.normal_side === 'debit' ? 'credit' : 'debit'));
+            const label = v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }).replace('-', '') +
+                               (sideWord(v) ? ' ' + (sideWord(v) === 'debit' ? 'Dr' : 'Cr') : '');
+            document.getElementById('stTitle').innerText = a.code + '  ' + a.name;
+            document.getElementById('stPeriod').innerText = '· ' + a.kind_display + ' · ' + periodText();
+            document.getElementById('stOpening').innerText = label(s.opening_balance);
+            document.getElementById('stDebit').innerText = Number(s.total_debit).toLocaleString();
+            document.getElementById('stCredit').innerText = Number(s.total_credit).toLocaleString();
+            document.getElementById('stClosing').innerText = label(s.closing_balance);
+            document.getElementById('stSide').innerText = 'normal side: ' + a.normal_side;
+
+            body.innerHTML = '';
+            if (!s.rows.length) {
+                body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No entries in this period</td></tr>';
+                return;
+            }
+            s.rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td class="ps-4">' + escapeHtml(r.date) + '</td>' +
+                    '<td><a href="' + detailUrl(r.voucher) + '" class="fw-bold text-decoration-none">' + escapeHtml(r.voucher_number) + '</a></td>' +
+                    '<td><span class="badge ' + (TYPE_BADGE[r.voucher_type] || 'bg-secondary') + '">' + (TYPE_LABEL[r.voucher_type] || r.voucher_type) + '</span></td>' +
+                    '<td class="small">' + escapeHtml(r.description) + '</td>' +
+                    '<td class="num">' + fmt(r.debit) + '</td>' +
+                    '<td class="num">' + fmt(r.credit) + '</td>' +
+                    '<td class="num pe-4 fw-bold">' + label(r.balance) + '</td>';
+                body.appendChild(tr);
+            });
+        } catch (e) {
+            console.error(e);
+            body.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Could not load the statement.</td></tr>';
+        }
+    }
+
+    async function loadTrialBalance() {
+        const body = document.getElementById('tbBody');
+        body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">Loading…</td></tr>';
+        document.getElementById('tbPeriod').innerText = '· ' + periodText();
+        try {
+            const res = await fetch('/api/general-ledger/trial_balance/' + range());
+            if (!res.ok) throw new Error('status ' + res.status);
+            const tb = await res.json();
+            body.innerHTML = '';
+            if (!tb.rows.length) {
+                body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">Nothing has been posted yet</td></tr>';
+            }
+            tb.rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td class="ps-4 fw-bold">' + escapeHtml(r.code) + '</td>' +
+                    '<td><a href="' + STATEMENT_URL + '?account=' + r.id + '" class="text-decoration-none" onclick="pick(' + r.id + '); return false;">' + escapeHtml(r.name) + '</a></td>' +
+                    '<td class="small text-muted">' + escapeHtml(r.kind_display) + '</td>' +
+                    '<td class="num">' + fmt(r.opening) + '</td>' +
+                    '<td class="num">' + fmt(r.debit) + '</td>' +
+                    '<td class="num">' + fmt(r.credit) + '</td>' +
+                    '<td class="num fw-bold">' + fmt(r.closing_debit) + '</td>' +
+                    '<td class="num pe-4 fw-bold">' + fmt(r.closing_credit) + '</td>';
+                body.appendChild(tr);
+            });
+            document.getElementById('tbTotalDebit').innerText = Number(tb.total_debit).toLocaleString();
+            document.getElementById('tbTotalCredit').innerText = Number(tb.total_credit).toLocaleString();
+            const status = document.getElementById('tbStatus');
+            const balanced = Number(tb.difference) === 0;
+            status.className = 'badge ' + (balanced ? 'bg-success' : 'bg-danger');
+            status.innerText = balanced ? 'Balanced' : 'Out by ' + Number(tb.difference).toLocaleString();
+        } catch (e) {
+            console.error(e);
+            body.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load the trial balance.</td></tr>';
+        }
+    }
+
+    function pick(id) {
+        document.getElementById('accountSelect').value = id;
+        load();
+    }
+</script>
+{% endblock %}

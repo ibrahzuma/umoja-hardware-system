@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ voucher.number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .voucher-doc { max-width: 900px; margin: 0 auto; }
+    .voucher-doc .table td, .voucher-doc .table th { vertical-align: top; }
+    .stamp {
+        display: inline-block; padding: .25rem 1rem; border: 3px solid; border-radius: .5rem;
+        font-weight: 800; letter-spacing: .15em; text-transform: uppercase; transform: rotate(-6deg);
+    }
+    .stamp-posted { color: #198754; border-color: #198754; }
+    .stamp-cancelled { color: #dc3545; border-color: #dc3545; }
+    @media print {
+        .no-print { display: none !important; }
+        .voucher-doc { max-width: none; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print flex-wrap gap-2">
+    <a href="{% url 'finance:voucher_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Vouchers</a>
+    <div>
+        <a href="{% url 'finance:voucher_new' voucher.voucher_type %}" class="btn btn-outline-primary">
+            <i class="bi bi-plus-lg"></i> New {{ voucher.get_voucher_type_display }}</a>
+        <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+        {% if voucher.status == 'posted' %}
+        <button class="btn btn-outline-danger" onclick="cancelVoucher()"><i class="bi bi-x-circle"></i> Cancel</button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm voucher-doc">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-start mb-4">
+            <div>
+                <h4 class="fw-bold mb-0">{{ company }}</h4>
+                <div class="text-muted">{{ voucher.get_voucher_type_display }} Voucher</div>
+            </div>
+            <div class="text-end">
+                <h3 class="fw-bold text-primary mb-0">{{ voucher.number }}</h3>
+                <div class="text-muted">Date: <strong>{{ voucher.date|date:"d M Y" }}</strong></div>
+                <span class="stamp {% if voucher.status == 'posted' %}stamp-posted{% else %}stamp-cancelled{% endif %} mt-2">
+                    {{ voucher.get_status_display }}</span>
+            </div>
+        </div>
+
+        {% if voucher.description %}
+        <p class="mb-4"><span class="text-muted">Description:</span> {{ voucher.description }}</p>
+        {% endif %}
+
+        <table class="table table-bordered mb-3" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th style="width:50%">Account</th>
+                    <th class="text-end">Debit (TZS)</th>
+                    <th class="text-end">Credit (TZS)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in debits %}
+                <tr>
+                    <td>
+                        <strong>{{ line.account.name }}</strong>
+                        <span class="text-muted small">{{ line.account.code }} · {{ line.account.get_kind_display }}</span>
+                        {% if line.narration %}<div class="small text-muted">{{ line.narration }}</div>{% endif %}
+                        {% for a in line.allocations.all %}
+                        <div class="small text-muted"><i class="bi bi-arrow-return-right"></i>
+                            against {{ a.reference }}: {{ a.amount|floatformat:0|intcomma }}</div>
+                        {% endfor %}
+                    </td>
+                    <td class="text-end">{{ line.amount|floatformat:2|intcomma }}</td>
+                    <td></td>
+                </tr>
+                {% endfor %}
+                {% for line in credits %}
+                <tr>
+                    <td class="ps-5">
+                        <strong>{{ line.account.name }}</strong>
+                        <span class="text-muted small">{{ line.account.code }} · {{ line.account.get_kind_display }}</span>
+                        {% if line.narration %}<div class="small text-muted">{{ line.narration }}</div>{% endif %}
+                        {% for a in line.allocations.all %}
+                        <div class="small text-muted"><i class="bi bi-arrow-return-right"></i>
+                            against {{ a.reference }}: {{ a.amount|floatformat:0|intcomma }}</div>
+                        {% endfor %}
+                    </td>
+                    <td></td>
+                    <td class="text-end">{{ line.amount|floatformat:2|intcomma }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td>Total</td>
+                    <td class="text-end">{{ voucher.total|floatformat:2|intcomma }}</td>
+                    <td class="text-end">{{ voucher.total|floatformat:2|intcomma }}</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="row small text-muted">
+            <div class="col-md-6">
+                Prepared by <strong>{{ voucher.created_by.get_full_name|default:voucher.created_by.username|default:"—" }}</strong>
+                on {{ voucher.created_at|date:"d M Y H:i" }}
+            </div>
+            {% if voucher.status == 'cancelled' %}
+            <div class="col-md-6 text-md-end text-danger">
+                Cancelled by <strong>{{ voucher.cancelled_by.get_full_name|default:voucher.cancelled_by.username|default:"—" }}</strong>
+                on {{ voucher.cancelled_at|date:"d M Y H:i" }}
+                {% if voucher.cancel_reason %}<br>{{ voucher.cancel_reason }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    async function cancelVoucher() {
+        const result = await Swal.fire({
+            title: 'Cancel {{ voucher.number }}?',
+            html: 'Its entries come back out of the General Ledger. The voucher stays on record as cancelled.',
+            icon: 'warning',
+            input: 'text',
+            inputPlaceholder: 'Why?',
+            showCancelButton: true,
+            confirmButtonText: 'Cancel voucher',
+            confirmButtonColor: '#dc3545',
+        });
+        if (!result.isConfirmed) return;
+        try {
+            const res = await fetch('/api/vouchers/{{ voucher.id }}/cancel/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ reason: result.value || '' }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not cancel the voucher', 'error');
+                return;
+            }
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not cancel the voucher', 'error');
+        }
+    }
+</script>
+{% endblock %}

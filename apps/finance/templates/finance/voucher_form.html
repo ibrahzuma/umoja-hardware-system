@@ -1,0 +1,505 @@
+{% extends 'base.html' %}
+
+{% block title %}New {{ voucher_type_display }} Voucher{% endblock %}
+
+{% block extra_css %}
+<style>
+    .voucher-side .table td { vertical-align: top; }
+    .voucher-side .form-select, .voucher-side .form-control { min-width: 0; }
+    .amount-input { text-align: right; font-variant-numeric: tabular-nums; }
+    .line-auto .amount-input { background: #fff8e1; }
+    .alloc-box { background: #f8f9fa; border: 1px dashed #ced4da; border-radius: .375rem; }
+    .alloc-box .amount-input { max-width: 150px; }
+    .totals-bar { position: sticky; bottom: 0; z-index: 5; }
+    .diff-ok { color: #198754; }
+    .diff-bad { color: #dc3545; }
+    .side-title-debit { border-left: 4px solid #0d6efd; }
+    .side-title-credit { border-left: 4px solid #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">New {{ voucher_type_display }} Voucher
+            <span class="badge bg-secondary align-middle fs-6">{{ prefix }}-… (number given on post)</span>
+        </h2>
+        <p class="text-muted mb-0 small"><strong>{{ blurb.0 }}.</strong> {{ blurb.1 }}</p>
+    </div>
+    <div class="btn-group">
+        {% for key, label in voucher_types %}
+        <a href="{% url 'finance:voucher_new' key %}"
+           class="btn btn-sm {% if key == voucher_type %}btn-primary{% else %}btn-outline-primary{% endif %}">{{ label }}</a>
+        {% endfor %}
+        <a href="{% url 'finance:voucher_list' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-list-ul"></i> Register</a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Date of Transaction <span class="text-danger">*</span></label>
+                <input type="date" id="vDate" class="form-control" value="{{ today }}" required>
+            </div>
+            <div class="col-md-9">
+                <label class="form-label small text-muted">Description</label>
+                <input type="text" id="vDescription" class="form-control" maxlength="500"
+                       placeholder="What this voucher is for">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Debit side -->
+    <div class="col-lg-6 voucher-side">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white side-title-debit d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Debit</strong>
+                    <small class="text-muted ms-2" id="debitHint"></small>
+                </div>
+                <button class="btn btn-sm btn-outline-primary" onclick="addLine('debit')">
+                    <i class="bi bi-plus"></i> Line</button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0" data-no-paginate>
+                    <thead class="bg-light">
+                        <tr><th class="ps-3" style="width:55%">Account</th><th class="text-end">Debit Amount</th><th style="width:40px"></th></tr>
+                    </thead>
+                    <tbody id="debitBody"></tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td class="ps-3">Total Debit</td>
+                            <td class="text-end" id="totalDebit">0</td><td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credit side -->
+    <div class="col-lg-6 voucher-side">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white side-title-credit d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Credit</strong>
+                    <small class="text-muted ms-2" id="creditHint"></small>
+                </div>
+                <button class="btn btn-sm btn-outline-danger" onclick="addLine('credit')">
+                    <i class="bi bi-plus"></i> Line</button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0" data-no-paginate>
+                    <thead class="bg-light">
+                        <tr><th class="ps-3" style="width:55%">Account</th><th class="text-end">Credit Amount</th><th style="width:40px"></th></tr>
+                    </thead>
+                    <tbody id="creditBody"></tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td class="ps-3">Total Credit</td>
+                            <td class="text-end" id="totalCredit">0</td><td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Totals -->
+<div class="card mt-3 totals-bar shadow">
+    <div class="card-body py-2">
+        <div class="row align-items-center g-2">
+            <div class="col-sm-3 col-6">
+                <small class="text-muted text-uppercase fw-bold">Total Debit</small>
+                <div class="fs-5 fw-bold" id="barDebit">0</div>
+            </div>
+            <div class="col-sm-3 col-6">
+                <small class="text-muted text-uppercase fw-bold">Total Credit</small>
+                <div class="fs-5 fw-bold" id="barCredit">0</div>
+            </div>
+            <div class="col-sm-3 col-6">
+                <small class="text-muted text-uppercase fw-bold">Difference</small>
+                <div class="fs-5 fw-bold" id="barDiff">0</div>
+                <small id="barDiffNote" class="text-muted"></small>
+            </div>
+            <div class="col-sm-3 col-6 text-end">
+                <button class="btn btn-outline-secondary me-1" onclick="resetForm()">Clear</button>
+                <button class="btn btn-success" id="postBtn" onclick="postVoucher()" disabled>
+                    <i class="bi bi-check2-circle"></i> Post Voucher</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert alert-light border mt-3 small text-muted">
+    <i class="bi bi-info-circle"></i>
+    Whenever the two sides do not match, the difference is filled into the next empty amount field on the short
+    side — a new line is opened if there is none — so you only pick its account and the voucher balances. Add as many debit and credit lines as you need.
+    Nothing can be posted until Total Debit equals Total Credit; the voucher number and its General Ledger
+    entries are written the moment it is.
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    const VOUCHER_TYPE = '{{ voucher_type }}';
+    const GROUPS = { debit: '{{ debit_group }}', credit: '{{ credit_group }}' };
+    const HINTS = {
+        money: 'bank accounts and cash books',
+        non_money: 'all ledgers except bank accounts and cash books',
+        all: 'all ledgers',
+    };
+
+    // Ledgers offered on each side, and the lines the user has built so far.
+    const accounts = { debit: [], credit: [] };
+    const accountById = {};
+    let lines = [];           // {uid, side, account, amount, auto, allocations:[{id, amount}], outstanding:[]}
+    let uidSeq = 1;
+
+    document.addEventListener('DOMContentLoaded', async function () {
+        document.getElementById('debitHint').innerText = HINTS[GROUPS.debit];
+        document.getElementById('creditHint').innerText = HINTS[GROUPS.credit];
+        await loadAccounts();
+        resetForm();
+    });
+
+    function fmt(v) {
+        return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+    function num(v) {
+        const n = parseFloat(String(v == null ? '' : v).replace(/,/g, ''));
+        return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+    }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    async function loadAccounts() {
+        for (const side of ['debit', 'credit']) {
+            const group = GROUPS[side];
+            const url = '/api/ledger-accounts/?is_active=true' + (group === 'all' ? '' : '&group=' + group);
+            try {
+                const res = await fetch(url);
+                accounts[side] = res.ok ? await res.json() : [];
+            } catch (e) { console.error(e); accounts[side] = []; }
+            accounts[side].forEach(a => accountById[a.id] = a);
+        }
+    }
+
+    function accountOptions(side, selected) {
+        const byKind = {};
+        accounts[side].forEach(a => { (byKind[a.kind_display] = byKind[a.kind_display] || []).push(a); });
+        let html = '<option value="">— pick a ledger —</option>';
+        Object.keys(byKind).sort().forEach(kind => {
+            html += '<optgroup label="' + escapeHtml(kind) + '">';
+            byKind[kind].forEach(a => {
+                html += '<option value="' + a.id + '"' + (String(a.id) === String(selected) ? ' selected' : '') + '>'
+                      + escapeHtml(a.code + '  ' + a.name) + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        return html;
+    }
+
+    // ---- lines ------------------------------------------------------------
+
+    function newLine(side, amount, auto) {
+        return { uid: uidSeq++, side, account: '', amount: amount || 0, auto: !!auto, allocations: [], outstanding: null };
+    }
+
+    function resetForm() {
+        lines = [newLine('debit', 0, false), newLine('credit', 0, false)];
+        document.getElementById('vDescription').value = '';
+        render();
+    }
+
+    function addLine(side) {
+        lines.push(newLine(side, 0, false));
+        render();
+    }
+
+    function removeLine(uid) {
+        lines = lines.filter(l => l.uid !== uid);
+        balance();
+    }
+
+    function total(side) {
+        return Math.round(lines.filter(l => l.side === side).reduce((s, l) => s + num(l.amount), 0) * 100) / 100;
+    }
+
+    /* The spec's core rule: when the sides differ, the difference is filled
+       into the next amount field on the short side. That is the empty line
+       the user already has open (account picked or not) if there is one, and
+       a fresh line otherwise. An amount the system wrote stays "auto" until
+       the user types over it: it is re-sized as the other lines change, and a
+       line nobody has claimed with an account is dropped again once the
+       sides agree. */
+    function balance() {
+        lines = lines.filter(l => !(l.auto && !l.account));
+        lines.forEach(l => { if (l.auto) l.amount = 0; });
+        const diff = Math.round((total('debit') - total('credit')) * 100) / 100;
+        if (diff !== 0) {
+            const side = diff > 0 ? 'credit' : 'debit';
+            const empty = lines.find(l => l.side === side && num(l.amount) === 0);
+            if (empty) { empty.amount = Math.abs(diff); empty.auto = true; }
+            else lines.push(newLine(side, Math.abs(diff), true));
+        }
+        lines.forEach(l => { if (l.auto) clampAllocations(l); });
+        render();
+    }
+
+    function onAmount(uid, value) {
+        const line = lines.find(l => l.uid === uid);
+        if (!line) return;
+        line.amount = num(value);
+        line.auto = false;
+        clampAllocations(line);
+        balance();
+    }
+
+    async function onAccount(uid, value) {
+        const line = lines.find(l => l.uid === uid);
+        if (!line) return;
+        line.account = value;
+        line.allocations = [];
+        line.outstanding = null;
+        balance();
+        if (allocatable(line)) {
+            // Show the line at once with "Loading…" and fill the invoices in
+            // when they arrive, rather than freezing the dropdown meanwhile.
+            await loadOutstanding(line);
+            render();
+        }
+    }
+
+    // A customer credited (they paid us) or a supplier debited (we paid them)
+    // can have the amount set against open invoices or bills.
+    function allocatable(line) {
+        const acct = accountById[line.account];
+        if (!acct) return false;
+        return (acct.kind === 'customer' && line.side === 'credit')
+            || (acct.kind === 'supplier' && line.side === 'debit');
+    }
+
+    async function loadOutstanding(line) {
+        try {
+            const res = await fetch('/api/ledger-accounts/' + line.account + '/outstanding/');
+            const data = res.ok ? await res.json() : { items: [] };
+            line.outstanding = data.items || [];
+        } catch (e) { console.error(e); line.outstanding = []; }
+    }
+
+    function allocated(line) {
+        return Math.round(line.allocations.reduce((s, a) => s + num(a.amount), 0) * 100) / 100;
+    }
+
+    function setAllocation(uid, targetId, value) {
+        const line = lines.find(l => l.uid === uid);
+        if (!line) return;
+        const row = (line.outstanding || []).find(r => r.id === targetId);
+        let amount = Math.max(0, num(value));
+        if (row) amount = Math.min(amount, num(row.outstanding));
+        line.allocations = line.allocations.filter(a => a.id !== targetId);
+        if (amount > 0) line.allocations.push({ id: targetId, amount });
+        // Allocating more than the line carries is refused by the server;
+        // catch it here so the form never looks right when it is not.
+        clampAllocations(line);
+        render();
+    }
+
+    function clampAllocations(line) {
+        let room = num(line.amount);
+        line.allocations.forEach(a => {
+            a.amount = Math.min(a.amount, Math.max(0, room));
+            room = Math.round((room - a.amount) * 100) / 100;
+        });
+        line.allocations = line.allocations.filter(a => a.amount > 0);
+    }
+
+    // Oldest invoice first, until the line amount is used up.
+    function autoAllocate(uid) {
+        const line = lines.find(l => l.uid === uid);
+        if (!line || !line.outstanding) return;
+        let room = num(line.amount);
+        line.allocations = [];
+        for (const row of line.outstanding) {
+            if (room <= 0) break;
+            const take = Math.min(room, num(row.outstanding));
+            line.allocations.push({ id: row.id, amount: take });
+            room = Math.round((room - take) * 100) / 100;
+        }
+        render();
+    }
+
+    // ---- rendering --------------------------------------------------------
+
+    function render() {
+        for (const side of ['debit', 'credit']) {
+            const body = document.getElementById(side + 'Body');
+            body.innerHTML = '';
+            lines.filter(l => l.side === side).forEach(line => body.appendChild(lineRow(line)));
+            document.getElementById(side === 'debit' ? 'totalDebit' : 'totalCredit').innerText = fmt(total(side));
+        }
+
+        const td = total('debit'), tc = total('credit');
+        const diff = Math.round((td - tc) * 100) / 100;
+        document.getElementById('barDebit').innerText = fmt(td);
+        document.getElementById('barCredit').innerText = fmt(tc);
+        const diffEl = document.getElementById('barDiff');
+        const noteEl = document.getElementById('barDiffNote');
+        diffEl.innerText = fmt(Math.abs(diff));
+        diffEl.className = 'fs-5 fw-bold ' + (diff === 0 && td > 0 ? 'diff-ok' : 'diff-bad');
+        noteEl.innerText = diff === 0
+            ? (td > 0 ? 'Balanced' : '')
+            : (diff > 0 ? 'Credit side is short' : 'Debit side is short');
+
+        const complete = lines.length >= 2 && td > 0 && diff === 0
+            && lines.every(l => l.account && num(l.amount) > 0)
+            && lines.filter(l => l.side === 'debit').length > 0
+            && lines.filter(l => l.side === 'credit').length > 0;
+        document.getElementById('postBtn').disabled = !complete;
+    }
+
+    function lineRow(line) {
+        const frag = document.createDocumentFragment();
+        const tr = document.createElement('tr');
+        if (line.auto) tr.className = 'line-auto';
+        const hint = !line.auto ? ''
+            : line.account ? '<small class="text-warning-emphasis"><i class="bi bi-lightning-charge"></i> Difference carried here</small>'
+            : '<small class="text-warning-emphasis"><i class="bi bi-lightning-charge"></i> Difference carried here — pick the account</small>';
+        tr.innerHTML =
+            '<td class="ps-3">' +
+                '<select class="form-select form-select-sm" onchange="onAccount(' + line.uid + ', this.value)">' +
+                    accountOptions(line.side, line.account) +
+                '</select>' +
+                hint +
+            '</td>' +
+            '<td class="text-end">' +
+                '<input type="text" inputmode="decimal" class="form-control form-control-sm amount-input" ' +
+                    'value="' + (num(line.amount) ? fmt(line.amount) : '') + '" placeholder="0" ' +
+                    'onchange="onAmount(' + line.uid + ', this.value)">' +
+            '</td>' +
+            '<td class="text-end pe-2">' +
+                '<button class="btn btn-sm btn-link text-danger p-0" title="Remove line" onclick="removeLine(' + line.uid + ')">' +
+                    '<i class="bi bi-x-lg"></i></button>' +
+            '</td>';
+        frag.appendChild(tr);
+        // The outstanding invoices or bills get a row of their own, the full
+        // width of the side, so a reference and its figures sit on one line.
+        const box = allocationBox(line);
+        if (box) {
+            const alloc = document.createElement('tr');
+            alloc.className = 'alloc-row';
+            alloc.innerHTML = '<td colspan="3" class="ps-3 pt-0 border-top-0">' + box + '</td>';
+            frag.appendChild(alloc);
+        }
+        return frag;
+    }
+
+    function allocationBox(line) {
+        if (!allocatable(line)) return '';
+        const acct = accountById[line.account];
+        const rows = line.outstanding;
+        if (rows === null) return '<div class="alloc-box p-2 small text-muted">Loading outstanding…</div>';
+        const what = acct.kind === 'customer' ? 'invoices' : 'bills';
+        if (!rows.length) {
+            return '<div class="alloc-box p-2 small text-muted">' + escapeHtml(acct.name) +
+                   ' has no outstanding ' + what + '.</div>';
+        }
+        const left = Math.round((num(line.amount) - allocated(line)) * 100) / 100;
+        let html = '<div class="alloc-box p-2">' +
+            '<div class="d-flex justify-content-between align-items-center mb-1">' +
+                '<small class="fw-bold">Outstanding ' + what + ' — allocate this ' + line.side + '</small>' +
+                '<button class="btn btn-link btn-sm p-0" onclick="autoAllocate(' + line.uid + ')">oldest first</button>' +
+            '</div>' +
+            '<table class="table table-sm table-borderless mb-1 small" data-no-paginate><tbody>';
+        rows.forEach(r => {
+            const a = line.allocations.find(x => x.id === r.id);
+            html += '<tr>' +
+                '<td class="ps-0"><strong>' + escapeHtml(r.reference) + '</strong> <span class="text-muted">' + escapeHtml(r.date) + '</span></td>' +
+                '<td class="text-end text-muted">owed ' + fmt(r.outstanding) + '</td>' +
+                '<td class="text-end" style="width:160px"><input type="text" inputmode="decimal" ' +
+                    'class="form-control form-control-sm amount-input" placeholder="0" ' +
+                    'value="' + (a ? fmt(a.amount) : '') + '" ' +
+                    'onchange="setAllocation(' + line.uid + ', ' + r.id + ', this.value)"></td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>' +
+            '<div class="d-flex justify-content-between small">' +
+                '<span>Allocated: <strong>' + fmt(allocated(line)) + '</strong></span>' +
+                '<span class="' + (left < 0 ? 'text-danger' : 'text-muted') + '">Unallocated: ' + fmt(left) + '</span>' +
+            '</div></div>';
+        return html;
+    }
+
+    // ---- posting ----------------------------------------------------------
+
+    function payload() {
+        return {
+            voucher_type: VOUCHER_TYPE,
+            date: document.getElementById('vDate').value,
+            description: document.getElementById('vDescription').value,
+            lines: lines.map(l => {
+                const acct = accountById[l.account] || {};
+                return {
+                    side: l.side,
+                    account: l.account,
+                    amount: num(l.amount).toFixed(2),
+                    allocations: l.allocations.map(a => acct.kind === 'customer'
+                        ? { sale: a.id, amount: a.amount.toFixed(2) }
+                        : { purchase_order: a.id, amount: a.amount.toFixed(2) }),
+                };
+            }),
+        };
+    }
+
+    async function postVoucher() {
+        const date = document.getElementById('vDate').value;
+        if (!date) { Swal.fire('Missing date', 'Give the voucher a date of transaction.', 'warning'); return; }
+        const btn = document.getElementById('postBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch('/api/vouchers/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(payload()),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const msg = data.lines || data.detail || data.date || data.voucher_type || data.error
+                          || 'The voucher could not be posted.';
+                Swal.fire('Not posted', Array.isArray(msg) ? msg.join('<br>') : String(msg), 'error');
+                render();
+                return;
+            }
+            const result = await Swal.fire({
+                title: 'Posted ' + data.number,
+                html: '<div class="fs-4 fw-bold">TZS ' + fmt(data.total) + '</div>' +
+                      '<small class="text-muted">' + escapeHtml(data.voucher_type_display) + ' voucher dated ' +
+                      escapeHtml(data.date) + '. Its entries are in the General Ledger.</small>',
+                icon: 'success',
+                showDenyButton: true,
+                confirmButtonText: 'Another ' + data.voucher_type_display.toLowerCase(),
+                denyButtonText: 'View voucher',
+                denyButtonColor: '#0d6efd',
+            });
+            if (result.isDenied) {
+                window.location.href = '{% url "finance:voucher_detail" 0 %}'.replace('/0/', '/' + data.id + '/');
+                return;
+            }
+            resetForm();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'The voucher could not be posted.', 'error');
+            render();
+        }
+    }
+</script>
+{% endblock %}

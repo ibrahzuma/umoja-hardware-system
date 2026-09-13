@@ -1,0 +1,283 @@
+{% extends 'base.html' %}
+
+{% block title %}Ledgers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Ledgers</h2>
+        <p class="text-muted mb-0 small">The chart of accounts. Every bank account, customer and supplier already
+            has a ledger here and follows renames; add income, expense, tax, asset, liability and equity ledgers
+            as the books need them. A ledger's kind decides which voucher dropdowns it appears in.</p>
+    </div>
+    <div>
+        <a href="{% url 'finance:voucher_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-text"></i> Vouchers</a>
+        <a href="{% url 'finance:general_ledger' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-bookmark"></i> General Ledger</a>
+        <button class="btn btn-primary" onclick="openForm()"><i class="bi bi-plus-lg"></i> New Ledger</button>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search code or name…" onkeyup="render()">
+            </div>
+            <div class="col-md-3">
+                <select id="kindFilter" class="form-select" onchange="render()">
+                    <option value="">All kinds</option>
+                    <option value="money">Bank accounts &amp; cash books</option>
+                    {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="activeFilter" class="form-select" onchange="render()">
+                    <option value="true">Open</option>
+                    <option value="">All</option>
+                    <option value="false">Closed</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-center justify-content-end">
+                <small class="text-muted" id="entryCount"></small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" data-export="Ledgers">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4">Code</th>
+                        <th>Name</th>
+                        <th>Kind</th>
+                        <th>Follows</th>
+                        <th class="text-end">Opening</th>
+                        <th class="text-end">Balance</th>
+                        <th>Status</th>
+                        <th class="text-end pe-4">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="8" class="text-center py-4 text-muted">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add / edit -->
+<div class="modal fade" id="ledgerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="ledgerForm" onsubmit="saveLedger(event)">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ledgerModalTitle">New Ledger</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="fId">
+                <div class="mb-3">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" id="fName" class="form-control" required maxlength="150">
+                </div>
+                <div class="row g-3">
+                    <div class="col-7">
+                        <label class="form-label">Kind <span class="text-danger">*</span></label>
+                        <select id="fKind" class="form-select" required>
+                            {% for key, label in kinds %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+                        </select>
+                        <div class="form-text" id="fKindNote"></div>
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label">Code</label>
+                        <input type="text" id="fCode" class="form-control" maxlength="20" placeholder="auto">
+                    </div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-7">
+                        <label class="form-label">Opening balance</label>
+                        <input type="number" id="fOpening" class="form-control" min="0" step="0.01" value="0">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label">On side</label>
+                        <select id="fSide" class="form-select">
+                            <option value="">Normal side</option>
+                            <option value="debit">Debit</option>
+                            <option value="credit">Credit</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label">Notes</label>
+                    <textarea id="fNotes" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    let ledgers = [];
+    const MONEY = ['bank', 'cash'];
+    const LEDGER_URL = '{% url "finance:general_ledger" %}';
+    const KIND_BADGE = {
+        bank: 'bg-primary', cash: 'bg-primary', customer: 'bg-success', supplier: 'bg-danger',
+        income: 'bg-info text-dark', expense: 'bg-warning text-dark', asset: 'bg-secondary',
+        liability: 'bg-dark', tax: 'bg-secondary', equity: 'bg-dark',
+    };
+    let modal;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        modal = new bootstrap.Modal(document.getElementById('ledgerModal'));
+        document.getElementById('fKind').addEventListener('change', kindNote);
+        load();
+    });
+
+    function money(v) { return Math.round(Number(v || 0)).toLocaleString(); }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/ledger-accounts/');
+            if (!res.ok) throw new Error('status ' + res.status);
+            ledgers = await res.json();
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('tableBody').innerHTML =
+                '<tr><td colspan="8" class="text-center py-4 text-danger">Could not load the ledgers.</td></tr>';
+        }
+    }
+
+    function visible() {
+        const term = (document.getElementById('searchInput').value || '').toLowerCase();
+        const kind = document.getElementById('kindFilter').value;
+        const active = document.getElementById('activeFilter').value;
+        return ledgers.filter(l =>
+            (l.code + ' ' + l.name).toLowerCase().includes(term)
+            && (kind === 'money' ? MONEY.includes(l.kind) : (kind ? l.kind === kind : true))
+            && (active ? String(l.is_active) === active : true));
+    }
+
+    function render() {
+        const rows = visible();
+        const tbody = document.getElementById('tableBody');
+        document.getElementById('entryCount').innerText = rows.length + ' of ' + ledgers.length + ' ledgers';
+        tbody.innerHTML = '';
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No ledgers found</td></tr>';
+            return;
+        }
+        rows.forEach(l => {
+            const tr = document.createElement('tr');
+            if (!l.is_active) tr.className = 'text-muted';
+            // The API reports a balance as positive on the ledger's normal side.
+            const b = Number(l.balance || 0);
+            const side = b === 0 ? '' : (b > 0 ? l.normal_side : (l.normal_side === 'debit' ? 'credit' : 'debit'));
+            const bal = l.balance == null ? '' : money(Math.abs(b)) + (side ? ' ' + (side === 'debit' ? 'Dr' : 'Cr') : '');
+            tr.innerHTML =
+                '<td class="ps-4 fw-bold">' + escapeHtml(l.code) + '</td>' +
+                '<td>' + escapeHtml(l.name) + (l.notes ? '<div class="small text-muted">' + escapeHtml(l.notes) + '</div>' : '') + '</td>' +
+                '<td><span class="badge ' + (KIND_BADGE[l.kind] || 'bg-secondary') + '">' + escapeHtml(l.kind_display) + '</span></td>' +
+                '<td class="small text-muted">' + (l.linked_to ? 'a ' + l.linked_to + ' record' : '') + '</td>' +
+                '<td class="text-end">' + (Number(l.opening_balance) ? money(l.opening_balance) + ' ' + (l.opening_side === 'debit' ? 'Dr' : 'Cr') : '—') + '</td>' +
+                '<td class="text-end fw-bold">' + bal + '</td>' +
+                '<td><span class="badge ' + (l.is_active ? 'bg-success' : 'bg-dark') + '">' + (l.is_active ? 'Open' : 'Closed') + '</span></td>' +
+                '<td class="text-end pe-4">' +
+                    '<a class="btn btn-sm btn-outline-secondary" href="' + LEDGER_URL + '?account=' + l.id + '" title="Statement"><i class="bi bi-journal-bookmark"></i></a> ' +
+                    '<button class="btn btn-sm btn-outline-primary" title="Edit" onclick="openForm(' + l.id + ')"><i class="bi bi-pencil"></i></button> ' +
+                    '<button class="btn btn-sm ' + (l.is_active ? 'btn-outline-dark' : 'btn-outline-success') + '" title="' + (l.is_active ? 'Close' : 'Reopen') + '" onclick="toggleActive(' + l.id + ')">' +
+                        '<i class="bi ' + (l.is_active ? 'bi-lock' : 'bi-unlock') + '"></i></button>' +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function kindNote() {
+        const kind = document.getElementById('fKind').value;
+        document.getElementById('fKindNote').innerText = MONEY.includes(kind)
+            ? 'Money sits here: offered on the debit side of a Receipt, the credit side of a Payment, both sides of a Contra.'
+            : 'Offered wherever a non-money ledger is allowed, and anywhere on a Journal.';
+    }
+
+    function openForm(id) {
+        const l = id ? ledgers.find(x => x.id === id) : null;
+        document.getElementById('ledgerModalTitle').innerText = l ? 'Edit ' + l.code : 'New Ledger';
+        document.getElementById('fId').value = l ? l.id : '';
+        document.getElementById('fName').value = l ? l.name : '';
+        document.getElementById('fKind').value = l ? l.kind : 'expense';
+        document.getElementById('fKind').disabled = !!(l && l.linked_to);
+        document.getElementById('fCode').value = l ? l.code : '';
+        document.getElementById('fOpening').value = l ? l.opening_balance : 0;
+        document.getElementById('fSide').value = l ? l.opening_side : '';
+        document.getElementById('fNotes').value = l ? l.notes : '';
+        kindNote();
+        modal.show();
+    }
+
+    async function saveLedger(ev) {
+        ev.preventDefault();
+        const id = document.getElementById('fId').value;
+        const body = {
+            name: document.getElementById('fName').value.trim(),
+            kind: document.getElementById('fKind').value,
+            code: document.getElementById('fCode').value.trim(),
+            opening_balance: document.getElementById('fOpening').value || '0',
+            opening_side: document.getElementById('fSide').value,
+            notes: document.getElementById('fNotes').value,
+        };
+        try {
+            const res = await fetch('/api/ledger-accounts/' + (id ? id + '/' : ''), {
+                method: id ? 'PATCH' : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const msg = Object.values(data).flat().join('<br>') || 'Could not save the ledger';
+                Swal.fire('Not saved', msg, 'error');
+                return;
+            }
+            modal.hide();
+            load();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not save the ledger', 'error');
+        }
+    }
+
+    async function toggleActive(id) {
+        const l = ledgers.find(x => x.id === id);
+        if (!l) return;
+        try {
+            const res = await fetch('/api/ledger-accounts/' + id + '/', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify({ is_active: !l.is_active }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                Swal.fire('Error', err.detail || 'Could not update the ledger', 'error');
+                return;
+            }
+            load();
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not update the ledger', 'error');
+        }
+    }
+</script>
+{% endblock %}

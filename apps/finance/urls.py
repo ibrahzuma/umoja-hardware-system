@@ -37,6 +37,13 @@ urlpatterns = [
     path('profit-loss/', views.ProfitLossView.as_view(), name='profit_loss'),
     path('cash-flow/', views.CashFlowView.as_view(), name='cash_flow'),
     path('balance-sheet/', views.BalanceSheetView.as_view(), name='balance_sheet'),
+
+    # The books: chart of accounts, voucher entry, general ledger
+    path('accounts/', views.ChartOfAccountsView.as_view(), name='chart_of_accounts'),
+    path('vouchers/', views.VoucherListView.as_view(), name='voucher_list'),
+    path('vouchers/new/<str:voucher_type>/', views.VoucherFormView.as_view(), name='voucher_new'),
+    path('vouchers/<int:pk>/', views.VoucherDetailView.as_view(), name='voucher_detail'),
+    path('general-ledger/', views.GeneralLedgerView.as_view(), name='general_ledger'),
     path('taxes/', views.TaxPaymentListView.as_view(), name='tax_payment_list'),
     path('debtors/', views.DebtorListView.as_view(), name='debtors_list'),
     path('receipts/', views.PaymentReceiptListView.as_view(), name='payment_receipt_list'),

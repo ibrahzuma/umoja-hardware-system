@@ -141,6 +141,26 @@ See `DEPLOYMENT.md` for one-time server setup.
       Delivery"** everywhere and why the money on them is owed. Debtors are invoices Accounts have not confirmed
       as paid, posted or not — with posting and payment one act, a sale still waiting on Accounts is exactly one
       nobody has been paid for.
+  - **The books proper — vouchers and the General Ledger** (`apps/finance/vouchers.py`, spec in the
+    "Accounting System – Voucher Data Entry Requirements" document). `LedgerAccount` is the chart of accounts;
+    every ledger has a `kind`, and the kind decides which dropdown it sits in: `bank`/`cash` are the *money*
+    kinds, everything else is *non-money*. Bank accounts, customers and suppliers are never typed in twice —
+    each grows a ledger on save (`signals.py` → `ensure_ledger_for`; `sync_chart_of_accounts()` backfills and
+    seeds the default ledgers). Four voucher types, told apart only by `Voucher.RULES` (which kinds may sit on
+    each side): **Receipt** Dr money / Cr non-money, **Payment** Dr non-money / Cr money, **Contra** money both
+    sides, **Journal** anything. `post_voucher` is the only writer: it refuses an unbalanced voucher, a ledger on
+    a side its type forbids, and any allocation past what is owed, then writes the `Voucher`, its lines and one
+    `GeneralLedgerEntry` per line in one transaction. Numbers are per type (`RV-/PV-/CV-/JV-000001`). Vouchers
+    are never edited — `cancel_voucher` removes the GL rows and keeps the document. A customer credited on a
+    Receipt (or a supplier debited on a Payment) is offered its outstanding invoices/bills for allocation
+    (`/api/ledger-accounts/<id>/outstanding/`); outstanding = total − till/approved payments − earlier posted
+    allocations, derived, never stored. The form (`voucher_form.html`) follows the spec's entry rule: whenever
+    the sides differ, the difference is written into the next empty amount field on the short side (a new line
+    only when none is open) and the user picks its account; a system-written amount re-sizes as the other lines
+    change until the user types over it; Post is disabled until Total Debit = Total Credit, and the server
+    checks again. Screens: `/finance/vouchers/`, `/finance/vouchers/new/<type>/`, `/finance/general-ledger/`
+    (one ledger's statement or the trial balance), `/finance/accounts/`. Access is the same admin + accountant
+    predicate as the sales ledger. Tests: `apps/finance/tests.py`.
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
     is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
     way — the ledger mirrors, it does not authorise.

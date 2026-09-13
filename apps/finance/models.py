@@ -477,3 +477,242 @@ class PettyCashRequest(models.Model):
 
     def __str__(self):
         return f"{self.requested_by} - {self.amount} ({self.get_status_display()})"
+
+
+# ---------------------------------------------------------------------------
+# General ledger — the chart of accounts, vouchers, and the entries they post
+# ---------------------------------------------------------------------------
+
+class LedgerAccount(models.Model):
+    """One ledger in the chart of accounts.
+
+    Every ledger has a *kind*, and the kind is what the voucher screens use to
+    decide which dropdown a ledger belongs in: Receipts debit a bank account or
+    cash book and credit anything else, Payments the other way round, Contra
+    moves money between bank accounts and cash books, and a Journal may touch
+    any ledger at all (see `Voucher.RULES`).
+
+    Bank accounts, customers and suppliers are not typed in twice: a ledger is
+    kept for every `BankAccount`, `sales.Customer` and `inventory.Supplier`
+    (`apps/finance/vouchers.py::sync_chart_of_accounts`, also run from the
+    signals when one is created), linked back through the one-to-one fields
+    so a customer ledger knows which invoices to offer for allocation.
+    """
+    KINDS = (
+        ('bank', 'Bank Account'),
+        ('cash', 'Cash Book'),
+        ('customer', 'Customer'),
+        ('supplier', 'Supplier'),
+        ('income', 'Income'),
+        ('expense', 'Expense'),
+        ('asset', 'Other Asset'),
+        ('liability', 'Other Liability'),
+        ('tax', 'Tax'),
+        ('equity', 'Equity'),
+    )
+    # The ledgers money physically sits in — one side of a Receipt or Payment,
+    # both sides of a Contra.
+    MONEY_KINDS = ('bank', 'cash')
+    # Which side a ledger's balance normally sits on.
+    DEBIT_KINDS = ('bank', 'cash', 'customer', 'asset', 'expense')
+    CODE_PREFIX = {
+        'bank': 'BK', 'cash': 'CB', 'customer': 'CU', 'supplier': 'SU', 'income': 'IN',
+        'expense': 'EX', 'asset': 'AS', 'liability': 'LI', 'tax': 'TX', 'equity': 'EQ',
+    }
+    SIDES = (('debit', 'Debit'), ('credit', 'Credit'))
+
+    code = models.CharField(max_length=20, unique=True, blank=True,
+                            help_text="Auto-generated from the kind if left blank, e.g. CU-0012")
+    name = models.CharField(max_length=150)
+    kind = models.CharField(max_length=10, choices=KINDS, db_index=True)
+
+    bank_account = models.OneToOneField(BankAccount, on_delete=models.SET_NULL, null=True, blank=True,
+                                        related_name='ledger')
+    customer = models.OneToOneField('sales.Customer', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='ledger')
+    supplier = models.OneToOneField('inventory.Supplier', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='ledger')
+
+    opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                          help_text="Balance brought forward when the books began")
+    opening_side = models.CharField(max_length=6, choices=SIDES, blank=True,
+                                    help_text="Which side the opening balance sits on; "
+                                              "defaults to the ledger's normal side")
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['kind', 'code']
+        verbose_name = 'Ledger Account'
+
+    @property
+    def is_money(self):
+        return self.kind in self.MONEY_KINDS
+
+    @property
+    def normal_side(self):
+        return 'debit' if self.kind in self.DEBIT_KINDS else 'credit'
+
+    @property
+    def opening_debit(self):
+        """The opening balance expressed as debit-minus-credit."""
+        side = self.opening_side or self.normal_side
+        amount = self.opening_balance or 0
+        return amount if side == 'debit' else -amount
+
+    def save(self, *args, **kwargs):
+        if not self.opening_side:
+            self.opening_side = self.normal_side
+        if not self.code:
+            prefix = self.CODE_PREFIX.get(self.kind, 'GL')
+            n = LedgerAccount.objects.filter(kind=self.kind).count() + 1
+            while LedgerAccount.objects.filter(code=f"{prefix}-{n:04d}").exists():
+                n += 1
+            self.code = f"{prefix}-{n:04d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.code} {self.name}"
+
+
+class Voucher(models.Model):
+    """One double-entry document: a set of lines whose debits equal credits.
+
+    Four kinds, told apart only by which ledgers each side may use:
+
+        Receipt   Dr bank/cash        Cr anything else   (money coming in)
+        Payment   Dr anything else    Cr bank/cash       (money going out)
+        Contra    Dr bank/cash        Cr bank/cash       (moving our own money)
+        Journal   Dr any ledger       Cr any ledger      (everything else)
+
+    A voucher is posted the moment it is saved — `vouchers.post_voucher` checks
+    that the two sides balance, that every ledger is allowed where it was used,
+    and that nothing allocated to an invoice or bill exceeds what is owed on
+    it, then writes a `GeneralLedgerEntry` per line in the same transaction.
+    Posted vouchers are never edited. A wrong one is *cancelled*, which takes
+    its entries back out of the ledger while leaving the document itself for
+    the audit trail.
+    """
+    TYPES = (
+        ('receipt', 'Receipt'),
+        ('payment', 'Payment'),
+        ('contra', 'Contra'),
+        ('journal', 'Journal'),
+    )
+    PREFIX = {'receipt': 'RV', 'payment': 'PV', 'contra': 'CV', 'journal': 'JV'}
+    # Which kinds of ledger may sit on the debit and credit side of each type:
+    # a tuple of kinds, 'non_money' for everything but bank/cash, or None for
+    # any ledger.
+    RULES = {
+        'receipt': (LedgerAccount.MONEY_KINDS, 'non_money'),
+        'payment': ('non_money', LedgerAccount.MONEY_KINDS),
+        'contra': (LedgerAccount.MONEY_KINDS, LedgerAccount.MONEY_KINDS),
+        'journal': (None, None),
+    }
+    STATUS_CHOICES = (
+        ('posted', 'Posted'),
+        ('cancelled', 'Cancelled'),
+    )
+
+    voucher_type = models.CharField(max_length=10, choices=TYPES, db_index=True)
+    number = models.CharField(max_length=20, unique=True, blank=True,
+                              help_text="Auto-generated on post, e.g. RV-000012")
+    date = models.DateField(db_index=True)
+    description = models.TextField(blank=True)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0,
+                                help_text="Total of the debit side (which equals the credit side)")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='posted', db_index=True)
+
+    created_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
+                                   related_name='vouchers')
+    created_at = models.DateTimeField(auto_now_add=True)
+    cancelled_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='cancelled_vouchers')
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancel_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date', '-id']
+
+    def save(self, *args, **kwargs):
+        if not self.number:
+            prefix = self.PREFIX[self.voucher_type]
+            n = Voucher.objects.filter(voucher_type=self.voucher_type).count() + 1
+            while Voucher.objects.filter(number=f"{prefix}-{n:06d}").exists():
+                n += 1
+            self.number = f"{prefix}-{n:06d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.number} ({self.get_voucher_type_display()}) {self.total}"
+
+
+class VoucherLine(models.Model):
+    """One side of one leg of a voucher: this ledger, this much, debit or credit."""
+    SIDES = LedgerAccount.SIDES
+
+    voucher = models.ForeignKey(Voucher, on_delete=models.CASCADE, related_name='lines')
+    account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name='voucher_lines')
+    side = models.CharField(max_length=6, choices=SIDES)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    narration = models.CharField(max_length=200, blank=True)
+    position = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['voucher', 'side', 'position', 'id']
+
+    def __str__(self):
+        return f"{self.voucher.number} {self.side} {self.account} {self.amount}"
+
+
+class VoucherAllocation(models.Model):
+    """Part of a voucher line set against one customer invoice or supplier bill.
+
+    A customer ledger credited on a Receipt is money the customer has paid;
+    the accountant says which invoices it clears. A supplier ledger debited on
+    a Payment is the mirror image against purchase orders. The link is kept by
+    reference as well as by FK, as everywhere else in the books, so the
+    allocation still reads sensibly if the sale or order is later removed.
+    """
+    line = models.ForeignKey(VoucherLine, on_delete=models.CASCADE, related_name='allocations')
+    sale = models.ForeignKey('sales.Sale', on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='voucher_allocations')
+    purchase_order = models.ForeignKey('inventory.PurchaseOrder', on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name='voucher_allocations')
+    reference = models.CharField(max_length=50, help_text="Invoice number or PO number")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.reference}: {self.amount}"
+
+
+class GeneralLedgerEntry(models.Model):
+    """The General Ledger: one row per voucher line, in posting order.
+
+    Denormalised on purpose — the date, voucher number and description are
+    copied in — so a ledger statement or trial balance is one query over one
+    table. Rows are only ever written by `vouchers.post_voucher` and only
+    ever removed by `vouchers.cancel_voucher`.
+    """
+    voucher = models.ForeignKey(Voucher, on_delete=models.CASCADE, related_name='gl_entries')
+    line = models.OneToOneField(VoucherLine, on_delete=models.CASCADE, related_name='gl_entry')
+    account = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name='gl_entries')
+    date = models.DateField(db_index=True)
+    voucher_type = models.CharField(max_length=10, choices=Voucher.TYPES)
+    voucher_number = models.CharField(max_length=20, db_index=True)
+    description = models.CharField(max_length=300, blank=True)
+    debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['date', 'id']
+        verbose_name = 'General Ledger Entry'
+        verbose_name_plural = 'General Ledger Entries'
+
+    def __str__(self):
+        return f"{self.date} {self.voucher_number} {self.account}: Dr {self.debit} Cr {self.credit}"

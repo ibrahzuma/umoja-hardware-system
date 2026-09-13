@@ -55,3 +55,22 @@ def transaction_deleted(sender, instance, **kwargs):
                 sales_ledger.sync_sale(sale)
     except Exception:
         logger.exception('Sales ledger sync failed removing transaction %s', instance.pk)
+
+
+# --- Chart of accounts -------------------------------------------------------
+# A bank account, customer or supplier gets a ledger the moment it exists, so
+# the voucher dropdowns never lag behind the rest of the system. Renames follow
+# too. See apps/finance/vouchers.py::ensure_ledger_for.
+
+def _ledger_follows(sender, instance, **kwargs):
+    try:
+        from . import vouchers
+        vouchers.ensure_ledger_for(instance)
+    except Exception:
+        logger.exception('Could not keep a ledger for %s %s', sender.__name__, instance.pk)
+
+
+for _model, _uid in (('finance.BankAccount', 'ledger_for_bank'),
+                     ('sales.Customer', 'ledger_for_customer'),
+                     ('inventory.Supplier', 'ledger_for_supplier')):
+    post_save.connect(_ledger_follows, sender=_model, dispatch_uid=_uid, weak=False)

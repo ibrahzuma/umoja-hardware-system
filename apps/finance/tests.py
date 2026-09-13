@@ -1,3 +1,343 @@
+"""The books: voucher entry and the General Ledger.
+
+What these pin down, straight from the voucher data-entry requirements:
+
+* a voucher posts only when Total Debit = Total Credit;
+* each voucher type offers the right ledgers on each side — Receipts debit a
+  bank account or cash book and credit anything else, Payments the reverse,
+  Contra keeps both sides in money ledgers, a Journal may use any ledger;
+* a customer credited on a Receipt (or a supplier debited on a Payment) can
+  have the amount allocated to their outstanding invoices, never past what
+  is owed;
+* voucher numbers are generated, and every posted voucher writes one General
+  Ledger entry per line — and cancelling takes exactly those back out.
+"""
+
+from decimal import Decimal
+
 from django.test import TestCase
 
-# Create your tests here.
+from apps.inventory.models import Branch, PurchaseOrder, Supplier
+from apps.sales.models import Customer, Sale, Transaction
+from apps.users.models import User
+from .models import (
+    BankAccount, GeneralLedgerEntry, LedgerAccount, SupplierPayment, Voucher,
+)
+from . import vouchers
+
+
+class LedgerTestCase(TestCase):
+
+    def setUp(self):
+        self.accountant = User.objects.create_user(username='acc', password='pw', role='accountant')
+        self.cashier = User.objects.create_user(username='till', password='pw', role='cashier')
+        self.branch = Branch.objects.create(name='Main')
+
+        # Bank accounts, customers and suppliers grow a ledger on save.
+        self.bank = BankAccount.objects.create(name='CRDB Main')
+        self.customer = Customer.objects.create(name='Mwananchi Traders')
+        self.supplier = Supplier.objects.create(name='Kibo Suppliers')
+
+        vouchers.sync_chart_of_accounts()
+        self.bank_ledger = self.bank.ledger
+        self.customer_ledger = self.customer.ledger
+        self.supplier_ledger = self.supplier.ledger
+        self.cash = LedgerAccount.objects.get(name='Main Cash Book')
+        self.sales = LedgerAccount.objects.get(name='Sales Revenue')
+        self.rent = LedgerAccount.objects.get(name='Rent')
+
+    # --- helpers -----------------------------------------------------------
+
+    def post(self, voucher_type, lines, date='2026-09-10', description='', user=None):
+        self.client.force_login(user or self.accountant)
+        return self.client.post('/api/vouchers/', {
+            'voucher_type': voucher_type, 'date': date, 'description': description, 'lines': lines,
+        }, content_type='application/json')
+
+    @staticmethod
+    def line(side, account, amount, **extra):
+        return {'side': side, 'account': account.id, 'amount': str(amount), **extra}
+
+    def invoice(self, total, paid=0, number='INV-1'):
+        sale = Sale.objects.create(invoice_number=number, branch=self.branch, customer=self.customer,
+                                   customer_name=self.customer.name, total_amount=total, status='approved')
+        if paid:
+            Transaction.objects.create(sale=sale, amount=paid, payment_method='cash')
+        return sale
+
+
+class ChartOfAccountsTest(LedgerTestCase):
+
+    def test_bank_customer_and_supplier_get_ledgers_of_the_right_kind(self):
+        self.assertEqual(self.bank_ledger.kind, 'bank')
+        self.assertEqual(self.customer_ledger.kind, 'customer')
+        self.assertEqual(self.supplier_ledger.kind, 'supplier')
+        self.assertTrue(self.bank_ledger.code.startswith('BK-'))
+
+    def test_renaming_a_customer_renames_the_ledger(self):
+        self.customer.name = 'Mwananchi Traders Ltd'
+        self.customer.save()
+        self.customer_ledger.refresh_from_db()
+        self.assertEqual(self.customer_ledger.name, 'Mwananchi Traders Ltd')
+
+    def test_sync_is_idempotent(self):
+        before = LedgerAccount.objects.count()
+        self.assertEqual(vouchers.sync_chart_of_accounts(), 0)
+        self.assertEqual(LedgerAccount.objects.count(), before)
+
+    def test_dropdown_groups(self):
+        self.client.force_login(self.accountant)
+        money = {a['kind'] for a in self.client.get('/api/ledger-accounts/?group=money').json()}
+        other = {a['kind'] for a in self.client.get('/api/ledger-accounts/?group=non_money').json()}
+        self.assertEqual(money, {'bank', 'cash'})
+        self.assertFalse(other & {'bank', 'cash'})
+        self.assertIn('customer', other)
+
+    def test_only_accounts_and_admins_may_use_the_books(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.client.get('/api/ledger-accounts/').status_code, 403)
+        self.assertEqual(self.client.get('/finance/vouchers/').status_code, 403)
+        self.client.force_login(self.accountant)
+        self.assertEqual(self.client.get('/finance/vouchers/').status_code, 200)
+        self.assertEqual(self.client.get('/finance/vouchers/new/receipt/').status_code, 200)
+        self.assertEqual(self.client.get('/finance/general-ledger/').status_code, 200)
+        self.assertEqual(self.client.get('/finance/accounts/').status_code, 200)
+
+
+class VoucherPostingTest(LedgerTestCase):
+
+    def test_receipt_posts_and_writes_the_general_ledger(self):
+        res = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 1000000),
+            self.line('credit', self.customer_ledger, 800000),
+            self.line('credit', self.sales, 200000),
+        ], description='Cash and a sale')
+        self.assertEqual(res.status_code, 201, res.content)
+        data = res.json()
+        self.assertEqual(data['number'], 'RV-000001')
+        self.assertEqual(Decimal(data['total']), Decimal('1000000'))
+
+        entries = GeneralLedgerEntry.objects.filter(voucher_id=data['id'])
+        self.assertEqual(entries.count(), 3)
+        self.assertEqual(sum(e.debit for e in entries), Decimal('1000000'))
+        self.assertEqual(sum(e.credit for e in entries), Decimal('1000000'))
+        bank_row = entries.get(account=self.bank_ledger)
+        self.assertEqual((bank_row.debit, bank_row.credit), (Decimal('1000000'), Decimal('0')))
+
+    def test_numbers_run_per_type(self):
+        self.post('receipt', [self.line('debit', self.bank_ledger, 10), self.line('credit', self.sales, 10)])
+        self.post('payment', [self.line('debit', self.rent, 10), self.line('credit', self.bank_ledger, 10)])
+        res = self.post('receipt', [self.line('debit', self.cash, 10), self.line('credit', self.sales, 10)])
+        self.assertEqual(res.json()['number'], 'RV-000002')
+        self.assertEqual(Voucher.objects.get(voucher_type='payment').number, 'PV-000001')
+
+    def test_unbalanced_voucher_is_refused(self):
+        res = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 1000000),
+            self.line('credit', self.customer_ledger, 800000),
+        ])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('200000', res.json()['lines'])
+        self.assertEqual(Voucher.objects.count(), 0)
+        self.assertEqual(GeneralLedgerEntry.objects.count(), 0)
+
+    def test_one_sided_voucher_is_refused(self):
+        res = self.post('journal', [self.line('debit', self.rent, 100), self.line('debit', self.sales, 100)])
+        self.assertEqual(res.status_code, 400)
+
+    def test_receipt_cannot_debit_a_non_money_ledger(self):
+        res = self.post('receipt', [self.line('debit', self.rent, 100), self.line('credit', self.sales, 100)])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('cannot be debited', res.json()['lines'])
+
+    def test_receipt_cannot_credit_a_bank_account(self):
+        res = self.post('receipt', [self.line('debit', self.bank_ledger, 100), self.line('credit', self.cash, 100)])
+        self.assertEqual(res.status_code, 400)
+
+    def test_payment_sides(self):
+        ok = self.post('payment', [self.line('debit', self.supplier_ledger, 500), self.line('credit', self.bank_ledger, 500)])
+        self.assertEqual(ok.status_code, 201, ok.content)
+        bad = self.post('payment', [self.line('debit', self.bank_ledger, 500), self.line('credit', self.supplier_ledger, 500)])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_contra_keeps_both_sides_in_money(self):
+        ok = self.post('contra', [self.line('debit', self.cash, 300), self.line('credit', self.bank_ledger, 300)])
+        self.assertEqual(ok.status_code, 201, ok.content)
+        self.assertEqual(ok.json()['number'], 'CV-000001')
+        bad = self.post('contra', [self.line('debit', self.cash, 300), self.line('credit', self.sales, 300)])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_journal_takes_any_ledger(self):
+        res = self.post('journal', [
+            self.line('debit', self.rent, 250), self.line('credit', self.supplier_ledger, 250)])
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()['number'], 'JV-000001')
+
+    def test_closed_ledger_is_refused(self):
+        self.rent.is_active = False
+        self.rent.save()
+        res = self.post('payment', [self.line('debit', self.rent, 100), self.line('credit', self.cash, 100)])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('closed', res.json()['lines'])
+
+    def test_cancel_removes_entries_but_keeps_the_voucher(self):
+        vid = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 100), self.line('credit', self.sales, 100)]).json()['id']
+        res = self.client.post(f'/api/vouchers/{vid}/cancel/', {'reason': 'wrong bank'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(GeneralLedgerEntry.objects.filter(voucher_id=vid).count(), 0)
+        v = Voucher.objects.get(pk=vid)
+        self.assertEqual(v.status, 'cancelled')
+        self.assertEqual(v.cancel_reason, 'wrong bank')
+        self.assertEqual(v.lines.count(), 2)
+        # and never twice
+        self.assertEqual(self.client.post(f'/api/vouchers/{vid}/cancel/').status_code, 400)
+
+    def test_vouchers_cannot_be_edited_or_deleted(self):
+        vid = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 100), self.line('credit', self.sales, 100)]).json()['id']
+        self.assertEqual(self.client.patch(f'/api/vouchers/{vid}/', {}, content_type='application/json').status_code, 405)
+        self.assertEqual(self.client.delete(f'/api/vouchers/{vid}/').status_code, 405)
+
+
+class AllocationTest(LedgerTestCase):
+
+    def test_outstanding_invoices_net_off_till_payments_and_earlier_allocations(self):
+        inv1 = self.invoice(500000, paid=200000, number='INV-1')
+        self.invoice(300000, paid=300000, number='INV-2')     # settled at the till
+        inv3 = self.invoice(100000, number='INV-3')
+
+        self.client.force_login(self.accountant)
+        res = self.client.get(f'/api/ledger-accounts/{self.customer_ledger.id}/outstanding/')
+        self.assertEqual(res.status_code, 200)
+        items = {i['reference']: Decimal(i['outstanding']) for i in res.json()['items']}
+        self.assertEqual(items, {'INV-1': Decimal('300000'), 'INV-3': Decimal('100000')})
+        self.assertEqual(res.json()['side'], 'credit')
+
+        # Receive 250k against INV-1; it now owes 50k.
+        res = self.post('receipt', [
+            self.line('debit', self.bank_ledger, 250000),
+            self.line('credit', self.customer_ledger, 250000,
+                      allocations=[{'sale': inv1.id, 'amount': '250000'}]),
+        ])
+        self.assertEqual(res.status_code, 201, res.content)
+        alloc = next(l for l in res.json()['lines'] if l['side'] == 'credit')['allocations']
+        self.assertEqual(len(alloc), 1)
+        self.assertEqual(alloc[0]['reference'], 'INV-1')
+
+        items = {i['reference']: Decimal(i['outstanding'])
+                 for i in self.client.get(f'/api/ledger-accounts/{self.customer_ledger.id}/outstanding/').json()['items']}
+        self.assertEqual(items, {'INV-1': Decimal('50000'), 'INV-3': Decimal('100000')})
+        self.assertEqual(inv3.voucher_allocations.count(), 0)
+
+    def test_cannot_allocate_more_than_is_owed(self):
+        inv = self.invoice(100000, paid=60000)
+        res = self.post('receipt', [
+            self.line('debit', self.cash, 50000),
+            self.line('credit', self.customer_ledger, 50000,
+                      allocations=[{'sale': inv.id, 'amount': '50000'}]),
+        ])
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('40000', res.json()['lines'])
+        self.assertEqual(Voucher.objects.count(), 0)
+
+    def test_cannot_allocate_more_than_the_line(self):
+        inv = self.invoice(100000)
+        res = self.post('receipt', [
+            self.line('debit', self.cash, 30000),
+            self.line('credit', self.customer_ledger, 30000,
+                      allocations=[{'sale': inv.id, 'amount': '40000'}]),
+        ])
+        self.assertEqual(res.status_code, 400)
+
+    def test_allocation_only_on_the_side_that_settles(self):
+        inv = self.invoice(100000)
+        # A customer debited is a charge, not a payment — nothing to allocate.
+        res = self.post('journal', [
+            self.line('debit', self.customer_ledger, 100, allocations=[{'sale': inv.id, 'amount': '100'}]),
+            self.line('credit', self.sales, 100),
+        ])
+        self.assertEqual(res.status_code, 400)
+
+    def test_cancelled_allocation_frees_the_invoice_again(self):
+        inv = self.invoice(100000)
+        vid = self.post('receipt', [
+            self.line('debit', self.cash, 100000),
+            self.line('credit', self.customer_ledger, 100000,
+                      allocations=[{'sale': inv.id, 'amount': '100000'}]),
+        ]).json()['id']
+        self.assertEqual(vouchers.outstanding_invoices(self.customer), [])
+        self.client.post(f'/api/vouchers/{vid}/cancel/')
+        self.assertEqual(Decimal(vouchers.outstanding_invoices(self.customer)[0]['outstanding']),
+                         Decimal('100000'))
+
+    def test_supplier_bills_net_off_approved_supplier_payments(self):
+        po = PurchaseOrder.objects.create(supplier=self.supplier, branch=self.branch,
+                                          status='received', total_amount=900000)
+        SupplierPayment.objects.create(purchase_order=po, supplier=self.supplier, amount=400000,
+                                       status='paid', payment_date='2026-09-01')
+        SupplierPayment.objects.create(purchase_order=po, supplier=self.supplier, amount=100000,
+                                       status='pending', payment_date='2026-09-02')
+        bills = vouchers.outstanding_bills(self.supplier)
+        self.assertEqual(len(bills), 1)
+        self.assertEqual(Decimal(bills[0]['outstanding']), Decimal('500000'))   # pending money does not count
+
+        res = self.post('payment', [
+            self.line('debit', self.supplier_ledger, 500000,
+                      allocations=[{'purchase_order': po.id, 'amount': '500000'}]),
+            self.line('credit', self.bank_ledger, 500000),
+        ])
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(vouchers.outstanding_bills(self.supplier), [])
+
+
+class ReadingTheLedgerTest(LedgerTestCase):
+
+    def test_statement_running_balance_and_trial_balance_agree(self):
+        self.bank_ledger.opening_balance = 1000000
+        self.bank_ledger.save()
+        self.post('receipt', [self.line('debit', self.bank_ledger, 500000), self.line('credit', self.sales, 500000)],
+                  date='2026-09-01')
+        self.post('payment', [self.line('debit', self.rent, 200000), self.line('credit', self.bank_ledger, 200000)],
+                  date='2026-09-05')
+
+        res = self.client.get(f'/api/ledger-accounts/{self.bank_ledger.id}/statement/')
+        s = res.json()
+        self.assertEqual(Decimal(s['opening_balance']), Decimal('1000000'))
+        self.assertEqual([Decimal(r['balance']) for r in s['rows']], [Decimal('1500000'), Decimal('1300000')])
+        self.assertEqual(Decimal(s['closing_balance']), Decimal('1300000'))
+
+        # A period: the first receipt is carried in as opening.
+        s = self.client.get(f'/api/ledger-accounts/{self.bank_ledger.id}/statement/?from=2026-09-02').json()
+        self.assertEqual(Decimal(s['opening_balance']), Decimal('1500000'))
+        self.assertEqual(len(s['rows']), 1)
+
+        tb = self.client.get('/api/general-ledger/trial_balance/').json()
+        by_code = {r['code']: r for r in tb['rows']}
+        self.assertEqual(Decimal(by_code[self.bank_ledger.code]['closing_debit']), Decimal('1300000'))
+        self.assertEqual(Decimal(by_code[self.sales.code]['closing_credit']), Decimal('500000'))
+        self.assertEqual(Decimal(by_code[self.rent.code]['closing_debit']), Decimal('200000'))
+        # The opening balance is what keeps the two columns apart here —
+        # it is capital nobody has posted — so the totals differ by exactly it.
+        self.assertEqual(Decimal(tb['total_debit']) - Decimal(tb['total_credit']), Decimal('1000000'))
+
+    def test_trial_balance_balances_when_every_entry_came_through_a_voucher(self):
+        self.post('receipt', [self.line('debit', self.cash, 700), self.line('credit', self.sales, 700)])
+        self.post('payment', [self.line('debit', self.rent, 300), self.line('credit', self.cash, 300)])
+        tb = self.client.get('/api/general-ledger/trial_balance/').json()
+        self.assertEqual(Decimal(tb['difference']), Decimal('0'))
+        self.assertEqual(Decimal(tb['total_debit']), Decimal('700'))
+
+    def test_credit_ledger_balance_reads_positive_on_its_own_side(self):
+        self.post('receipt', [self.line('debit', self.cash, 700), self.line('credit', self.sales, 700)])
+        s = self.client.get(f'/api/ledger-accounts/{self.sales.id}/statement/').json()
+        self.assertEqual(Decimal(s['closing_balance']), Decimal('700'))
+        acc = next(a for a in self.client.get('/api/ledger-accounts/').json() if a['id'] == self.sales.id)
+        self.assertEqual(Decimal(acc['balance']), Decimal('700'))
+
+    def test_ledger_with_entries_cannot_be_deleted(self):
+        self.post('receipt', [self.line('debit', self.cash, 700), self.line('credit', self.sales, 700)])
+        res = self.client.delete(f'/api/ledger-accounts/{self.sales.id}/')
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(LedgerAccount.objects.filter(pk=self.sales.pk).exists())

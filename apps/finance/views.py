@@ -1,7 +1,7 @@
 import io
 from decimal import Decimal, InvalidOperation
 from datetime import date
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -28,14 +28,16 @@ from .forms import ExpenseForm
 from .models import (
     Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
     BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
-    PettyCashRequest,
+    PettyCashRequest, LedgerAccount, Voucher, GeneralLedgerEntry,
 )
 from .serializers import (
     ExpenseSerializer, ExpenseCategorySerializer, IncomeSerializer, SupplierPaymentSerializer,
     TaxPaymentSerializer, PaymentReceiptSerializer, BankAccountSerializer,
     PettyCashTransactionSerializer, OtherPaymentSerializer, SalesLedgerEntrySerializer,
-    PettyCashRequestSerializer,
+    PettyCashRequestSerializer, LedgerAccountSerializer, VoucherSerializer,
+    GeneralLedgerEntrySerializer,
 )
+from . import vouchers
 
 class ExpenseListView(LoginRequiredMixin, TemplateView):
     template_name = 'finance/expense_list.html'
@@ -1150,3 +1152,232 @@ class PettyCashApprovalView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
     def test_func(self):
         u = self.request.user
         return u.is_superuser or getattr(u, 'is_admin_role', False)
+
+
+# ----------------------------------------------------------------------------
+# General ledger: the chart of accounts, vouchers and the ledger they post to.
+# The rules live in apps/finance/vouchers.py; these are the doors to them.
+# ----------------------------------------------------------------------------
+
+class LedgerAccountViewSet(viewsets.ModelViewSet):
+    """The chart of accounts. `?group=money|non_money` is what the voucher
+    dropdowns ask for; `?kind=` narrows to one kind."""
+    queryset = LedgerAccount.objects.select_related('bank_account', 'customer', 'supplier').all()
+    serializer_class = LedgerAccountSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+    filterset_fields = ['kind', 'is_active']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        group = self.request.query_params.get('group')
+        if group == 'money':
+            qs = qs.filter(kind__in=LedgerAccount.MONEY_KINDS)
+        elif group == 'non_money':
+            qs = qs.exclude(kind__in=LedgerAccount.MONEY_KINDS)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        if self.action in ('list', 'retrieve'):
+            ctx['balances'] = vouchers.account_balances()
+        return ctx
+
+    def perform_destroy(self, instance):
+        if instance.gl_entries.exists() or instance.voucher_lines.exists():
+            raise ValidationError({'detail': 'This ledger has entries. Close it instead of deleting it.'})
+        if instance.bank_account_id or instance.customer_id or instance.supplier_id:
+            raise ValidationError({'detail': 'This ledger follows a bank account, customer or '
+                                             'supplier. Close it instead.'})
+        instance.delete()
+
+    @action(detail=False, methods=['post'])
+    def sync(self, request):
+        """Create ledgers for any bank account, customer or supplier without one."""
+        return Response({'created': vouchers.sync_chart_of_accounts()})
+
+    @action(detail=True, methods=['get'])
+    def outstanding(self, request, pk=None):
+        """Open invoices (customer) or bills (supplier) to allocate against."""
+        account = self.get_object()
+        return Response({
+            'side': vouchers.allocation_side(account),
+            'items': vouchers.outstanding_for(account),
+        })
+
+    @action(detail=True, methods=['get'])
+    def statement(self, request, pk=None):
+        account = self.get_object()
+        return Response(vouchers.account_statement(
+            account, request.query_params.get('from') or None,
+            request.query_params.get('to') or None))
+
+
+class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
+                     mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Vouchers are written once. No update, no delete — a wrong one is
+    cancelled, which is an action here, not an edit."""
+    queryset = Voucher.objects.select_related('created_by', 'cancelled_by').prefetch_related(
+        'lines__account', 'lines__allocations').all()
+    serializer_class = VoucherSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+    filterset_fields = ['voucher_type', 'status']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get('from'):
+            qs = qs.filter(date__gte=p['from'])
+        if p.get('to'):
+            qs = qs.filter(date__lte=p['to'])
+        if p.get('account'):
+            qs = qs.filter(lines__account_id=p['account']).distinct()
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        voucher = vouchers.post_voucher(
+            request.data.get('voucher_type'), request.data.get('date'),
+            request.data.get('description'), request.data.get('lines'), request.user,
+        )
+        voucher = self.get_queryset().get(pk=voucher.pk)
+        return Response(self.get_serializer(voucher).data, status=201)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        voucher = vouchers.cancel_voucher(self.get_object(), request.user,
+                                          request.data.get('reason') or '')
+        return Response(self.get_serializer(voucher).data)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """The stat cards on the register: how much went through each type."""
+        qs = self.filter_queryset(self.get_queryset()).filter(status='posted')
+        rows = {r['voucher_type']: r for r in
+                qs.values('voucher_type').annotate(n=Count('id'), total=Sum('total'))}
+        return Response({
+            t: {'count': (rows.get(t) or {}).get('n') or 0,
+                'total': str((rows.get(t) or {}).get('total') or Decimal('0'))}
+            for t, _ in Voucher.TYPES
+        })
+
+
+class GeneralLedgerViewSet(viewsets.ReadOnlyModelViewSet):
+    """The ledger itself. `?account=` with `?from=`/`?to=` is the everyday
+    query; `trial_balance` is every ledger at once."""
+    queryset = GeneralLedgerEntry.objects.select_related('account').all()
+    serializer_class = GeneralLedgerEntrySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAccounting]
+    filterset_fields = ['account', 'voucher_type', 'voucher']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+        if p.get('from'):
+            qs = qs.filter(date__gte=p['from'])
+        if p.get('to'):
+            qs = qs.filter(date__lte=p['to'])
+        return qs
+
+    @action(detail=False, methods=['get'])
+    def trial_balance(self, request):
+        return Response(vouchers.trial_balance(
+            request.query_params.get('from') or None,
+            request.query_params.get('to') or None))
+
+
+class AccountingAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    def test_func(self):
+        return can_use_accounting(self.request.user)
+
+
+class ChartOfAccountsView(AccountingAccessMixin, TemplateView):
+    template_name = 'finance/chart_of_accounts.html'
+
+    def get_context_data(self, **kwargs):
+        # Cheap, and it means the chart is never missing a customer, supplier
+        # or bank account that was created before the books were opened.
+        vouchers.sync_chart_of_accounts()
+        ctx = super().get_context_data(**kwargs)
+        ctx['kinds'] = LedgerAccount.KINDS
+        return ctx
+
+
+class VoucherListView(AccountingAccessMixin, TemplateView):
+    template_name = 'finance/voucher_list.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['voucher_types'] = Voucher.TYPES
+        return ctx
+
+
+VOUCHER_BLURBS = {
+    'receipt': ('Money coming in', 'Debit the bank account or cash book that received it; '
+                                   'credit where it came from: a customer, income, or any other ledger.'),
+    'payment': ('Money going out', 'Debit what it was for: a supplier, an expense, tax, or any other '
+                                   'ledger; credit the bank account or cash book it left.'),
+    'contra': ('Moving our own money', 'Bank to cash, cash to bank, or between two bank accounts. '
+                                       'Both sides are bank accounts or cash books.'),
+    'journal': ('Any other entry', 'Any ledger on either side: adjustments, accruals, corrections.'),
+}
+
+
+def _rule_group(rule):
+    """Which `?group=` the dropdown for this side asks the API for."""
+    if rule is None:
+        return 'all'
+    if rule == 'non_money':
+        return 'non_money'
+    return 'money'
+
+
+class VoucherFormView(AccountingAccessMixin, TemplateView):
+    template_name = 'finance/voucher_form.html'
+
+    def get_context_data(self, **kwargs):
+        voucher_type = self.kwargs['voucher_type']
+        if voucher_type not in Voucher.PREFIX:
+            raise Http404
+        vouchers.sync_chart_of_accounts()
+        ctx = super().get_context_data(**kwargs)
+        debit_rule, credit_rule = Voucher.RULES[voucher_type]
+        ctx.update({
+            'voucher_type': voucher_type,
+            'voucher_type_display': dict(Voucher.TYPES)[voucher_type],
+            'prefix': Voucher.PREFIX[voucher_type],
+            'blurb': VOUCHER_BLURBS[voucher_type],
+            'debit_group': _rule_group(debit_rule),
+            'credit_group': _rule_group(credit_rule),
+            'today': date.today().isoformat(),
+            'voucher_types': Voucher.TYPES,
+        })
+        return ctx
+
+
+class VoucherDetailView(AccountingAccessMixin, TemplateView):
+    template_name = 'finance/voucher_detail.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        voucher = (Voucher.objects.select_related('created_by', 'cancelled_by')
+                   .prefetch_related('lines__account', 'lines__allocations')
+                   .filter(pk=self.kwargs['pk']).first())
+        if voucher is None:
+            raise Http404
+        lines = list(voucher.lines.all())
+        ctx.update({
+            'voucher': voucher,
+            'debits': [l for l in lines if l.side == 'debit'],
+            'credits': [l for l in lines if l.side == 'credit'],
+            'company': _company_name(),
+        })
+        return ctx
+
+
+class GeneralLedgerView(AccountingAccessMixin, TemplateView):
+    template_name = 'finance/general_ledger.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['selected_account'] = self.request.GET.get('account', '')
+        ctx['today'] = date.today().isoformat()
+        return ctx
