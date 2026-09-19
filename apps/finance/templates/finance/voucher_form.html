@@ -74,51 +74,6 @@
     </div>
 </div>
 
-{% if has_vat_box %}
-<!-- VAT (sales only): type the exclusive or inclusive figure and the goods side is written for you -->
-<div class="card mb-3 border-0 bg-light">
-    <div class="card-body py-2">
-        <div class="row g-2 align-items-end">
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-0">VAT-exclusive</label>
-                <input type="text" inputmode="decimal" id="vatNet" class="form-control form-control-sm amount-input"
-                       placeholder="0" onchange="vatFrom('net')">
-            </div>
-            <div class="col-md-1">
-                <label class="form-label small text-muted mb-0">VAT %</label>
-                <input type="text" inputmode="decimal" id="vatRate" class="form-control form-control-sm amount-input"
-                       value="{{ tax_rate }}" onchange="vatFrom('net')">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-0">VAT amount</label>
-                <input type="text" inputmode="decimal" id="vatAmount" class="form-control form-control-sm amount-input"
-                       placeholder="0" onchange="vatFrom('vat')">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-0">VAT-inclusive total</label>
-                <input type="text" inputmode="decimal" id="vatTotal" class="form-control form-control-sm amount-input"
-                       placeholder="0" onchange="vatFrom('total')">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-0">{% if voucher_type == 'sales' %}Sales ledger{% else %}Purchases ledger{% endif %}</label>
-                <select id="vatGoods" class="form-select form-select-sm"></select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small text-muted mb-0">{% if voucher_type == 'sales' %}Output VAT ledger{% else %}Input VAT ledger{% endif %}</label>
-                <select id="vatLedger" class="form-select form-select-sm"></select>
-            </div>
-            <div class="col-md-1">
-                <button class="btn btn-sm btn-outline-primary w-100" onclick="applyVat()" title="Write the goods and VAT lines">
-                    <i class="bi bi-arrow-down-square"></i> Fill</button>
-            </div>
-        </div>
-        <small class="text-muted">Optional. Where VAT applies, type either the exclusive or the inclusive figure and press
-            Fill: the {% if voucher_type == 'sales' %}credit{% else %}debit{% endif %} side gets a goods line and a VAT line, and the
-            difference is carried to the {% if voucher_type == 'sales' %}customer or bank{% else %}supplier or bank{% endif %} for you.</small>
-    </div>
-</div>
-{% endif %}
-
 <div class="row g-3">
     <!-- Debit side -->
     <div class="col-lg-6 voucher-side">
@@ -218,10 +173,8 @@
 <script>
     const VOUCHER_TYPE = '{{ voucher_type }}';
     const IS_INVOICE = {{ is_invoice|yesno:"true,false" }};
-    const HAS_VAT_BOX = {{ has_vat_box|yesno:"true,false" }};   // the Fill helper: sales vouchers only
     const PARTY_KIND = '{{ party_kind }}';               // customer on a sales voucher, supplier on a purchase
     const PARTY_SIDE = VOUCHER_TYPE === 'sales' ? 'debit' : 'credit';
-    const GOODS_SIDE = VOUCHER_TYPE === 'sales' ? 'credit' : 'debit';
     // The ledger kinds each side may offer (null = every kind), from Voucher.RULES.
     const KINDS = { debit: {{ debit_kinds|safe }}, credit: {{ credit_kinds|safe }} };
     const KIND_WORDS = {
@@ -241,7 +194,6 @@
         document.getElementById('debitHint').innerText = hint('debit');
         document.getElementById('creditHint').innerText = hint('credit');
         await loadAccounts();
-        if (HAS_VAT_BOX) setupVatBox();
         resetForm();
     });
 
@@ -277,60 +229,10 @@
         }
     }
 
-    // ---- Sales / Purchase: the invoice, VAT --------------------------------
+    // ---- Sales / Purchase: the invoice --------------------------------
     // The party is never picked up here: the customer (or supplier) whose
     // ledger the user puts on the party side is the one the invoice is on,
     // and the server reads it off that line.
-
-    function setupVatBox() {
-        const goods = document.getElementById('vatGoods');
-        const goodsKinds = VOUCHER_TYPE === 'sales' ? ['income'] : ['expense', 'asset'];
-        allAccounts.filter(a => goodsKinds.includes(a.kind)).forEach(a => {
-            const o = document.createElement('option');
-            o.value = a.id; o.textContent = a.code + '  ' + a.name;
-            if (/^(sales|purchases)/i.test(a.name)) o.selected = true;
-            goods.appendChild(o);
-        });
-        const vat = document.getElementById('vatLedger');
-        const want = VOUCHER_TYPE === 'sales' ? /output/i : /input/i;
-        allAccounts.filter(a => a.kind === 'tax').forEach(a => {
-            const o = document.createElement('option');
-            o.value = a.id; o.textContent = a.code + '  ' + a.name;
-            if (want.test(a.name)) o.selected = true;
-            vat.appendChild(o);
-        });
-    }
-
-    function vatFrom(which) {
-        const rate = num(document.getElementById('vatRate').value) / 100;
-        let net = num(document.getElementById('vatNet').value);
-        let vat = num(document.getElementById('vatAmount').value);
-        let total = num(document.getElementById('vatTotal').value);
-        if (which === 'net') { vat = Math.round(net * rate * 100) / 100; total = Math.round((net + vat) * 100) / 100; }
-        else if (which === 'total') { net = Math.round(total / (1 + rate) * 100) / 100; vat = Math.round((total - net) * 100) / 100; }
-        else if (which === 'vat') { total = Math.round((net + vat) * 100) / 100; }
-        document.getElementById('vatNet').value = net ? fmt(net) : '';
-        document.getElementById('vatAmount').value = vat ? fmt(vat) : '';
-        document.getElementById('vatTotal').value = total ? fmt(total) : '';
-    }
-
-    /* Write the goods side from the VAT box: one line on the sales (or
-       purchases) ledger for the net amount, one on the VAT ledger for the
-       tax, replacing whatever the goods side held. The difference then lands
-       on the party side by the usual rule. */
-    function applyVat() {
-        vatFrom(document.getElementById('vatNet').value ? 'net' : 'total');
-        const net = num(document.getElementById('vatNet').value);
-        const vat = num(document.getElementById('vatAmount').value);
-        const goodsAcct = document.getElementById('vatGoods').value;
-        const vatAcct = document.getElementById('vatLedger').value;
-        if (net <= 0) { Swal.fire('Nothing to fill', 'Type the VAT-exclusive or the VAT-inclusive amount first.', 'info'); return; }
-        if (!goodsAcct) { Swal.fire('No ledger', 'Pick the ledger the goods go to.', 'warning'); return; }
-        lines = lines.filter(l => l.side !== GOODS_SIDE);
-        lines.push({ ...newLine(GOODS_SIDE, net, false), account: goodsAcct });
-        if (vat > 0 && vatAcct) lines.push({ ...newLine(GOODS_SIDE, vat, false), account: vatAcct });
-        balance();
-    }
 
     // Read off the party side the way the server will: all money is cash or
     // bank, all on the party ledger is credit, a mix is partly paid.
@@ -369,7 +271,6 @@
         lines = [newLine('debit', 0, false), newLine('credit', 0, false)];
         document.getElementById('vDescription').value = '';
         if (IS_INVOICE) ['vInvoice', 'vEfd'].forEach(id => document.getElementById(id).value = '');
-        if (HAS_VAT_BOX) ['vatNet', 'vatAmount', 'vatTotal'].forEach(id => document.getElementById(id).value = '');
         render();
     }
 

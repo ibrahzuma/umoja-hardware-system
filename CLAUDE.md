@@ -164,10 +164,9 @@ See `DEPLOYMENT.md` for one-time server setup.
     nobody. The form has no customer/supplier box for that reason; the API and the bulk upload may still send
     `customer`/`supplier` and then the ledger has to be that party's. `payment_status` is likewise *read off
     the lines*, never typed: all money ledgers on the party side is cash/bank, all party ledger is credit, a
-    mix is partly paid; `vat_amount` is the tax-ledger part of the goods side, `net_amount` the rest. The
-    **Sales** form's VAT box (exclusive ⇄ inclusive at `SystemSettings.tax_rate`) writes the goods and VAT
-    lines and lets the difference fall on the party side; the Purchase form has no such box — a supplier's
-    invoice is keyed line by line. **These vouchers do not create a
+    mix is partly paid; `vat_amount` is the tax-ledger part of the goods side, `net_amount` the rest. Neither
+    form has a VAT helper box — an invoice is keyed line by line, and a VAT line is simply a line on the
+    Output/Input VAT ledger. **These vouchers do not create a
     `Sale` or `PurchaseOrder`** — they are the books' own record of an invoice (back-dated work, or anything the
     till never saw); the ledger still never drives the shop floor.
     A customer credited on a Receipt (or a supplier debited on a Payment) is offered its outstanding

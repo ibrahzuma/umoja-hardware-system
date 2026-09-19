@@ -1392,20 +1392,15 @@ class VoucherFormView(AccountingAccessMixin, TemplateView):
         vouchers.sync_chart_of_accounts()
         ctx = super().get_context_data(**kwargs)
         debit_rule, credit_rule = Voucher.RULES[voucher_type]
-        settings_row = SystemSettings.objects.first()
         ctx.update({
             'voucher_type': voucher_type,
             'voucher_type_display': dict(Voucher.TYPES)[voucher_type],
             'prefix': Voucher.PREFIX[voucher_type],
             'blurb': VOUCHER_BLURBS[voucher_type],
             'is_invoice': voucher_type in Voucher.INVOICE_TYPES,
-            # The VAT Fill helper is a sales-desk convenience; a purchase is
-            # keyed straight from the supplier's invoice, line by line.
-            'has_vat_box': voucher_type == 'sales',
             'party_kind': 'customer' if voucher_type == 'sales' else 'supplier',
             'debit_kinds': json.dumps(_rule_kinds(debit_rule)),
             'credit_kinds': json.dumps(_rule_kinds(credit_rule)),
-            'tax_rate': str(settings_row.tax_rate if settings_row else 18),
             'today': date.today().isoformat(),
             'voucher_types': Voucher.TYPES,
         })
