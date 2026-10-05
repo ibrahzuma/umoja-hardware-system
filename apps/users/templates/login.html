@@ -5,13 +5,14 @@
     {% load static %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#141a23">
+    <meta name="theme-color" content="#0d1220">
     <title>Sign in · Umoja Hardware</title>
 
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
 
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -20,237 +21,685 @@
     <link rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css">
 
-    <!-- Custom CSS -->
+    <!-- Custom CSS: this is where the brand palette (--brand-*, --slate-*) comes from, so the
+         sign-in page stays in step with the dashboard behind it. -->
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 
     <style>
+        /* ---------------------------------------------------------------
+           Sign-in page.
+
+           Two columns on a wide screen: the brand panel on the left, the
+           form on the right. Below 992px the panel is replaced by a slim
+           gradient header, so a phone gets the brand without scrolling
+           past half a page of it to reach the form.
+
+           Everything here is built on the --brand-* and --slate-* tokens
+           in static/css/style.css. Change the palette there and this page
+           follows.
+           --------------------------------------------------------------- */
+
+        :root {
+            --auth-ink: #0d1220;          /* deeper than --slate-900, for the panel */
+            --auth-ink-soft: #151c2c;
+            --auth-ring: rgba(94, 116, 255, 0.28);
+            --auth-hairline: rgba(255, 255, 255, 0.09);
+        }
+
+        * { -webkit-font-smoothing: antialiased; }
+
         body {
             min-height: 100vh;
+            margin: 0;
             display: grid;
             grid-template-columns: 1fr;
-            background:
-                radial-gradient(1200px 600px at 100% 0%, rgba(64, 85, 230, 0.08), transparent 60%),
-                radial-gradient(900px 500px at 0% 100%, rgba(64, 85, 230, 0.06), transparent 60%),
-                var(--slate-50);
+            grid-template-rows: auto 1fr;
+            background: var(--slate-50);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
 
         @media (min-width: 992px) {
-            body { grid-template-columns: 1fr 1fr; }
+            body {
+                grid-template-columns: 1.05fr 1fr;
+                grid-template-rows: 1fr;
+            }
         }
+
+        /* ------------------------------------------------- the brand panel */
 
         .auth-aside {
             display: none;
             position: relative;
-            background: linear-gradient(160deg, var(--slate-900) 0%, #11161f 100%);
+            isolation: isolate;
+            background: var(--auth-ink);
             color: #fff;
-            padding: 56px;
+            padding: 56px 56px 44px;
             overflow: hidden;
         }
+
         @media (min-width: 992px) {
-            .auth-aside { display: flex; flex-direction: column; justify-content: space-between; }
+            .auth-aside {
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                gap: 40px;
+            }
         }
 
+        /* Two soft indigo lights, one warm, placed off-canvas so only the
+           falloff shows. Cheaper and calmer than an image. */
         .auth-aside::before {
             content: "";
             position: absolute;
-            inset: -20% -20% auto auto;
-            width: 360px;
-            height: 360px;
-            background: radial-gradient(circle at center, rgba(94, 116, 255, 0.35), transparent 60%);
-            pointer-events: none;
+            z-index: -2;
+            inset: -30% -35% auto auto;
+            width: 620px;
+            height: 620px;
+            background:
+                radial-gradient(circle at 30% 30%, rgba(94, 116, 255, 0.40), transparent 62%),
+                radial-gradient(circle at 70% 70%, rgba(64, 85, 230, 0.22), transparent 60%);
+            filter: blur(10px);
         }
+
         .auth-aside::after {
             content: "";
             position: absolute;
-            inset: auto auto -20% -20%;
-            width: 320px;
-            height: 320px;
-            background: radial-gradient(circle at center, rgba(64, 85, 230, 0.25), transparent 60%);
+            z-index: -2;
+            inset: auto auto -28% -22%;
+            width: 520px;
+            height: 520px;
+            background: radial-gradient(circle at center, rgba(40, 52, 158, 0.38), transparent 64%);
+            filter: blur(14px);
+        }
+
+        /* A faint engineering grid — the hardware-trade nod, kept quiet
+           enough that it reads as texture rather than decoration. */
+        .auth-aside .grid-texture {
+            position: absolute;
+            z-index: -1;
+            inset: 0;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+            background-size: 56px 56px;
+            mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 35%, transparent 78%);
+            -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 35%, transparent 78%);
             pointer-events: none;
         }
 
-        .auth-aside .brand {
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand img {
+            width: 46px;
+            height: 46px;
+            border-radius: 13px;
+            object-fit: cover;
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.12),
+                0 10px 24px rgba(0, 0, 0, 0.45);
+        }
+
+        .brand-name {
+            font-size: 1.05rem;
+            font-weight: 800;
+            margin: 0;
+            letter-spacing: 0.12em;
+            line-height: 1.1;
+        }
+
+        .brand-sub {
+            display: block;
+            color: rgba(255, 255, 255, 0.46);
+            font-size: 0.68rem;
+            font-weight: 500;
+            letter-spacing: 0.22em;
+            margin-top: 3px;
+        }
+
+        .pitch { max-width: 470px; }
+
+        .pitch .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 12px 5px 10px;
+            border-radius: 999px;
+            background: rgba(94, 116, 255, 0.14);
+            border: 1px solid rgba(94, 116, 255, 0.28);
+            color: #c3ccff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        .pitch .eyebrow .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #7d90ff;
+            box-shadow: 0 0 0 3px rgba(125, 144, 255, 0.22);
+        }
+
+        /* `color` is set explicitly on every heading in this panel. style.css
+           colours all of h1-h6 --slate-900 for the app's light pages, and a
+           direct rule like that beats the white inherited from .auth-aside —
+           which would leave the headline near-black on a near-black panel. */
+        .pitch h2 {
+            color: #fff;
+            font-size: clamp(1.9rem, 2.6vw, 2.45rem);
+            line-height: 1.14;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            margin: 0 0 14px;
+        }
+
+        /* The one word worth colouring, so the eye lands on it. */
+        .pitch h2 em {
+            font-style: normal;
+            background: linear-gradient(100deg, #a8b5ff, #6d82ff 60%, #5e74ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .pitch p {
+            color: rgba(255, 255, 255, 0.66);
+            font-size: 1rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .pillars {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 32px;
+        }
+
+        .pillar {
             display: flex;
             align-items: center;
             gap: 12px;
-            position: relative;
-            z-index: 1;
+            background: rgba(255, 255, 255, 0.045);
+            border: 1px solid var(--auth-hairline);
+            border-radius: 14px;
+            padding: 13px 15px;
+            transition: background .18s ease, border-color .18s ease, transform .18s ease;
         }
-        .auth-aside .brand img {
-            width: 40px; height: 40px; border-radius: 12px; object-fit: cover;
-            box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 8px 16px rgba(0,0,0,0.35);
-        }
-        .auth-aside .brand h1 {
-            color: #fff; font-size: 1.1rem; font-weight: 700; margin: 0; letter-spacing: 0.05em;
-        }
-        .auth-aside .brand span { color: rgba(255,255,255,0.5); font-size: 0.72rem; letter-spacing: 0.06em; }
 
-        .auth-aside .pitch { position: relative; z-index: 1; max-width: 440px; }
-        .auth-aside .pitch h2 {
-            color: #fff; font-size: 1.85rem; line-height: 1.2; font-weight: 700; margin: 0 0 16px;
+        .pillar:hover {
+            background: rgba(255, 255, 255, 0.075);
+            border-color: rgba(125, 144, 255, 0.34);
+            transform: translateY(-2px);
         }
-        .auth-aside .pitch p { color: rgba(255,255,255,0.7); font-size: 0.95rem; margin: 0; }
 
-        .auth-aside .pillars {
-            position: relative; z-index: 1;
-            display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 28px;
+        .pillar .ico {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: rgba(94, 116, 255, 0.16);
+            color: #a8b5ff;
+            font-size: 1rem;
         }
-        .auth-aside .pillar {
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px;
-            padding: 14px;
-            color: rgba(255,255,255,0.85);
+
+        .pillar span {
+            font-size: 0.82rem;
+            font-weight: 500;
+            line-height: 1.35;
+            color: rgba(255, 255, 255, 0.86);
         }
-        .auth-aside .pillar i { color: var(--brand-300); font-size: 1.1rem; }
-        .auth-aside .pillar div { font-size: 0.8rem; margin-top: 6px; line-height: 1.4; }
-        .auth-aside .footer-note { position: relative; z-index: 1; color: rgba(255,255,255,0.45); font-size: 0.78rem; }
+
+        .footer-note {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.76rem;
+            letter-spacing: 0.01em;
+        }
+
+        /* --------------------------------------- the mobile brand header */
+
+        .mobile-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 24px;
+            background: linear-gradient(135deg, var(--auth-ink) 0%, #1c2540 55%, var(--brand-700) 130%);
+            color: #fff;
+        }
+
+        .mobile-header img {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            object-fit: cover;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+        }
+
+        .mobile-header .t {
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            margin: 0;
+            line-height: 1.1;
+        }
+
+        .mobile-header .s {
+            font-size: 0.64rem;
+            letter-spacing: 0.2em;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        @media (min-width: 992px) {
+            .mobile-header { display: none; }
+        }
+
+        /* ------------------------------------------------------- the form */
 
         .auth-form-wrap {
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 24px 48px;
         }
-        .auth-card {
-            width: 100%; max-width: 420px;
-            background: var(--slate-0);
-            border: 1px solid var(--slate-200);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-3);
-            padding: 36px;
-        }
-        .auth-card .mobile-brand {
-            display: flex; align-items: center; gap: 12px; justify-content: center; margin-bottom: 22px;
-        }
-        @media (min-width: 992px) { .auth-card .mobile-brand { display: none; } }
-        .auth-card .mobile-brand img { width: 40px; height: 40px; border-radius: 10px; }
-        .auth-card .mobile-brand h1 { font-size: 1.1rem; margin: 0; font-weight: 700; }
 
-        .auth-card h2 {
-            font-size: 1.35rem; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em;
+        .auth-card {
+            width: 100%;
+            max-width: 416px;
         }
-        .auth-card .lede { color: var(--slate-500); font-size: 0.9rem; margin: 0 0 22px; }
+
+        .auth-card > .head { margin-bottom: 26px; }
+
+        .auth-card h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin: 0 0 6px;
+            color: var(--slate-900);
+        }
+
+        .auth-card .lede {
+            color: var(--slate-500);
+            font-size: 0.92rem;
+            margin: 0;
+        }
+
+        .field { margin-bottom: 18px; }
 
         .field-label {
-            font-size: 0.72rem; font-weight: 600; color: var(--slate-700);
-            text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            margin-bottom: 7px;
         }
 
-        .password-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-        .password-row .forgot { font-size: 0.78rem; color: var(--brand-600); font-weight: 500; }
+        /* An icon inside the field, and room made for it, so the inputs
+           read as a pair rather than two plain boxes. */
+        .field-shell { position: relative; }
 
-        .btn-block { width: 100%; padding: 0.65rem 1rem; font-size: 0.95rem; font-weight: 600; }
+        .field-shell > .bi {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-400, #9aa4b2);
+            font-size: 1rem;
+            pointer-events: none;
+            transition: color .16s ease;
+        }
 
-        .help-text { text-align: center; color: var(--slate-500); font-size: 0.82rem; margin-top: 18px; }
+        .field-shell input {
+            width: 100%;
+            height: 50px;
+            padding: 0 14px 0 42px;
+            font-size: 0.95rem;
+            color: var(--slate-900);
+            background: #fff;
+            border: 1.5px solid var(--slate-200);
+            border-radius: 12px;
+            transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+        }
+
+        .field-shell input::placeholder { color: #b4bcc8; }
+
+        .field-shell input:hover { border-color: var(--slate-300, #d3d9e2); }
+
+        .field-shell input:focus {
+            outline: none;
+            border-color: var(--brand-400);
+            box-shadow: 0 0 0 4px var(--auth-ring);
+        }
+
+        .field-shell input:focus + .bi,
+        .field-shell input:focus ~ .bi { color: var(--brand-500); }
+
+        /* The password field makes room for the reveal button. */
+        .field-shell.has-toggle input { padding-right: 46px; }
+
+        .toggle-pw {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 36px;
+            height: 36px;
+            display: grid;
+            place-items: center;
+            border: 0;
+            background: transparent;
+            color: var(--slate-500);
+            border-radius: 9px;
+            cursor: pointer;
+            transition: background .16s ease, color .16s ease;
+        }
+
+        .toggle-pw:hover { background: var(--slate-100); color: var(--slate-700); }
+
+        .toggle-pw:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px var(--auth-ring);
+        }
+
+        .btn-signin {
+            width: 100%;
+            height: 50px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #fff;
+            border: 0;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--brand-400) 0%, var(--brand-500) 52%, var(--brand-600) 100%);
+            box-shadow: 0 6px 18px rgba(64, 85, 230, 0.30);
+            cursor: pointer;
+            transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+        }
+
+        .btn-signin:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 26px rgba(64, 85, 230, 0.38);
+            filter: brightness(1.05);
+        }
+
+        .btn-signin:active {
+            transform: translateY(0);
+            box-shadow: 0 4px 12px rgba(64, 85, 230, 0.28);
+        }
+
+        .btn-signin:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 4px var(--auth-ring), 0 6px 18px rgba(64, 85, 230, 0.30);
+        }
+
+        .btn-signin .bi { transition: transform .18s ease; }
+        .btn-signin:hover .bi { transform: translateX(3px); }
+
+        .auth-error {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            font-size: 0.87rem;
+            line-height: 1.45;
+        }
+
+        .auth-error .bi { font-size: 1.05rem; margin-top: 1px; }
+
+        .help-text {
+            text-align: center;
+            color: var(--slate-500);
+            font-size: 0.83rem;
+            margin: 20px 0 0;
+        }
+
+        /* ------------------------------------------------ the app download */
 
         .app-download {
-            margin-top: 22px;
-            padding-top: 20px;
-            border-top: 1px solid var(--slate-200);
+            margin-top: 28px;
+            padding: 18px;
+            border: 1px solid var(--slate-200);
+            border-radius: 14px;
+            background: linear-gradient(180deg, #fff 0%, var(--slate-50) 100%);
+        }
+
+        .app-download .row-top {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            margin-bottom: 13px;
+        }
+
+        .app-download .ico {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            background: rgba(61, 220, 132, 0.14);
+            color: #16a34a;
+            font-size: 1.1rem;
+        }
+
+        .app-download .t {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--slate-800, #2b333f);
+            line-height: 1.3;
+        }
+
+        .app-download .s {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 400;
+            color: var(--slate-500);
+            margin-top: 2px;
+        }
+
+        .btn-apk {
+            width: 100%;
+            height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            background: #fff;
+            border: 1.5px solid var(--slate-200);
+            border-radius: 10px;
+            text-decoration: none;
+            transition: border-color .16s ease, color .16s ease, background .16s ease;
+        }
+
+        .btn-apk:hover {
+            border-color: var(--brand-300);
+            color: var(--brand-600);
+            background: var(--brand-50);
+        }
+
+        .btn-apk:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px var(--auth-ring);
+        }
+
+        .app-download .hint {
+            display: block;
             text-align: center;
+            color: var(--slate-500);
+            font-size: 0.73rem;
+            line-height: 1.45;
+            margin-top: 10px;
         }
-        .app-download-text {
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-            font-size: 0.82rem; font-weight: 600; color: var(--slate-700); margin-bottom: 12px;
+
+        /* Somebody has asked their system not to animate. Oblige. */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                transition-duration: 0.01ms !important;
+                animation-duration: 0.01ms !important;
+            }
+            .pillar:hover, .btn-signin:hover { transform: none; }
+            .btn-signin:hover .bi { transform: none; }
         }
-        .app-download-text i { color: #3ddc84; font-size: 1.1rem; }
-        .app-download-hint { display: block; color: var(--slate-500); font-size: 0.74rem; margin-top: 8px; }
     </style>
 </head>
 
 <body>
 
-    <!-- Brand / pitch side -->
+    <!-- Brand panel: wide screens only -->
     <aside class="auth-aside">
+        <div class="grid-texture" aria-hidden="true"></div>
+
         <div class="brand">
-            <img src="{% static 'img/logo.png' %}" alt="Umoja">
+            <img src="{% static 'img/logo.png' %}" alt="">
             <div>
-                <h1>UMOJA</h1>
-                <span>HARDWARE</span>
+                <p class="brand-name">UMOJA</p>
+                <span class="brand-sub">HARDWARE</span>
             </div>
         </div>
 
         <div class="pitch">
-            <h2>Run your branches like one operation.</h2>
-            <p>Real-time stock, sales, dispatch, and finance — across every branch — in a single workspace.</p>
+            <span class="eyebrow"><span class="dot"></span> Stock Management System</span>
+            <h2>Run your branches like <em>one operation</em>.</h2>
+            <p>Real-time stock, sales, dispatch and finance — across every branch — in a single
+                workspace.</p>
 
             <div class="pillars">
                 <div class="pillar">
-                    <i class="bi bi-boxes"></i>
-                    <div>Live multi-branch stock</div>
+                    <span class="ico"><i class="bi bi-boxes"></i></span>
+                    <span>Live multi-branch stock</span>
                 </div>
                 <div class="pillar">
-                    <i class="bi bi-cart-check"></i>
-                    <div>POS &amp; quotation flow</div>
+                    <span class="ico"><i class="bi bi-cart-check"></i></span>
+                    <span>POS &amp; quotation flow</span>
                 </div>
                 <div class="pillar">
-                    <i class="bi bi-truck"></i>
-                    <div>Dispatch &amp; fleet board</div>
+                    <span class="ico"><i class="bi bi-truck"></i></span>
+                    <span>Dispatch &amp; fleet board</span>
                 </div>
                 <div class="pillar">
-                    <i class="bi bi-cash-coin"></i>
-                    <div>Expense &amp; tax tracking</div>
+                    <span class="ico"><i class="bi bi-cash-coin"></i></span>
+                    <span>Finance &amp; the full books</span>
                 </div>
             </div>
         </div>
 
-        <div class="footer-note">© Umoja Hardware · Stock Management System</div>
+        <p class="footer-note mb-0">© Umoja Hardware · Stock Management System</p>
     </aside>
 
-    <!-- Form side -->
+    <!-- Brand header: narrow screens only -->
+    <header class="mobile-header">
+        <img src="{% static 'img/logo.png' %}" alt="">
+        <div>
+            <p class="t">UMOJA</p>
+            <span class="s">HARDWARE</span>
+        </div>
+    </header>
+
+    <!-- The form -->
     <main class="auth-form-wrap">
         <div class="auth-card">
-            <div class="mobile-brand">
-                <img src="{% static 'img/logo.png' %}" alt="Umoja">
-                <h1>UMOJA HARDWARE</h1>
+
+            <div class="head">
+                <h1>Sign in to your workspace</h1>
+                <p class="lede">Enter your credentials to continue.</p>
             </div>
 
-            <h2>Sign in to your workspace</h2>
-            <p class="lede">Enter your credentials to continue.</p>
+            {% if form.errors %}
+            <div class="auth-error" role="alert">
+                <i class="bi bi-exclamation-circle-fill"></i>
+                <span>That username and password did not match. Check both and try again.</span>
+            </div>
+            {% endif %}
 
             <form method="post" novalidate>
                 {% csrf_token %}
 
-                {% if form.errors %}
-                <div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
-                    <i class="bi bi-exclamation-circle"></i>
-                    <span>Invalid username or password.</span>
-                </div>
-                {% endif %}
-
-                <div class="mb-3">
+                <div class="field">
                     <label for="id_username" class="field-label">Username</label>
-                    <input type="text" name="username" class="form-control form-control-lg" id="id_username"
-                        placeholder="e.g. ibrahimu" autocomplete="username" required autofocus>
-                </div>
-
-                <div class="mb-4">
-                    <div class="password-row">
-                        <label for="id_password" class="field-label mb-0">Password</label>
-                        <a href="#" class="forgot" tabindex="-1">Forgot?</a>
+                    <div class="field-shell">
+                        <input type="text" name="username" id="id_username" placeholder="e.g. ibrahimu"
+                            autocomplete="username" required autofocus>
+                        <i class="bi bi-person"></i>
                     </div>
-                    <input type="password" name="password" class="form-control form-control-lg" id="id_password"
-                        placeholder="••••••••" autocomplete="current-password" required>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-block">
-                    Sign in <i class="bi bi-arrow-right ms-1"></i>
+                <div class="field">
+                    <label for="id_password" class="field-label">Password</label>
+                    <div class="field-shell has-toggle">
+                        <input type="password" name="password" id="id_password" placeholder="••••••••"
+                            autocomplete="current-password" required>
+                        <i class="bi bi-lock"></i>
+                        <button type="button" class="toggle-pw" id="togglePw" aria-label="Show password"
+                            aria-pressed="false" title="Show password">
+                            <i class="bi bi-eye" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-signin">
+                    Sign in <i class="bi bi-arrow-right"></i>
                 </button>
             </form>
 
             <p class="help-text">Trouble signing in? Contact your system administrator.</p>
 
             <div class="app-download">
-                <div class="app-download-text">
-                    <i class="bi bi-android2"></i>
-                    <span>Get the Umoja Hardware app for Android</span>
+                <div class="row-top">
+                    <span class="ico"><i class="bi bi-android2"></i></span>
+                    <span class="t">Umoja Hardware for Android
+                        <span class="s">Sell, check stock and raise quotations in the field.</span>
+                    </span>
                 </div>
-                <a href="{% url 'download_app' %}" class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2">
+                <a href="{% url 'download_app' %}" class="btn-apk">
                     <i class="bi bi-download"></i> Download APK
                 </a>
-                <small class="app-download-hint">After downloading, open the file and allow installs from this source if prompted.</small>
+                <small class="hint">After downloading, open the file and allow installs from this
+                    source if prompted.</small>
             </div>
+
         </div>
     </main>
+
+    <script>
+        // Reveal the password. Worth having on a phone keyboard, where a
+        // mistyped password is the commonest reason a sign-in fails.
+        (function () {
+            var button = document.getElementById('togglePw');
+            var input = document.getElementById('id_password');
+            if (!button || !input) { return; }
+            button.addEventListener('click', function () {
+                var shown = input.type === 'text';
+                input.type = shown ? 'password' : 'text';
+                button.setAttribute('aria-pressed', String(!shown));
+                button.setAttribute('aria-label', shown ? 'Show password' : 'Hide password');
+                button.setAttribute('title', shown ? 'Show password' : 'Hide password');
+                button.firstElementChild.className = shown ? 'bi bi-eye' : 'bi bi-eye-slash';
+                // Keep the caret where it was, rather than jumping to the start.
+                var at = input.value.length;
+                input.focus();
+                input.setSelectionRange(at, at);
+            });
+        })();
+    </script>
 
 </body>
 
