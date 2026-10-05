@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Voucher register{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Voucher register</h2>
+        <p class="text-muted mb-0 small">
+            Every document in the books. A <strong>draft</strong> may be unbalanced and edited at
+            will; <strong>posting</strong> never is. A posted voucher is corrected by
+            <strong>reversal</strong>, which leaves both documents standing.
+        </p>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="bi bi-plus-lg"></i> New voucher
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+        {% for code, label in kinds %}
+            <li><a class="dropdown-item"
+                   href="{% url 'finance:voucher_entry' voucher_type=code %}">{{ label }}</a></li>
+        {% endfor %}
+        </ul>
+        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-3 small">
+    <li class="nav-item">
+        <a class="nav-link {% if not current_kind %}active{% endif %}"
+           href="{% url 'finance:voucher_register' %}">All</a>
+    </li>
+    {% for code, label in kinds %}
+    <li class="nav-item">
+        <a class="nav-link {% if current_kind == code %}active{% endif %}"
+           href="{% url 'finance:voucher_register' %}?kind={{ code }}">{{ label }}</a>
+    </li>
+    {% endfor %}
+</ul>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            {% if current_kind %}<input type="hidden" name="kind" value="{{ current_kind }}">{% endif %}
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Search</label>{{ filter_form.q }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Type</label>{{ filter_form.voucher_type }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Status</label>{{ filter_form.status }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From</label>{{ filter_form.date_from }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To</label>{{ filter_form.date_to }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Invoice no</label>{{ filter_form.invoice_number }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">EFD no</label>{{ filter_form.efd_number }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Customer</label>{{ filter_form.customer }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Supplier</label>{{ filter_form.supplier }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Ledger</label>{{ filter_form.account }}
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Year</label>{{ filter_form.financial_year }}
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{% url 'finance:voucher_register' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0" data-export="Voucher register" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>Voucher</th><th>Date</th><th>Type</th><th>Party</th>
+                    <th>Invoice / EFD</th><th class="text-end">Amount</th>
+                    <th>Status</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for voucher in object_list %}
+                <tr>
+                    <td>
+                        <a href="{% url 'finance:voucher_detail' voucher.pk %}"
+                           class="text-decoration-none fw-semibold">{{ voucher.number }}</a>
+                        {% if voucher.is_reversal %}
+                            <span class="badge text-bg-light border ms-1">reversal</span>{% endif %}
+                    </td>
+                    <td class="small text-nowrap">{{ voucher.date|date:"d/m/Y" }}</td>
+                    <td class="small">{{ voucher.get_voucher_type_display }}</td>
+                    <td class="small">{{ voucher.party.name|default:"—" }}</td>
+                    <td class="small">
+                        {{ voucher.invoice_number|default:"—" }}
+                        {% if voucher.efd_number %}
+                            <div class="text-muted">EFD {{ voucher.efd_number }}</div>{% endif %}
+                    </td>
+                    <td class="text-end">{{ voucher.total|money }}
+                        {% if voucher.is_foreign_currency %}
+                            <div class="text-muted small">{{ voucher.currency.code }}
+                                @ {{ voucher.exchange_rate }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ voucher.status|status_badge }}</td>
+                    <td class="text-end text-nowrap">
+                        {% if voucher.is_draft %}
+                            <a href="{% url 'finance:voucher_edit' voucher.pk %}"
+                               class="btn btn-sm btn-outline-primary">Edit</a>
+                        {% endif %}
+                        <a href="{% url 'finance:voucher_print' voucher.pk %}"
+                           class="btn btn-sm btn-outline-secondary" target="_blank">
+                            <i class="bi bi-printer"></i>
+                        </a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No voucher matches.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.previous_page_number %}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.next_page_number %}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

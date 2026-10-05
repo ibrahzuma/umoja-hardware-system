@@ -1216,9 +1216,18 @@ class LedgerAccountViewSet(viewsets.ModelViewSet):
 
 
 class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
-                     mixins.ListModelMixin, viewsets.GenericViewSet):
-    """Vouchers are written once. No update, no delete — a wrong one is
-    cancelled, which is an action here, not an edit."""
+                     mixins.ListModelMixin, mixins.DestroyModelMixin,
+                     viewsets.GenericViewSet):
+    """A posted voucher is written once: no update, and `destroy` refuses it.
+    A wrong one is *cancelled* or *reversed*, both of which are actions here
+    rather than edits.
+
+    A **draft** is different — it is meant to be worked on. `draft` saves one,
+    `validate` says what is stopping it posting, `post_to_ledger` posts it,
+    and `destroy` deletes it. Editing a draft's lines goes through the entry
+    screen (`/finance/accounting/vouchers/<pk>/edit/`), which runs the same
+    draft service.
+    """
     queryset = Voucher.objects.select_related('created_by', 'cancelled_by', 'customer', 'supplier').prefetch_related(
         'lines__account', 'lines__allocations').all()
     serializer_class = VoucherSerializer
@@ -1260,8 +1269,68 @@ class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         voucher = vouchers.cancel_voucher(self.get_object(), request.user,
-                                          request.data.get('reason') or '')
+                                          request.data.get('reason') or '', request=request)
         return Response(self.get_serializer(voucher).data)
+
+    def perform_destroy(self, instance):
+        """Only a draft goes. A posted voucher is reversed, which leaves both
+        documents in the books — that is what an audit needs to see."""
+        from .drafts import VoucherDraftService
+        from .posting import VoucherValidationError
+        try:
+            VoucherDraftService(self.request.user, self.request).delete(instance)
+        except VoucherValidationError as exc:
+            raise ValidationError({'detail': exc.errors})
+
+    @action(detail=False, methods=['post'])
+    def draft(self, request):
+        """Save a voucher *without* posting it. Same payload as a create; the
+        voucher lands `draft`, numbered and editable, and may be unbalanced —
+        that is what a draft is for."""
+        d = request.data
+        voucher = vouchers.post_voucher(
+            d.get('voucher_type'), d.get('date'), d.get('description'), d.get('lines'),
+            request.user, request=request, draft_only=True,
+            header={k: d.get(k) for k in ('customer', 'supplier', 'invoice_number',
+                                          'efd_number')},
+        )
+        voucher = self.get_queryset().get(pk=voucher.pk)
+        return Response(self.get_serializer(voucher).data, status=201)
+
+    @action(detail=True, methods=['post'])
+    def post_to_ledger(self, request, pk=None):
+        """Post a draft. Named `post_to_ledger` rather than `post` because
+        DRF already uses `post` for the HTTP verb."""
+        from .posting import VoucherPostingService, VoucherValidationError
+        voucher = self.get_object()
+        try:
+            VoucherPostingService(voucher, request.user, request).post()
+        except VoucherValidationError as exc:
+            raise ValidationError({'detail': exc.errors})
+        return Response(self.get_serializer(self.get_queryset().get(pk=voucher.pk)).data)
+
+    @action(detail=True, methods=['post'])
+    def reverse(self, request, pk=None):
+        """Post the mirror image as a Journal and mark this one reversed.
+        Both documents stay in the books."""
+        reversal = vouchers.reverse_voucher(
+            self.get_object(), request.user,
+            reversal_date=request.data.get('date') or None,
+            reason=request.data.get('reason') or '', request=request)
+        return Response(self.get_serializer(self.get_queryset().get(pk=reversal.pk)).data,
+                        status=201)
+
+    @action(detail=True, methods=['get'])
+    def validate(self, request, pk=None):
+        """What stands between this draft and the ledger — the list the entry
+        screen shows above a draft that will not post."""
+        from .posting import VoucherPostingService
+        voucher = self.get_object()
+        if not voucher.is_draft:
+            return Response({'errors': [], 'can_post': False,
+                             'detail': f'Already {voucher.get_status_display().lower()}.'})
+        errors = VoucherPostingService(voucher, request.user, request).validate()
+        return Response({'errors': errors, 'can_post': not errors})
 
     @action(detail=False, methods=['get'])
     def import_template(self, request):

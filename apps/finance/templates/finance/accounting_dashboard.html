@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Accounting{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Accounting</h2>
+        <p class="text-muted mb-0 small">
+            What the books say: vouchers, the General Ledger and the reports built off it.
+            {% if financial_year %}
+                <span class="badge bg-light text-dark border ms-1">{{ financial_year.name }}</span>
+            {% endif %}
+        </p>
+    </div>
+    <div class="btn-group">
+        <a href="{% url 'finance:voucher_register' %}" class="btn btn-outline-primary">
+            <i class="bi bi-journal-text"></i> Vouchers
+        </a>
+        <a href="{% url 'finance:report_index' %}" class="btn btn-outline-primary">
+            <i class="bi bi-file-earmark-bar-graph"></i> Reports
+        </a>
+        <a href="{% url 'finance:accounting_settings' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-gear"></i> Settings
+        </a>
+    </div>
+</div>
+
+{% if not financial_year %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    No financial year is open, so nothing can be posted.
+    <a href="{% url 'finance:financial_year_create' %}" class="alert-link">Create one</a>.
+</div>
+{% endif %}
+
+<!-- New voucher, one button per type -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <h6 class="text-muted text-uppercase small fw-bold mb-3">New voucher</h6>
+        <div class="d-flex flex-wrap gap-2">
+            {% for code, label in voucher_types %}
+            <a href="{% url 'finance:voucher_entry' voucher_type=code %}"
+               class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-plus-lg"></i> {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- The figures -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Sales this year</h6>
+                <h4 class="fw-bold mb-0">{{ sales_total|money }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Purchases this year</h6>
+                <h4 class="fw-bold mb-0">{{ purchase_total|money }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Owed to us</h6>
+                <h4 class="fw-bold mb-0">{{ receivables|money }}</h4>
+                <a href="{% url 'finance:report_customer_outstanding' %}" class="small text-decoration-none">
+                    {{ customer_outstanding_count }} open invoice{{ customer_outstanding_count|pluralize }}
+                    ({{ customer_outstanding_total|money }})
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Owed by us</h6>
+                <h4 class="fw-bold mb-0 text-danger">{{ payables|money }}</h4>
+                <a href="{% url 'finance:report_supplier_outstanding' %}" class="small text-decoration-none">
+                    {{ supplier_outstanding_count }} open bill{{ supplier_outstanding_count|pluralize }}
+                    ({{ supplier_outstanding_total|money }})
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-0 pb-0">
+                <h6 class="fw-bold mb-0">Sales against purchases</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="monthlyChart" height="110"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white border-0 pb-0">
+                <h6 class="fw-bold mb-0">Cash and bank</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted small">Cash books</span>
+                    <strong>{{ cash_balance|money }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-muted small">Bank accounts</span>
+                    <strong>{{ bank_balance|money }}</strong>
+                </div>
+                <table class="table table-sm mb-0" data-no-paginate>
+                    <tbody>
+                    {% for account, balance in bank_cash_balances %}
+                        <tr>
+                            <td class="small">
+                                <a href="{% url 'finance:account_detail' account.pk %}"
+                                   class="text-decoration-none">{{ account.name }}</a>
+                            </td>
+                            <td class="text-end small">{{ balance|money }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td class="text-muted small">No cash book or bank account yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="fw-bold mb-0">Latest vouchers</h6>
+                <span>
+                    {% if draft_count %}
+                    <a href="{% url 'finance:voucher_register' %}?status=draft"
+                       class="badge text-bg-secondary text-decoration-none">{{ draft_count }} draft</a>
+                    {% endif %}
+                    <span class="badge text-bg-success">{{ posted_count }} posted</span>
+                    {% if reversed_count %}
+                    <span class="badge text-bg-warning">{{ reversed_count }} reversed</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0" data-export="Latest vouchers">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Voucher</th><th>Date</th><th>Party</th>
+                            <th class="text-end">Amount</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for voucher in recent_vouchers %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'finance:voucher_detail' voucher.pk %}"
+                                   class="text-decoration-none fw-semibold">{{ voucher.number }}</a>
+                                <div class="text-muted small">{{ voucher.get_voucher_type_display }}</div>
+                            </td>
+                            <td class="small">{{ voucher.date|date:"d/m/Y" }}</td>
+                            <td class="small">{{ voucher.party.name|default:"—" }}</td>
+                            <td class="text-end">{{ voucher.total|money }}</td>
+                            <td>{{ voucher.status|status_badge }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">
+                            No vouchers yet.
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white">
+                <h6 class="fw-bold mb-0">Reports</h6>
+            </div>
+            <div class="list-group list-group-flush" style="max-height:420px;overflow-y:auto">
+                {% for url, title, icon, description in reports %}
+                <a href="{{ url }}" class="list-group-item list-group-item-action">
+                    <i class="bi {{ icon }} text-primary me-2"></i>
+                    <span class="fw-semibold">{{ title }}</span>
+                    <div class="text-muted small ms-4">{{ description }}</div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const labels = {{ chart_labels|safe }};
+    const sales = {{ chart_sales|safe }};
+    const purchases = {{ chart_purchases|safe }};
+    const canvas = document.getElementById('monthlyChart');
+    if (!canvas || !labels.length) { return; }
+    new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Sales', data: sales, backgroundColor: 'rgba(25,135,84,0.7)' },
+                { label: 'Purchases', data: purchases, backgroundColor: 'rgba(13,110,253,0.7)' }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { callback: v => v.toLocaleString() }
+                }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

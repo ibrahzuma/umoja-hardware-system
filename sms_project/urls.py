@@ -13,6 +13,11 @@ if not ADMIN_URL.endswith('/'):
 
 from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet, PurchaseOrderViewSet, GoodsReceivedNoteViewSet, TruckViewSet, TruckAllocationViewSet, DriverViewSet, StockAdjustmentViewSet, TruckMaintenanceViewSet, TruckCostViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
+from apps.finance.api_accounting import (
+    AccountingAuditLogViewSet, AccountingReportViewSet, AccountingSettingsViewSet,
+    CurrencyViewSet, ExchangeRateViewSet, FinancialYearViewSet, InvoiceViewSet,
+    VoucherTypeViewSet,
+)
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet, PettyCashViewSet, PettyCashRequestViewSet, OtherPaymentViewSet, SalesLedgerViewSet, ProfitLossViewSet, CashFlowViewSet, BalanceSheetViewSet, LedgerAccountViewSet, VoucherViewSet, GeneralLedgerViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
 from apps.crm.views import CrmCreditViewSet, CrmPaymentViewSet, CustomerRecordViewSet
@@ -68,6 +73,15 @@ router.register(r'balance-sheet', BalanceSheetViewSet, basename='balance-sheet')
 router.register(r'ledger-accounts', LedgerAccountViewSet)
 router.register(r'vouchers', VoucherViewSet)
 router.register(r'general-ledger', GeneralLedgerViewSet)
+# The accounting configuration, the invoice register and the audit trail.
+router.register(r'currencies', CurrencyViewSet)
+router.register(r'exchange-rates', ExchangeRateViewSet)
+router.register(r'financial-years', FinancialYearViewSet)
+router.register(r'voucher-types', VoucherTypeViewSet)
+router.register(r'accounting-settings', AccountingSettingsViewSet)
+router.register(r'ledger-invoices', InvoiceViewSet)
+router.register(r'accounting-audit', AccountingAuditLogViewSet)
+router.register(r'accounting-reports', AccountingReportViewSet, basename='accounting-reports')
 # HR
 router.register(r'departments', DepartmentViewSet)
 router.register(r'job-positions', JobPositionViewSet)

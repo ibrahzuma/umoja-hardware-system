@@ -2,10 +2,11 @@ from decimal import Decimal
 from rest_framework import serializers
 from django.db.models import Sum
 from .models import (
-    Expense, ExpenseCategory, Income, SupplierPayment, TaxPayment, PaymentReceipt,
+    AccountingAuditLog, AccountingSettings, Currency, ExchangeRate, Expense, ExpenseCategory,
+    FinancialYear, Income, Invoice, SupplierPayment, TaxPayment, PaymentReceipt,
     BankAccount, PettyCashTransaction, OtherPayment, SalesLedgerEntry,
     PettyCashRequest, LedgerAccount, Voucher, VoucherLine, VoucherAllocation,
-    GeneralLedgerEntry,
+    VoucherType, GeneralLedgerEntry,
 )
 from apps.sales.models import Sale
 
@@ -236,8 +237,15 @@ class PettyCashRequestSerializer(serializers.ModelSerializer):
 
 class LedgerAccountSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source='get_kind_display', read_only=True)
+    ledger_kind = serializers.CharField(read_only=True)
+    account_type_display = serializers.CharField(source='get_account_type_display',
+                                                 read_only=True)
+    parent_code = serializers.CharField(source='parent.code', read_only=True, default='')
+    currency_code = serializers.CharField(read_only=True)
     is_money = serializers.BooleanField(read_only=True)
+    is_postable = serializers.BooleanField(read_only=True)
     normal_side = serializers.CharField(read_only=True)
+    level = serializers.IntegerField(read_only=True)
     # Filled in by the viewset from one aggregate, not one query per row.
     balance = serializers.SerializerMethodField()
     linked_to = serializers.SerializerMethodField()
@@ -245,12 +253,19 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = LedgerAccount
         fields = [
-            'id', 'code', 'name', 'kind', 'kind_display', 'is_money', 'normal_side',
+            'id', 'code', 'name', 'kind', 'kind_display', 'ledger_kind', 'is_money',
+            'normal_side', 'account_type', 'account_type_display', 'category',
+            'parent', 'parent_code', 'is_group', 'is_customer_control', 'is_supplier_control',
+            'is_postable', 'vat_kind', 'currency', 'currency_code', 'level',
             'bank_account', 'customer', 'supplier', 'linked_to',
             'opening_balance', 'opening_side', 'is_active', 'notes', 'created_at', 'balance',
         ]
         read_only_fields = ['bank_account', 'customer', 'supplier', 'created_at']
-        extra_kwargs = {'code': {'required': False, 'allow_blank': True}}
+        extra_kwargs = {
+            'code': {'required': False, 'allow_blank': True},
+            'account_type': {'required': False, 'allow_blank': True},
+            'category': {'required': False, 'allow_blank': True},
+        }
 
     def get_balance(self, obj):
         balances = self.context.get('balances') or {}
@@ -284,7 +299,8 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
 class VoucherAllocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoucherAllocation
-        fields = ['id', 'sale', 'purchase_order', 'voucher', 'reference', 'amount']
+        fields = ['id', 'invoice', 'sale', 'purchase_order', 'voucher', 'reference',
+                  'amount', 'notes']
 
 
 class VoucherLineSerializer(serializers.ModelSerializer):
@@ -296,7 +312,7 @@ class VoucherLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoucherLine
         fields = ['id', 'account', 'account_code', 'account_name', 'account_kind',
-                  'side', 'amount', 'narration', 'position', 'allocations']
+                  'side', 'amount', 'base_amount', 'narration', 'position', 'allocations']
 
 
 class VoucherSerializer(serializers.ModelSerializer):
@@ -310,20 +326,37 @@ class VoucherSerializer(serializers.ModelSerializer):
     party_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     cancelled_by_name = serializers.SerializerMethodField()
+    posted_by_name = serializers.SerializerMethodField()
+    financial_year_code = serializers.CharField(source='financial_year.code', read_only=True,
+                                                default='')
+    currency_code = serializers.CharField(read_only=True)
+    is_foreign_currency = serializers.BooleanField(read_only=True)
+    difference = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    is_balanced = serializers.BooleanField(read_only=True)
+    reversal_of_number = serializers.CharField(source='reversal_of.number', read_only=True,
+                                               default='')
     lines = VoucherLineSerializer(many=True, read_only=True)
     accounts_summary = serializers.SerializerMethodField()
+    invoice_status = serializers.SerializerMethodField()
+    invoice_outstanding = serializers.SerializerMethodField()
 
     class Meta:
         model = Voucher
         fields = [
-            'id', 'number', 'voucher_type', 'voucher_type_display', 'date', 'description',
-            'total', 'status', 'status_display',
+            'id', 'number', 'sequence_number', 'voucher_type', 'voucher_type_display',
+            'date', 'description', 'reference',
+            'total', 'total_debit', 'total_credit', 'base_total_debit', 'base_total_credit',
+            'difference', 'is_balanced', 'status', 'status_display',
+            'financial_year', 'financial_year_code',
+            'currency', 'currency_code', 'exchange_rate', 'is_foreign_currency',
             'customer', 'customer_name', 'supplier', 'supplier_name', 'party_name',
             'invoice_number', 'efd_number', 'payment_status', 'payment_status_display',
-            'net_amount', 'vat_amount',
+            'net_amount', 'vat_amount', 'vat_account',
+            'reversal_of', 'reversal_of_number',
             'created_by', 'created_by_name', 'created_at',
+            'posted_by', 'posted_by_name', 'posted_at',
             'cancelled_by', 'cancelled_by_name', 'cancelled_at', 'cancel_reason',
-            'lines', 'accounts_summary',
+            'lines', 'accounts_summary', 'invoice_status', 'invoice_outstanding',
         ]
 
     def _name(self, user):
@@ -341,6 +374,21 @@ class VoucherSerializer(serializers.ModelSerializer):
     def get_cancelled_by_name(self, obj):
         return self._name(obj.cancelled_by)
 
+    def get_posted_by_name(self, obj):
+        return self._name(obj.posted_by)
+
+    def _invoice(self, obj):
+        """The invoice-register row this voucher raised, if any."""
+        return getattr(obj, 'invoice', None)
+
+    def get_invoice_status(self, obj):
+        invoice = self._invoice(obj)
+        return invoice.status if invoice else ''
+
+    def get_invoice_outstanding(self, obj):
+        invoice = self._invoice(obj)
+        return str(invoice.outstanding_amount) if invoice else None
+
     def get_accounts_summary(self, obj):
         """'Dr CRDB Main / Cr Kibo Traders' for the register listing."""
         lines = list(obj.lines.all())
@@ -357,4 +405,103 @@ class GeneralLedgerEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = GeneralLedgerEntry
         fields = ['id', 'voucher', 'account', 'account_code', 'account_name', 'account_kind',
-                  'date', 'voucher_type', 'voucher_number', 'reference', 'description', 'debit', 'credit']
+                  'financial_year', 'date', 'voucher_type', 'voucher_number', 'reference',
+                  'description', 'debit', 'credit',
+                  'currency', 'exchange_rate', 'foreign_debit', 'foreign_credit',
+                  'customer', 'supplier']
+
+
+# ---------------------------------------------------------------------------
+# Accounting configuration and the invoice register
+# ---------------------------------------------------------------------------
+
+class CurrencySerializer(serializers.ModelSerializer):
+    display_symbol = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Currency
+        fields = ['id', 'code', 'name', 'symbol', 'display_symbol', 'is_base', 'is_active']
+
+
+class ExchangeRateSerializer(serializers.ModelSerializer):
+    currency_code = serializers.CharField(source='currency.code', read_only=True)
+
+    class Meta:
+        model = ExchangeRate
+        fields = ['id', 'currency', 'currency_code', 'rate_date', 'rate', 'note',
+                  'created_by', 'created_at']
+        read_only_fields = ['created_by', 'created_at']
+
+
+class FinancialYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FinancialYear
+        fields = ['id', 'code', 'name', 'start_date', 'end_date', 'is_active', 'is_closed',
+                  'lock_date', 'notes', 'created_at']
+        read_only_fields = ['created_at']
+
+
+class VoucherTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VoucherType
+        fields = ['id', 'code', 'name', 'prefix', 'description', 'is_active']
+        read_only_fields = ['code']
+
+
+class AccountingSettingsSerializer(serializers.ModelSerializer):
+    currency_code = serializers.CharField(read_only=True)
+    currency_symbol = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = AccountingSettings
+        fields = [
+            'id', 'financial_year_start', 'financial_year_end',
+            'voucher_number_padding', 'include_financial_year_in_number',
+            'reset_sequence_each_year', 'number_separator',
+            'efd_enabled', 'efd_serial_number', 'efd_duplicate_policy', 'default_vat_rate',
+            'period_lock_date', 'allow_backdated_entries',
+            'default_cash_account', 'default_bank_account', 'default_sales_account',
+            'default_purchase_account', 'default_output_vat_account',
+            'default_input_vat_account',
+            'currency_code', 'currency_symbol', 'updated_at', 'updated_by',
+        ]
+        read_only_fields = ['updated_at', 'updated_by']
+
+
+class InvoiceSerializer(serializers.ModelSerializer):
+    """The books' own invoice register. Read-only over the API: a row is
+    raised by posting a Sales or Purchase voucher, never typed in here."""
+    kind_display = serializers.CharField(source='get_kind_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    party_name = serializers.SerializerMethodField()
+    allocated_amount = serializers.SerializerMethodField()
+    outstanding_amount = serializers.SerializerMethodField()
+    voucher_number = serializers.CharField(source='voucher.number', read_only=True, default='')
+
+    class Meta:
+        model = Invoice
+        fields = ['id', 'kind', 'kind_display', 'customer', 'supplier', 'party_name',
+                  'voucher', 'voucher_number', 'invoice_number', 'efd_number',
+                  'invoice_date', 'due_date', 'original_amount',
+                  'allocated_amount', 'outstanding_amount',
+                  'status', 'status_display', 'description', 'created_at']
+
+    def get_party_name(self, obj):
+        party = obj.party
+        return party.name if party else ''
+
+    def get_allocated_amount(self, obj):
+        return str(obj.allocated_amount)
+
+    def get_outstanding_amount(self, obj):
+        return str(obj.outstanding_amount)
+
+
+class AccountingAuditLogSerializer(serializers.ModelSerializer):
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+
+    class Meta:
+        model = AccountingAuditLog
+        fields = ['id', 'user', 'username', 'action', 'action_display',
+                  'voucher', 'voucher_number', 'model_name', 'object_repr',
+                  'previous_status', 'new_status', 'description', 'ip_address', 'timestamp']

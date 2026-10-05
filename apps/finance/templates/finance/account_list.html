@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Chart of Accounts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Chart of Accounts</h2>
+        <p class="text-muted mb-0 small">
+            Every ledger the books can post to. A <strong>group</strong> only organises the chart
+            and is never posted to; a <strong>control account</strong> holds the sub-ledgers
+            beneath it, so it always equals the sum of its customers or suppliers. Bank accounts,
+            customers and suppliers are never typed in twice — each grows a ledger when it is
+            created.
+        </p>
+    </div>
+    <div class="btn-group">
+        <a href="{% url 'finance:account_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New ledger
+        </a>
+        <a href="{% url 'finance:account_import' %}" class="btn btn-outline-primary">
+            <i class="bi bi-upload"></i> Bulk upload
+        </a>
+        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+{% if opening_difference %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    The opening balances do not net to zero — they are out by
+    <strong>{{ opening_difference|abs_money }}</strong>
+    ({{ opening_difference|dr_cr }}). Until that is fixed, the trial balance will not balance
+    either. Post the difference to an opening-balance equity ledger.
+</div>
+{% endif %}
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Search</label>
+                {{ filter_form.q }}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Type</label>
+                {{ filter_form.account_type }}
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Kind</label>
+                {{ filter_form.kind }}
+            </div>
+            <div class="col-md-2">
+                <div class="form-check mb-2">
+                    {{ filter_form.show_inactive }}
+                    <label class="form-check-label small" for="{{ filter_form.show_inactive.id_for_label }}">
+                        Show closed
+                    </label>
+                </div>
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0" data-export="Chart of Accounts">
+            <thead class="table-light">
+                <tr>
+                    <th>Code</th><th>Ledger</th><th>Kind</th><th>Type</th>
+                    <th>Under</th><th class="text-end">Balance</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+                <tr {% if not row.account.is_active %}class="text-muted"{% endif %}>
+                    <td class="fw-semibold">{{ row.account.code }}</td>
+                    <td>
+                        <span style="padding-left:{{ row.account.level }}rem">
+                            {% if row.account.is_group %}<i class="bi bi-folder2 text-muted me-1"></i>{% endif %}
+                            <a href="{% url 'finance:account_detail' row.account.pk %}"
+                               class="text-decoration-none">{{ row.account.name }}</a>
+                        </span>
+                        {% if row.account.currency_id %}
+                            <span class="badge text-bg-light border ms-1">{{ row.account.currency.code }}</span>
+                        {% endif %}
+                        {% if not row.account.is_active %}
+                            <span class="badge text-bg-secondary ms-1">Closed</span>{% endif %}
+                    </td>
+                    <td class="small">{{ row.account.ledger_kind }}</td>
+                    <td class="small text-muted">{{ row.account.get_account_type_display }}</td>
+                    <td class="small text-muted">{{ row.account.parent.code|default:"—" }}</td>
+                    <td class="text-end">
+                        {{ row.balance|abs_money }}
+                        <span class="text-muted small">{{ row.balance|dr_cr }}</span>
+                    </td>
+                    <td class="text-end">
+                        <a href="{% url 'finance:account_edit' row.account.pk %}"
+                           class="btn btn-sm btn-outline-primary">Edit</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-4">No ledger matches.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

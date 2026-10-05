@@ -120,10 +120,16 @@ adding another duplicate will not make two menus spring open at once.
             <i class="bi bi-calculator"></i> Accountant
         </a>
         <ul class="collapse list-unstyled" id="accountantSubmenu" data-bs-parent="#sidebarAccordion">
+            <li><a href="{% url 'finance:accounting_dashboard' %}"><i class="bi bi-speedometer2"></i> Accounting Home</a></li>
             <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
-            <li><a href="{% url 'finance:voucher_list' %}"><i class="bi bi-journal-text"></i> Vouchers</a></li>
-            <li><a href="{% url 'finance:general_ledger' %}"><i class="bi bi-journal-bookmark"></i> General Ledger</a></li>
-            <li><a href="{% url 'finance:chart_of_accounts' %}"><i class="bi bi-diagram-3"></i> Ledgers</a></li>
+            <li><a href="{% url 'finance:voucher_register' %}"><i class="bi bi-journal-text"></i> Vouchers</a></li>
+            <li><a href="{% url 'finance:report_index' %}"><i class="bi bi-file-earmark-bar-graph"></i> Accounting Reports</a></li>
+            <li><a href="{% url 'finance:gl_entries' %}"><i class="bi bi-journal-bookmark"></i> General Ledger</a></li>
+            <li><a href="{% url 'finance:account_list' %}"><i class="bi bi-diagram-3"></i> Chart of Accounts</a></li>
+            <li><a href="{% url 'finance:financial_year_list' %}"><i class="bi bi-calendar-range"></i> Financial Years</a></li>
+            <li><a href="{% url 'finance:currency_list' %}"><i class="bi bi-currency-exchange"></i> Currencies</a></li>
+            <li><a href="{% url 'finance:audit_trail' %}"><i class="bi bi-shield-check"></i> Audit Trail</a></li>
+            <li><a href="{% url 'finance:accounting_settings' %}"><i class="bi bi-gear"></i> Accounting Settings</a></li>
             <li><a href="{% url 'finance:profit_loss' %}"><i class="bi bi-graph-up"></i> Profit &amp; Loss</a></li>
             <li><a href="{% url 'finance:balance_sheet' %}"><i class="bi bi-clipboard-data"></i> Balance Sheet</a></li>
             <li><a href="{% url 'finance:cash_flow' %}"><i class="bi bi-arrow-left-right"></i> Cash Flow</a></li>
@@ -314,10 +320,16 @@ adding another duplicate will not make two menus spring open at once.
         </a>
         <ul class="collapse list-unstyled" id="financeSubmenu" data-bs-parent="#sidebarAccordion">
             {% if user.is_superuser or user.is_admin_role or user.is_accountant %}
+            <li><a href="{% url 'finance:accounting_dashboard' %}"><i class="bi bi-speedometer2"></i> Accounting Home</a></li>
             <li><a href="{% url 'finance:sales_ledger' %}"><i class="bi bi-journal-check"></i> Sales Accounting</a></li>
-            <li><a href="{% url 'finance:voucher_list' %}"><i class="bi bi-journal-text"></i> Vouchers</a></li>
-            <li><a href="{% url 'finance:general_ledger' %}"><i class="bi bi-journal-bookmark"></i> General Ledger</a></li>
-            <li><a href="{% url 'finance:chart_of_accounts' %}"><i class="bi bi-diagram-3"></i> Ledgers</a></li>
+            <li><a href="{% url 'finance:voucher_register' %}"><i class="bi bi-journal-text"></i> Vouchers</a></li>
+            <li><a href="{% url 'finance:report_index' %}"><i class="bi bi-file-earmark-bar-graph"></i> Accounting Reports</a></li>
+            <li><a href="{% url 'finance:gl_entries' %}"><i class="bi bi-journal-bookmark"></i> General Ledger</a></li>
+            <li><a href="{% url 'finance:account_list' %}"><i class="bi bi-diagram-3"></i> Chart of Accounts</a></li>
+            <li><a href="{% url 'finance:financial_year_list' %}"><i class="bi bi-calendar-range"></i> Financial Years</a></li>
+            <li><a href="{% url 'finance:currency_list' %}"><i class="bi bi-currency-exchange"></i> Currencies</a></li>
+            <li><a href="{% url 'finance:audit_trail' %}"><i class="bi bi-shield-check"></i> Audit Trail</a></li>
+            <li><a href="{% url 'finance:accounting_settings' %}"><i class="bi bi-gear"></i> Accounting Settings</a></li>
             <li><a href="{% url 'finance:profit_loss' %}"><i class="bi bi-graph-up"></i> Profit &amp; Loss</a></li>
             <li><a href="{% url 'finance:balance_sheet' %}"><i class="bi bi-clipboard-data"></i> Balance Sheet</a></li>
             <li><a href="{% url 'finance:cash_flow' %}"><i class="bi bi-arrow-left-right"></i> Cash Flow</a></li>

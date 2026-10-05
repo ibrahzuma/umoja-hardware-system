@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Accounting configuration{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Accounting configuration</h2>
+        <p class="text-muted mb-0 small">
+            The books' own rules: how vouchers are numbered, what VAT rate to assume, what to do
+            about a duplicate EFD receipt, and how far back anyone may post.
+        </p>
+    </div>
+    <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">Financial year</h6></div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        The default dates a new financial year is offered with. The years
+                        themselves — and which are closed or locked — live
+                        <a href="{% url 'finance:financial_year_list' %}">here</a>.
+                    </p>
+                    {% for field in form %}{% if field.name == 'financial_year_start' or field.name == 'financial_year_end' %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endif %}{% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">Voucher numbering</h6></div>
+                <div class="card-body">
+                    {% for field in form %}{% if field.name == 'voucher_number_padding' or field.name == 'number_separator' or field.name == 'include_financial_year_in_number' or field.name == 'reset_sequence_each_year' %}
+                    <div class="mb-3{% if field.field.widget.input_type == 'checkbox' %} form-check{% endif %}">
+                        {% if field.field.widget.input_type == 'checkbox' %}
+                            {{ field }}
+                            <label class="form-check-label small" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% else %}
+                            <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                        {% endif %}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endif %}{% endfor %}
+
+                    <h6 class="fw-bold small text-uppercase text-muted mt-4 mb-2">Prefix per type</h6>
+                    {{ type_formset.management_form }}
+                    <table class="table table-sm align-middle mb-0" data-no-paginate>
+                        <thead class="table-light">
+                            <tr><th>Voucher</th><th>Label</th><th>Prefix</th><th>In use</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for subform in type_formset %}
+                            <tr>
+                                <td class="small text-muted">
+                                    {{ subform.instance.get_code_display|default:subform.instance.code }}
+                                    {{ subform.id }}
+                                </td>
+                                <td>{{ subform.name }}</td>
+                                <td>{{ subform.prefix }}{% for error in subform.prefix.errors %}
+                                    <div class="text-danger small">{{ error }}</div>{% endfor %}</td>
+                                <td>{{ subform.is_active }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">EFD and VAT</h6></div>
+                <div class="card-body">
+                    {% for field in form %}{% if field.name == 'efd_enabled' or field.name == 'efd_serial_number' or field.name == 'efd_duplicate_policy' or field.name == 'default_vat_rate' %}
+                    <div class="mb-3{% if field.field.widget.input_type == 'checkbox' %} form-check{% endif %}">
+                        {% if field.field.widget.input_type == 'checkbox' %}
+                            {{ field }}
+                            <label class="form-check-label small" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% else %}
+                            <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                        {% endif %}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endif %}{% endfor %}
+                    <div class="alert alert-light border small mb-0">
+                        <strong>Block</strong> refuses a second voucher with the same EFD receipt
+                        number. <strong>Warn</strong> lets it through and says so — duplicates do
+                        happen, and an accountant is better placed than a rule to tell which.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">Locking the past</h6></div>
+                <div class="card-body">
+                    {% for field in form %}{% if field.name == 'period_lock_date' or field.name == 'allow_backdated_entries' %}
+                    <div class="mb-3{% if field.field.widget.input_type == 'checkbox' %} form-check{% endif %}">
+                        {% if field.field.widget.input_type == 'checkbox' %}
+                            {{ field }}
+                            <label class="form-check-label small" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% else %}
+                            <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                        {% endif %}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                    </div>
+                    {% endif %}{% endfor %}
+                    <div class="alert alert-light border small mb-0">
+                        A locked period can still be posted into by anyone holding
+                        <code>finance.post_closed_period</code> — normally an administrator only.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white">
+                    <h6 class="fw-bold mb-0">Default ledgers</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        What the voucher form reaches for first. Nothing is forced — these only
+                        save a few clicks on the ledgers used most.
+                    </p>
+                    <div class="row g-3">
+                    {% for field in form %}{% if field.name|slice:":8" == "default_" and field.name != "default_vat_rate" %}
+                        <div class="col-md-6 col-lg-4">
+                            <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+                        </div>
+                    {% endif %}{% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save</button>
+        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

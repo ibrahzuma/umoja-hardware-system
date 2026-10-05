@@ -80,6 +80,34 @@ class Command(BaseCommand):
                 'crm.change_crmpayment', 'crm.delete_crmpayment',
                 'crm.view_crmcredit', 'crm.add_crmcredit',
                 'crm.change_crmcredit', 'crm.delete_crmcredit',
+                # ------------------------------------------------------------
+                # The books. The accountant keys, posts, cancels and reverses
+                # vouchers, and maintains the chart of accounts, the financial
+                # years and the currencies. `post_closed_period` is the one
+                # they do *not* get: re-opening a closed year is an admin
+                # decision, and the whole point of closing one is that the
+                # person who keeps the books cannot quietly post into it.
+                # ------------------------------------------------------------
+                'finance.view_voucher', 'finance.add_voucher', 'finance.change_voucher',
+                'finance.delete_voucher',
+                'finance.post_voucher', 'finance.cancel_voucher', 'finance.reverse_voucher',
+                'finance.view_voucherline', 'finance.add_voucherline',
+                'finance.change_voucherline', 'finance.delete_voucherline',
+                'finance.view_voucherallocation', 'finance.add_voucherallocation',
+                'finance.change_voucherallocation', 'finance.delete_voucherallocation',
+                'finance.view_invoice', 'finance.add_invoice', 'finance.change_invoice',
+                'finance.view_generalledgerentry',
+                'finance.view_ledgeraccount', 'finance.add_ledgeraccount',
+                'finance.change_ledgeraccount',
+                'finance.view_financialyear', 'finance.add_financialyear',
+                'finance.change_financialyear',
+                'finance.view_currency', 'finance.add_currency', 'finance.change_currency',
+                'finance.view_exchangerate', 'finance.add_exchangerate',
+                'finance.change_exchangerate',
+                'finance.view_vouchertype', 'finance.change_vouchertype',
+                'finance.view_accountingsettings', 'finance.change_accountingsettings',
+                'finance.view_accountingauditlog',
+                'finance.view_salesledgerentry',
             ],
             'Store Keeper': [
                 'inventory.view_stock',

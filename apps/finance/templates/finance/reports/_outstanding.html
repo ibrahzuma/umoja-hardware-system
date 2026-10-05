@@ -1,0 +1,80 @@
+{% load accounting %}
+{% comment %}
+Shared by the customer and supplier outstanding reports. Ageing is counted
+from the invoice date to the as-at date, into the four usual buckets.
+{% endcomment %}
+<div class="row g-3 mb-3">
+    {% for bucket, amount in buckets.items %}
+    <div class="col-6 col-lg-3">
+        <div class="card shadow-sm border-0 border-start border-4
+                    {% if bucket == '0-30' %}border-success
+                    {% elif bucket == '31-60' %}border-info
+                    {% elif bucket == '61-90' %}border-warning
+                    {% else %}border-danger{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1 small fw-bold">{{ bucket }} days</h6>
+                <h5 class="fw-bold mb-0">{{ amount|money }}</h5>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% for group in groups %}
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap">
+        <h6 class="fw-bold mb-0">{{ group.party.name }}</h6>
+        <strong>{{ group.total|money }}</strong>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" data-no-paginate
+               data-export="Outstanding {{ group.party.name }}">
+            <thead class="table-light">
+                <tr>
+                    <th>Invoice</th><th>Date</th>
+                    <th class="text-end">Original</th><th class="text-end">Settled</th>
+                    <th class="text-end">Outstanding</th><th class="text-end">Days</th><th>Ageing</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in group.rows %}
+                <tr>
+                    <td class="small fw-semibold">
+                        {% if row.invoice.voucher_id %}
+                            <a href="{% url 'finance:voucher_detail' row.invoice.voucher_id %}"
+                               class="text-decoration-none">{{ row.invoice.invoice_number }}</a>
+                        {% else %}{{ row.invoice.invoice_number }}{% endif %}
+                        {% if row.invoice.kind == 'opening' %}
+                            <span class="badge text-bg-light border ms-1">opening</span>{% endif %}
+                    </td>
+                    <td class="small">{{ row.invoice.invoice_date|date:"d/m/Y" }}</td>
+                    <td class="text-end">{{ row.invoice.original_amount|money }}</td>
+                    <td class="text-end text-muted">{{ row.invoice.allocated_amount|money_or_blank }}</td>
+                    <td class="text-end fw-semibold">{{ row.outstanding|money }}</td>
+                    <td class="text-end small">{{ row.days }}</td>
+                    <td>
+                        <span class="badge text-bg-{% if row.bucket == '0-30' %}success
+                            {% elif row.bucket == '31-60' %}info
+                            {% elif row.bucket == '61-90' %}warning{% else %}danger{% endif %}">
+                            {{ row.bucket }}</span>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% empty %}
+<div class="alert alert-success">
+    <i class="bi bi-check-circle"></i> Nothing outstanding as at {{ as_of|date:"d F Y" }}.
+</div>
+{% endfor %}
+
+{% if groups %}
+<div class="card shadow-sm border-0">
+    <div class="card-body d-flex justify-content-between align-items-center">
+        <strong class="text-uppercase small">Grand total outstanding</strong>
+        <h5 class="fw-bold mb-0">{{ grand_total|money }}</h5>
+    </div>
+</div>
+{% endif %}

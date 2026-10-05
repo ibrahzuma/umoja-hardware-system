@@ -33,6 +33,11 @@ python manage.py migrate
 # Seed role groups + permissions (must run after first migrate AND after any role/permission edit)
 python manage.py create_roles
 
+# Open the accounting books — base currency, financial year, voucher types, chart of accounts.
+# Idempotent; run after the first migrate, and it is on every deploy already.
+python manage.py open_books
+python manage.py open_books --year 2027       # and add next year's financial year
+
 # Tests — pytest is configured via pytest.ini (uses --reuse-db, needs Postgres)
 pytest                                       # full suite
 pytest apps/crm/tests.py                     # one file
@@ -49,7 +54,9 @@ python manage.py collectstatic --noinput
 **Deploy.** `./deploy.sh` runs *on* the Linode host (`/var/www/app`): pulls main, installs deps, migrates, collects
 static, restarts the `django_app` systemd unit + nginx. From a dev machine, drive it over SSH with
 `python scripts/ssh_deploy.py exec "<command>"` / `put <local> <remote>` (reads `SSH_HOST`/`SSH_USER`/`SSH_PASS`
-from env; needs `paramiko`). `deploy.sh` does **not** run `create_roles` — run it yourself after changing roles.
+from env; needs `paramiko`). `deploy.sh` runs `migrate`, then `open_books` (idempotent — it checks and
+does nothing on a system already running), then `collectstatic`. It does **not** run `create_roles` — run
+that yourself after changing roles, and note the accountant's voucher permissions come from it.
 See `DEPLOYMENT.md` for one-time server setup.
 
 ## Architecture
@@ -182,13 +189,92 @@ See `DEPLOYMENT.md` for one-time server setup.
     file lands **whole or not at all**; the report names the rows to fix. "Customer"/"Supplier" in the Ledger
     column means the row's Party's own ledger; an `Against` column allocates a Receipt/Payment line to an open
     invoice by reference. UI: the Bulk Import modal on `/finance/vouchers/`.
-    The form (`voucher_form.html`) follows the spec's entry rule: whenever
+    Both voucher forms follow the spec's entry rule: whenever
     the sides differ, the difference is written into the next empty amount field on the short side (a new line
     only when none is open) and the user picks its account; a system-written amount re-sizes as the other lines
     change until the user types over it; Post is disabled until Total Debit = Total Credit, and the server
     checks again. Screens: `/finance/vouchers/`, `/finance/vouchers/new/<type>/`, `/finance/general-ledger/`
     (one ledger's statement or the trial balance), `/finance/accounts/`. Access is the same admin + accountant
     predicate as the sales ledger. Tests: `apps/finance/tests.py`.
+  - **The accounting engine** lives in six modules beside `vouchers.py`, and is where the full
+    double-entry workflow sits (`/finance/accounting/`, `views_accounting.py`, `api_accounting.py`):
+    - `drafts.py` — `VoucherDraftService`: saves a voucher, **derives its header from its lines**
+      (currency and rate, then every line's `base_amount`; a Sales/Purchase voucher's party, payment
+      status, VAT ledger and amounts; a Receipt/Payment's party), numbers it, and renumbers it if its
+      date moves to another financial year. `as_date()` is the one place a date string becomes a date.
+    - `posting.py` — `VoucherPostingService.post()` is the **only writer of the General Ledger**.
+      It validates header, period locks, every line, the balance, the party rules and every
+      allocation, then writes one GL row per line, raises the invoice-register row, and marks the
+      voucher posted — all in one transaction, under a row lock so two people pressing Post cannot
+      both get through. Also `VoucherCancellationService` and `VoucherReversalService`.
+    - `restrictions.py` — the spec's restriction table. **Looser than the old `Voucher.RULES`**:
+      Receipt/Sales may use any ledger except a supplier or payable one, Payment/Purchase any except
+      a customer or receivable one, Contra money both sides, Journal anything. `Voucher.RULES` now
+      only orders and preselects the dropdowns; `account_allowed()` is what is actually enforced.
+      Groups and control accounts are never postable.
+    - `balancing.py` — `Total Debit = Total Credit`, and `suggest_balancing_line()`, the one
+      statement of the entry rule the browser and the server both run.
+    - `numbering.py` — sequence-backed numbers. **The default now carries the financial year**:
+      `SV-2026-000001`. Prefix per type (`VoucherType`), padding/separator/year/per-year-reset from
+      `AccountingSettings`.
+    - `ledger_services.py` — every balance and statement, derived from GL rows plus opening
+      balances. A group or control account aggregates its descendants, which is what makes a control
+      account equal the sum of its parties.
+  - **A voucher has a life**: `draft --post--> posted --reverse--> reversed`, or
+    `draft --cancel--> cancelled`. A draft may be unbalanced, is numbered and editable, and has
+    reached no ledger; **posting never is unbalanced**. A posted voucher is never edited — it is
+    *reversed*, which posts the mirror-image Journal and leaves both documents standing.
+    `Voucher.LIVE_STATUSES` (`posted`, `reversed`) is whose **documents** stand — GL rows, numbers,
+    invoice numbers. `Voucher.SETTLING_STATUSES` (`posted` only) is whose **allocations** count: a
+    reversal has no mirror-image allocation, so a reversed receipt must release what it cleared.
+    Don't collapse the two.
+  - **Period locking** (`posting.check_period`) — a voucher needs a `FinancialYear` covering its
+    date, not closed, and not locked up to that date; `AccountingSettings.period_lock_date` and
+    `allow_backdated_entries` apply on top. The override is `finance.post_closed_period`, which
+    `create_roles` gives to **Admin only, never the accountant** — closing a year is pointless if
+    the person keeping the books can post into it anyway. `post_voucher`, `cancel_voucher` and
+    `reverse_voucher` go to the accountant; all four route through `posting._may`, which honours
+    `users.permissions.is_privileged` so an admin is never locked out.
+  - **Multi-currency.** `Currency` (exactly one `is_base`) and `ExchangeRate` (per currency per
+    date). The ledger is **always** kept in the base currency: `VoucherLine.amount` is what was
+    keyed, `base_amount` the same at the voucher's rate, and the GL takes the base figure while
+    keeping `foreign_debit`/`foreign_credit` beside it. A ledger tied to a currency can only be used
+    on vouchers in it. The currency boxes stay hidden until a second currency exists, so a
+    single-currency installation looks exactly as it did. Exchange differences are **not** posted —
+    balances are converted at each transaction's rate and never revalued.
+  - **The chart of accounts is hierarchical.** `LedgerAccount` gained `parent`, `is_group`,
+    `is_customer_control`/`is_supplier_control`, `account_type` (asset/liability/equity/income/
+    expense, which decides the trial balance and the statements) and `vat_kind`. `kind` still decides
+    which voucher dropdown a ledger appears in; `account_type` follows `kind` unless given.
+    `vouchers.open_the_books()` creates the base currency, a financial year, the six voucher types,
+    the default ledgers, the **two control accounts** (`AR`/`AP`) and adopts every party sub-ledger
+    under them — idempotent, so screens call it freely. Bulk upload: `account_imports.py`,
+    `/finance/accounting/ledgers/import/`; a ledger with GL rows keeps its `account_type`.
+  - **The invoice register** (`Invoice`, `InvoiceAllocation` via `VoucherAllocation.invoice`) — one
+    row per posted Sales/Purchase voucher that names a party, plus party opening balances. It is what
+    the ageing reports read. It does **not** replace the shop floor: a till `Sale` and a
+    `PurchaseOrder` are still offered for allocation in their own right. To avoid counting an invoice
+    twice, `outstanding_invoices`/`outstanding_bills` report a voucher-raised invoice under target
+    `voucher` and only a register row *no voucher raised* under target `invoice` — and an allocation
+    naming a `voucher` also stores the `invoice_id` it raised, so one row keeps both in step.
+  - **Thirteen reports** (`accounting_reports.py`, `/finance/accounting/reports/`): General Ledger,
+    Trial Balance, Customer/Supplier Statement, Customer/Supplier Outstanding (with 0-30/31-60/
+    61-90/90+ ageing), the six voucher registers, and VAT (output less input). One view class
+    (`BaseReportView`) gives every one of them a filter bar, a print layout (`?print=1`), CSV
+    (`?export=csv`) and Excel (`?export=xlsx`) off the same figures — so a new report needs only a
+    `build()` and a partial under `templates/finance/reports/_<slug>.html`.
+  - **The audit trail** — `AccountingAuditLog`, written by `audit.log_action` on every create, edit,
+    post, cancel, reversal and allocation, with the user and the IP. Separate from
+    `core.SystemActivity` (the shop floor's live feed) and read-only everywhere.
+  - **The statements read both records, and count each thing once.** Nothing auto-posts a voucher —
+    `finance/signals.py` mirrors a sale into the *sales* ledger and keeps a ledger per party, and
+    that is all — so `GeneralLedgerEntry` holds voucher-sourced entries only and is disjoint from
+    `SalesLedgerEntry`, `Expense`, `Income`, `TaxPayment`, `PettyCashTransaction`, `OtherPayment`
+    and `SupplierPayment`. `statements.py` therefore *adds* the ledger's contribution on its own
+    named "… (vouchers)" lines rather than blending it in. If anything ever starts posting a voucher
+    from a sale, `StatementsAndTheLedgerTest` is where the double counting will show up.
+    **The P&L template looks its lines up by label, not by position** — inserting a line used to
+    silently shift the figures.
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale
     is approved and dispatched on its own track whatever accounting has or has not done with it. Keep it that
     way — the ledger mirrors, it does not authorise.
@@ -233,6 +319,14 @@ The Django admin path is obscured: `ADMIN_URL` env var (defaults to `admin/` onl
 gives superusers and the `admin` role blanket access so specialists never lock admins out). Use these
 (`CanApproveSales`, `CanManageFleet`, `CanHandleGRN`, `CanManagePurchaseOrders`, `CanManageVehicles`,
 `CanRecordSupplierPayment`, …) for anything role-gated rather than the older `apps/core/permissions.py` trio.
+
+The books are the one place a **custom Django permission** does the gating rather than a role class:
+`finance.post_voucher`, `finance.cancel_voucher`, `finance.reverse_voucher` and
+`finance.post_closed_period` (declared on `Voucher.Meta.permissions`). The accountant gets the first
+three; only an Admin gets `post_closed_period`. They are checked through `posting._may`, which
+honours `is_privileged`, and `apps/finance/tests.py` runs `create_roles` in `setUpTestData` on
+purpose — so a role drifting from the screens it is meant to work fails a test rather than becoming
+a 403 in production.
 
 Template views gate with `UserPassesTestMixin` (`test_func`); the sidebar (`core/templates/partials/sidebar_content.html`)
 gates on `perms.*` and the `user.is_*` properties. **When adding a role or screen, update all of: `ROLE_CHOICES`,

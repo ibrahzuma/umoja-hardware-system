@@ -1,20 +1,27 @@
-"""The books proper: chart of accounts, voucher posting and the General Ledger.
+"""The books proper: chart of accounts, voucher entry and the General Ledger.
 
-A voucher is the only way an entry reaches the General Ledger, and
-`post_voucher` is the only way a voucher is written. It refuses anything that
-does not balance, anything that puts a ledger on a side its voucher type does
-not allow, and any allocation that clears more of an invoice or bill than is
-owed on it. Everything it accepts is written in one transaction — voucher,
-lines, allocations and GL rows — so the ledger can never hold half a voucher.
+A voucher is the only way an entry reaches the General Ledger. The engine
+itself lives in four modules this one sits on top of:
+
+    drafts.py        saving a voucher, deriving its header from its lines
+    posting.py       validating and posting it; cancelling and reversing
+    restrictions.py  which ledgers each voucher type may use, on each side
+    balancing.py     Total Debit = Total Credit, and the next balancing line
+
+What stays here is the chart of accounts, the derived "what is still owed"
+figures that allocation is built on, and `post_voucher` — the one-shot
+"save and post in a single call" that the REST API, the bulk upload and the
+mobile app use. A voucher keyed on the accounting screens goes through the
+draft service instead, so it can be saved, reviewed and posted separately.
 
 Outstanding figures for allocation are derived, never stored, in the same
-spirit as the CRM and supplier-credit balances. An invoice is one of three
-things — a till sale, a purchase order, or a Sales/Purchase voucher posted
-here — and each is owed what is left after what has already been set against it:
+spirit as the CRM and supplier-credit balances. An invoice is one of four
+things, and each is owed what is left after what has been set against it:
 
-    till sale owed      = sale total − till payments − earlier voucher allocations
-    purchase order owed = order total − approved supplier payments − earlier allocations
+    till sale owed       = sale total − till payments − earlier allocations
+    purchase order owed  = order total − approved supplier payments − earlier allocations
     invoice voucher owed = the part left on the customer/supplier ledger − earlier allocations
+    register invoice owed= its original amount − allocations on a live voucher
 
 Nothing here writes back to a sale, a purchase order or a supplier payment.
 The ledger mirrors the shop floor; it does not drive it.
@@ -24,15 +31,15 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.db.models import Sum, Q
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.inventory.models import PurchaseOrder, Supplier
 from apps.sales.models import Customer, Sale
 from .models import (
-    BankAccount, GeneralLedgerEntry, LedgerAccount, SupplierPayment, Voucher,
-    VoucherAllocation, VoucherLine,
+    AccountingSettings, BankAccount, Currency, FinancialYear, GeneralLedgerEntry, Invoice,
+    LedgerAccount, SupplierPayment, Voucher, VoucherAllocation, VoucherLine, VoucherType,
 )
+from .restrictions import account_allowed, restriction_error
 
 ZERO = Decimal('0.00')
 
@@ -58,44 +65,155 @@ DEFAULT_LEDGERS = (
     ('equity', 'Capital'),
 )
 
+# The two control accounts. Every customer sub-ledger hangs under the first
+# and every supplier sub-ledger under the second, which is what makes a
+# control account always equal the sum of its parties.
+CONTROL_ACCOUNTS = (
+    ('customer', 'Accounts Receivable', 'is_customer_control', LedgerAccount.ASSET, 'AR'),
+    ('supplier', 'Accounts Payable', 'is_supplier_control', LedgerAccount.LIABILITY, 'AP'),
+)
+
 
 # ---------------------------------------------------------------------------
 # Chart of accounts
 # ---------------------------------------------------------------------------
 
+def open_the_books():
+    """Everything a new set of books needs before a voucher can be posted: a
+    base currency, a financial year covering today, the six voucher types and
+    the chart of accounts.
+
+    Safe to run any number of times — each piece is created only if it is
+    missing — which is why it can be called from a screen, and from
+    `post_voucher`, rather than only from a management command.
+
+    Because it sits on that hot path it leaves early when there is nothing to
+    do: three cheap existence checks, and a set of books already open costs
+    nothing more than that. The full sweep only runs when something really is
+    missing.
+    """
+    if _books_look_open():
+        return 0
+
+    settings_row = AccountingSettings.get_solo()
+
+    if Currency.base() is None:
+        base = Currency.objects.filter(code='TZS').first()
+        if base is None:
+            base = Currency.objects.create(code='TZS', name='Tanzanian Shilling', symbol='TZS')
+        base.is_base = True
+        base.is_active = True
+        base.save(update_fields=['is_base', 'is_active'])
+
+    if not FinancialYear.objects.exists():
+        start, end = settings_row.financial_year_start, settings_row.financial_year_end
+        FinancialYear.objects.create(
+            code=str(start.year), name=f"Financial year {start.year}",
+            start_date=start, end_date=end, is_active=True,
+            notes="Created when the books were opened.",
+        )
+
+    VoucherType.ensure_defaults()
+    return sync_chart_of_accounts()
+
+
+def _books_look_open():
+    """Is there anything left for `open_the_books` to do?
+
+    Deliberately a *fast* check rather than an exhaustive one: a base
+    currency, a year covering today, the six voucher types, both control
+    accounts, and no bank/customer/supplier still waiting for a ledger. If all
+    of that holds there is nothing to create, and the caller can get on with
+    posting.
+    """
+    from django.utils import timezone
+
+    if not Currency.objects.filter(is_base=True).exists():
+        return False
+    if FinancialYear.for_date(timezone.localdate()) is None:
+        return False
+    if VoucherType.objects.count() < len(Voucher.TYPES):
+        return False
+    if not LedgerAccount.objects.filter(is_customer_control=True).exists():
+        return False
+    if not LedgerAccount.objects.filter(is_supplier_control=True).exists():
+        return False
+    if (BankAccount.objects.filter(ledger__isnull=True).exists()
+            or Customer.objects.filter(ledger__isnull=True).exists()
+            or Supplier.objects.filter(ledger__isnull=True).exists()):
+        return False
+    return True
+
+
+def control_account(kind):
+    """The customer or supplier control account, created if it is missing.
+    A party sub-ledger has nowhere to hang without one."""
+    for party_kind, name, flag, account_type, prefix in CONTROL_ACCOUNTS:
+        if party_kind != kind:
+            continue
+        existing = LedgerAccount.objects.filter(**{flag: True, 'is_active': True}).order_by('code').first()
+        if existing is not None:
+            return existing
+        return LedgerAccount.objects.create(
+            code=prefix, name=name, kind=party_kind, account_type=account_type,
+            category=('CURRENT_ASSET' if kind == 'customer' else 'CURRENT_LIABILITY'),
+            notes=f"{name} control account — {kind} sub-ledgers hang under it.",
+            **{flag: True})
+    raise ValueError(kind)
+
+
 def sync_chart_of_accounts():
-    """Make sure every bank account, customer and supplier has a ledger, and
-    that the default ledgers exist. Safe to run any number of times; returns
-    how many ledgers it created."""
+    """Make sure every bank account, customer and supplier has a ledger, that
+    the default ledgers exist, and that each party ledger hangs under its
+    control account. Safe to run any number of times; returns how many
+    ledgers it created."""
     created = 0
 
     # Seed the defaults only while the chart has no ledger of its own yet.
     # Linked ledgers do not count: the signals may well have created a
     # customer's or a bank's ledger before anyone opened the books.
     if not (LedgerAccount.objects
-            .filter(bank_account__isnull=True, customer__isnull=True, supplier__isnull=True)
+            .filter(bank_account__isnull=True, customer__isnull=True, supplier__isnull=True,
+                    is_customer_control=False, is_supplier_control=False)
             .exists()):
         for kind, name in DEFAULT_LEDGERS:
             LedgerAccount.objects.create(kind=kind, name=name)
             created += 1
 
     # The two VAT ledgers the Sales and Purchase vouchers split tax into are
-    # wanted even in a chart seeded before they were part of the defaults.
-    for kind, name in (('tax', 'Output VAT'), ('tax', 'Input VAT')):
-        if not LedgerAccount.objects.filter(kind=kind, name__iexact=name).exists():
-            LedgerAccount.objects.create(kind=kind, name=name)
+    # wanted even in a chart seeded before they were part of the defaults,
+    # and they are flagged so the VAT report finds them by flag not by name.
+    for name, vat_kind in (('Output VAT', LedgerAccount.VAT_OUTPUT),
+                           ('Input VAT', LedgerAccount.VAT_INPUT)):
+        ledger = LedgerAccount.objects.filter(kind='tax', name__iexact=name).first()
+        if ledger is None:
+            LedgerAccount.objects.create(kind='tax', name=name, vat_kind=vat_kind)
             created += 1
+        elif not ledger.vat_kind:
+            ledger.vat_kind = vat_kind
+            ledger.save(update_fields=['vat_kind'])
+
+    receivable = control_account('customer')
+    payable = control_account('supplier')
 
     for bank in BankAccount.objects.filter(ledger__isnull=True):
         LedgerAccount.objects.create(kind='bank', name=bank.name, bank_account=bank,
                                      is_active=bank.is_active)
         created += 1
     for customer in Customer.objects.filter(ledger__isnull=True):
-        LedgerAccount.objects.create(kind='customer', name=customer.name, customer=customer)
+        LedgerAccount.objects.create(kind='customer', name=customer.name, customer=customer,
+                                     parent=receivable)
         created += 1
     for supplier in Supplier.objects.filter(ledger__isnull=True):
-        LedgerAccount.objects.create(kind='supplier', name=supplier.name, supplier=supplier)
+        LedgerAccount.objects.create(kind='supplier', name=supplier.name, supplier=supplier,
+                                     parent=payable)
         created += 1
+
+    # A party ledger created before the control accounts existed is adopted now.
+    LedgerAccount.objects.filter(kind='customer', customer__isnull=False, parent__isnull=True)\
+        .update(parent=receivable)
+    LedgerAccount.objects.filter(kind='supplier', supplier__isnull=False, parent__isnull=True)\
+        .update(parent=payable)
     return created
 
 
@@ -109,14 +227,20 @@ def ensure_ledger_for(instance):
             ledger.is_active = instance.is_active
             ledger.save(update_fields=['name', 'is_active'])
     elif isinstance(instance, Customer):
-        ledger, _ = LedgerAccount.objects.get_or_create(
+        ledger, created = LedgerAccount.objects.get_or_create(
             customer=instance, defaults={'kind': 'customer', 'name': instance.name})
+        if created and ledger.parent_id is None:
+            ledger.parent = control_account('customer')
+            ledger.save(update_fields=['parent'])
         if ledger.name != instance.name:
             ledger.name = instance.name
             ledger.save(update_fields=['name'])
     elif isinstance(instance, Supplier):
-        ledger, _ = LedgerAccount.objects.get_or_create(
+        ledger, created = LedgerAccount.objects.get_or_create(
             supplier=instance, defaults={'kind': 'supplier', 'name': instance.name})
+        if created and ledger.parent_id is None:
+            ledger.parent = control_account('supplier')
+            ledger.save(update_fields=['parent'])
         if ledger.name != instance.name:
             ledger.name = instance.name
             ledger.save(update_fields=['name'])
@@ -145,9 +269,14 @@ def _allowed(account, side_rule):
 # ---------------------------------------------------------------------------
 
 def _allocated_by(field, ids):
-    """Voucher allocations already posted against these sales or orders."""
+    """Voucher allocations already posted against these sales or orders.
+
+    Only a posted voucher's allocations count: a draft's are a plan, and a
+    reversed one's have been undone (see `Voucher.EFFECTIVE_STATUSES`).
+    """
     rows = (VoucherAllocation.objects
-            .filter(**{f'{field}__in': ids}, line__voucher__status='posted')
+            .filter(**{f'{field}__in': ids},
+                    line__voucher__status__in=Voucher.EFFECTIVE_STATUSES)
             .values(field).annotate(t=Sum('amount')))
     return {row[field]: row['t'] or ZERO for row in rows}
 
@@ -173,7 +302,8 @@ def _outstanding_invoice_vouchers(voucher_type, party_field, party, ledger, side
     voucher is the part that went on the party ledger — a cash sale left
     nothing there — less what later vouchers have set against it."""
     vouchers = (Voucher.objects
-                .filter(voucher_type=voucher_type, status='posted', **{party_field: party})
+                .filter(voucher_type=voucher_type, status__in=Voucher.EFFECTIVE_STATUSES,
+                        **{party_field: party})
                 .order_by('date', 'id'))
     ids = [v.id for v in vouchers]
     on_ledger = {
@@ -193,9 +323,27 @@ def _outstanding_invoice_vouchers(voucher_type, party_field, party, ledger, side
     return rows
 
 
+def _outstanding_register_invoices(party, party_field):
+    """Rows of the books' own invoice register that still carry a balance.
+
+    These are the invoices and bills the till never saw — an opening balance,
+    or a bill keyed straight into the ledger. An invoice raised *by* a
+    posted Sales or Purchase voucher is reported through that voucher
+    instead, so it is not counted twice.
+    """
+    invoices = (Invoice.objects
+                .filter(**{party_field: party})
+                .filter(voucher__isnull=True)
+                .outstanding()
+                .order_by('invoice_date', 'id'))
+    return [_row('invoice', inv.id, inv.invoice_number, inv.invoice_date.isoformat(),
+                 inv.original_amount or ZERO, inv.allocated_amount)
+            for inv in invoices]
+
+
 def outstanding_invoices(customer):
     """The customer's invoices that still carry a balance, oldest first:
-    till sales and Sales vouchers alike."""
+    till sales, Sales vouchers and register invoices alike."""
     sales = (Sale.objects.filter(customer=customer)
              .exclude(status='cancelled')
              .annotate(till_paid=Sum('transactions__amount',
@@ -212,13 +360,14 @@ def outstanding_invoices(customer):
     ledger = getattr(customer, 'ledger', None)
     if ledger is not None:
         rows += _outstanding_invoice_vouchers('sales', 'customer', customer, ledger, 'debit')
+    rows += _outstanding_register_invoices(customer, 'customer')
     rows.sort(key=lambda r: (r['date'], r['id']))
     return rows
 
 
 def outstanding_bills(supplier):
     """The supplier's bills that still carry a balance, oldest first: purchase
-    orders and Purchase vouchers alike.
+    orders, Purchase vouchers and register bills alike.
 
     Every live order counts, drafts included — those are placed orders waiting
     for delivery, and the money on them is owed (see statements._creditors).
@@ -245,6 +394,7 @@ def outstanding_bills(supplier):
     ledger = getattr(supplier, 'ledger', None)
     if ledger is not None:
         rows += _outstanding_invoice_vouchers('purchase', 'supplier', supplier, ledger, 'credit')
+    rows += _outstanding_register_invoices(supplier, 'supplier')
     rows.sort(key=lambda r: (r['date'], r['id']))
     return rows
 
@@ -283,13 +433,19 @@ def _money(value, what):
 
 def _clean_lines(voucher_type, raw_lines):
     """Turn the request's lines into (account, side, amount, narration,
-    allocations) tuples, or raise with a message the form can show."""
-    debit_rule, credit_rule = Voucher.RULES[voucher_type]
+    allocations) tuples, or raise with a message the form can show.
+
+    The restriction check is `restrictions.account_allowed` — the table from
+    the accounting specification, which is also what the posting service
+    checks. `Voucher.RULES` still shapes the dropdowns on the entry screen,
+    but it is not a second rule about what may be posted.
+    """
     if not isinstance(raw_lines, list) or not raw_lines:
         raise ValidationError({'lines': 'A voucher needs at least one debit and one credit line.'})
 
     ids = {int(l.get('account')) for l in raw_lines if l.get('account')}
-    accounts = {a.id: a for a in LedgerAccount.objects.filter(id__in=ids)}
+    accounts = {a.id: a for a in
+                LedgerAccount.objects.filter(id__in=ids).select_related('parent', 'customer', 'supplier')}
 
     cleaned = []
     for n, raw in enumerate(raw_lines, start=1):
@@ -301,14 +457,21 @@ def _clean_lines(voucher_type, raw_lines):
             raise ValidationError({'lines': f'Line {n}: pick a ledger.'})
         if not account.is_active:
             raise ValidationError({'lines': f'Line {n}: {account} is closed.'})
+        if account.is_group:
+            raise ValidationError({'lines': (
+                f'Line {n}: {account} is a group account and is never posted to.')})
+        if account.is_control_account:
+            raise ValidationError({'lines': (
+                f"Line {n}: {account} is a control account. Post to the customer's or "
+                f"supplier's own sub-ledger instead.")})
         amount = _money(raw.get('amount'), f'Line {n} amount')
         if amount <= 0:
             raise ValidationError({'lines': f'Line {n}: the amount has to be more than nothing.'})
-        rule = debit_rule if side == 'debit' else credit_rule
-        if not _allowed(account, rule):
+        if not account_allowed(voucher_type, side, account):
             raise ValidationError({'lines': (
                 f'Line {n}: {account.name} ({account.get_kind_display()}) cannot be '
-                f'{side}ed on a {Voucher.PREFIX[voucher_type]} {voucher_type} voucher.')})
+                f'{side}ed on a {Voucher.PREFIX[voucher_type]} {voucher_type} voucher. '
+                f'{restriction_error(voucher_type, side, account).split("Allowed:")[-1].strip()}')})
 
         allocations = []
         for alloc in raw.get('allocations') or []:
@@ -327,13 +490,14 @@ def _clean_lines(voucher_type, raw_lines):
     return cleaned
 
 
-ALLOCATION_TARGETS = ('sale', 'purchase_order', 'voucher')
+ALLOCATION_TARGETS = ('invoice', 'sale', 'purchase_order', 'voucher')
 
 
 def _check_allocations(account, allocations):
     """Each allocation must point at one of the ledger's own open invoices or
-    bills — by `sale`, `purchase_order` or `voucher` id — and stay within what
-    is still owed on it. Returns (target field, id, reference, amount)."""
+    bills — by `invoice`, `sale`, `purchase_order` or `voucher` id — and stay
+    within what is still owed on it. Returns (target field, id, reference,
+    amount)."""
     owed = {(row['target'], row['id']): row for row in outstanding_for(account)}
     out = []
     for raw, amount in allocations:
@@ -399,7 +563,11 @@ def _clean_header(voucher_type, header, lines):
     label = 'sales invoice number' if voucher_type == 'sales' else "supplier's invoice number"
     if not invoice_number:
         raise ValidationError({'invoice_number': f'Enter the {label}.'})
-    posted = Voucher.objects.filter(voucher_type=voucher_type, status='posted')
+    # A reversed voucher no longer holds its invoice number: reversing and
+    # re-entering the corrected invoice under the same number is the ordinary
+    # way to fix one (see `Voucher.EFFECTIVE_STATUSES`).
+    posted = Voucher.objects.filter(voucher_type=voucher_type,
+                                    status__in=Voucher.EFFECTIVE_STATUSES)
     if posted.filter(invoice_number__iexact=invoice_number).exists():
         raise ValidationError({'invoice_number': (
             f'Invoice {invoice_number} is already in the books on another '
@@ -453,17 +621,42 @@ def _clean_header(voucher_type, header, lines):
 
 
 @transaction.atomic
-def post_voucher(voucher_type, date, description, raw_lines, user, header=None):
-    """Validate and post a voucher, returning it. Raises ValidationError.
+def post_voucher(voucher_type, date, description, raw_lines, user, header=None, request=None,
+                 currency=None, exchange_rate=None, reference='', draft_only=False):
+    """Save a voucher *and* post it in one call, returning it.
 
-    `header` is only read for Sales and Purchase vouchers: `invoice_number`,
+    This is the door the REST API, the bulk upload and the mobile app come
+    through — one request, one posted voucher. A voucher keyed on the
+    accounting screens uses `drafts.VoucherDraftService` and
+    `posting.VoucherPostingService` separately instead, so it can be saved,
+    reviewed and posted as three acts.
+
+    Everything validated here is validated again by the posting service; what
+    this function adds is the *shape* checks that let a REST client get a
+    message keyed to the field it got wrong (`lines`, `invoice_number`,
+    `efd_number`) rather than a flat list.
+
+    `header` is read for Sales and Purchase vouchers: `invoice_number`,
     `efd_number` and, optionally, the party (`customer` / `supplier` id) —
-    when it is left out the party is the one whose ledger is on the party
-    side."""
+    when the party is left out it is the one whose ledger sits on the party
+    side. `draft_only=True` stops after saving the draft.
+    """
+    from .drafts import VoucherDraftService, as_date
+    from .posting import VoucherPostingService, VoucherValidationError
+
     if voucher_type not in Voucher.PREFIX:
         raise ValidationError({'voucher_type': 'Unknown voucher type.'})
+    try:
+        date = as_date(date)
+    except VoucherValidationError as exc:
+        raise ValidationError({'date': exc.errors})
     if not date:
         raise ValidationError({'date': 'Give the voucher a date.'})
+
+    # The books have to be open before anything can be posted into them. This
+    # costs one query on a system already set up, and means a fresh install
+    # does not hand the user "no financial year covers this date".
+    open_the_books()
 
     lines = _clean_lines(voucher_type, raw_lines)
     total_debit = sum(a for _, s, a, _, _ in lines if s == 'debit')
@@ -477,42 +670,73 @@ def post_voucher(voucher_type, date, description, raw_lines, user, header=None):
 
     extra = _clean_header(voucher_type, header, lines) if voucher_type in Voucher.INVOICE_TYPES else {}
 
-    voucher = Voucher.objects.create(
+    # Check the allocations before anything is written, so a bad one is a
+    # field error rather than a rolled-back transaction.
+    checked = []
+    for account, side, amount, narration, allocations in lines:
+        checked.append((account, side, amount, narration,
+                        _check_allocations(account, allocations)))
+
+    voucher = Voucher(
         voucher_type=voucher_type, date=date, description=(description or '').strip(),
-        total=total_debit, created_by=user, **extra,
+        status='draft', reference=(reference or '')[:100],
+        currency=currency, exchange_rate=exchange_rate, **extra,
     )
-    for position, (account, side, amount, narration, allocations) in enumerate(lines):
-        line = VoucherLine.objects.create(
-            voucher=voucher, account=account, side=side, amount=amount,
-            narration=narration, position=position,
-        )
-        for target, target_id, reference, alloc_amount in _check_allocations(account, allocations):
-            VoucherAllocation.objects.create(
-                line=line, reference=reference, amount=alloc_amount, **{f'{target}_id': target_id},
-            )
-        GeneralLedgerEntry.objects.create(
-            voucher=voucher, line=line, account=account, date=voucher.date,
-            voucher_type=voucher_type, voucher_number=voucher.number,
-            reference=voucher.invoice_number,
-            description=(narration or voucher.description)[:300],
-            debit=amount if side == 'debit' else ZERO,
-            credit=amount if side == 'credit' else ZERO,
-        )
+    draft_lines = [{
+        'account': account, 'side': side, 'amount': amount, 'narration': narration,
+        'allocations': [{target: target_id, 'reference': ref, 'amount': alloc_amount}
+                        for target, target_id, ref, alloc_amount in allocs],
+    } for account, side, amount, narration, allocs in checked]
+
+    service = VoucherDraftService(user, request)
+    try:
+        voucher = service.save(voucher, draft_lines)
+    except VoucherValidationError as exc:
+        raise ValidationError({'lines': exc.errors})
+
+    # The draft service derives the invoice header from the lines; a party or
+    # an invoice number given explicitly in `header` is the caller's word and
+    # wins, since `_clean_header` has already checked the two agree.
+    if extra:
+        for field, value in extra.items():
+            setattr(voucher, field, value)
+        voucher.save()
+
+    if draft_only:
+        return voucher
+
+    try:
+        VoucherPostingService(voucher, user, request).post()
+    except VoucherValidationError as exc:
+        raise ValidationError({'lines': exc.errors})
+    voucher.refresh_from_db()
     return voucher
 
 
 @transaction.atomic
-def cancel_voucher(voucher, user, reason=''):
-    """Take a voucher's entries back out of the ledger. The document stays."""
-    if voucher.status == 'cancelled':
-        raise ValidationError({'detail': 'That voucher is already cancelled.'})
-    voucher.gl_entries.all().delete()
-    voucher.status = 'cancelled'
-    voucher.cancelled_by = user
-    voucher.cancelled_at = timezone.now()
-    voucher.cancel_reason = (reason or '').strip()
-    voucher.save(update_fields=['status', 'cancelled_by', 'cancelled_at', 'cancel_reason'])
-    return voucher
+def cancel_voucher(voucher, user, reason='', request=None):
+    """Take a voucher's entries back out of the ledger. The document stays.
+
+    Kept as the books' long-standing way of undoing a voucher. The accounting
+    screens offer it for a draft and offer *reversal* for a posted voucher —
+    reversal leaves both documents in the books, which is what an auditor
+    wants to see — but a posted voucher cancelled through here still works.
+    """
+    from .posting import VoucherCancellationService, VoucherValidationError
+    try:
+        return VoucherCancellationService(voucher, user, request).cancel(reason, drafts_only=False)
+    except VoucherValidationError as exc:
+        raise ValidationError({'detail': exc.errors[0] if exc.errors else 'Cannot cancel.'})
+
+
+def reverse_voucher(voucher, user, reversal_date=None, reason='', request=None):
+    """Post the mirror image of a posted voucher as a Journal, and mark the
+    original reversed. Returns the reversing journal."""
+    from .posting import VoucherReversalService, VoucherValidationError
+    try:
+        return VoucherReversalService(voucher, user, request).reverse(reversal_date, reason)
+    except VoucherValidationError as exc:
+        raise ValidationError({'detail': exc.errors})
 
 
 # ---------------------------------------------------------------------------

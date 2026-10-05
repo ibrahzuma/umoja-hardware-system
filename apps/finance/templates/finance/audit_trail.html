@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Audit trail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Audit trail</h2>
+        <p class="text-muted mb-0 small">
+            Every create, edit, post, cancel, reversal and allocation in the books, with who did
+            it and from where. Nothing on this page can be edited — an audit trail somebody can
+            tidy up is not one.
+        </p>
+    </div>
+    <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Search</label>
+                <input type="text" name="q" value="{{ request.GET.q }}" class="form-control"
+                       placeholder="Voucher no, description, user">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Action</label>
+                <select name="action" class="form-select">
+                    <option value="">All</option>
+                    {% for value, label in actions %}
+                    <option value="{{ value }}" {% if request.GET.action == value %}selected{% endif %}>
+                        {{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">User</label>
+                <select name="user" class="form-select">
+                    <option value="">Anyone</option>
+                    {% for person in users %}
+                    <option value="{{ person.pk }}"
+                            {% if request.GET.user == person.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ person.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From</label>
+                <input type="date" name="date_from" value="{{ request.GET.date_from }}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To</label>
+                <input type="date" name="date_to" value="{{ request.GET.date_to }}" class="form-control">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{% url 'finance:audit_trail' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0" data-export="Audit trail" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>When</th><th>Who</th><th>Action</th><th>Document</th>
+                    <th>What happened</th><th>From → to</th><th>Address</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in object_list %}
+                <tr>
+                    <td class="small text-nowrap">{{ entry.timestamp|date:"d/m/Y H:i" }}</td>
+                    <td class="small">{{ entry.username|default:"—" }}</td>
+                    <td>{{ entry.action|status_badge }}</td>
+                    <td class="small">
+                        {% if entry.voucher_id %}
+                            <a href="{% url 'finance:voucher_detail' entry.voucher_id %}"
+                               class="text-decoration-none">{{ entry.voucher_number }}</a>
+                        {% else %}
+                            {{ entry.object_repr|default:"—" }}
+                        {% endif %}
+                    </td>
+                    <td class="small">{{ entry.description|default:"—" }}</td>
+                    <td class="small text-muted">
+                        {% if entry.previous_status or entry.new_status %}
+                            {{ entry.previous_status|default:"—" }} → {{ entry.new_status|default:"—" }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="small text-muted">{{ entry.ip_address|default:"—" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Nothing recorded yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.previous_page_number %}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.next_page_number %}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

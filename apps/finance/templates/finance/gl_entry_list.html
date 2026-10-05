@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}General Ledger entries{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">General Ledger entries</h2>
+        <p class="text-muted mb-0 small">
+            Every row that has hit the books, newest first. Rows are only ever written by posting
+            a voucher — nothing on this page can be edited, which is what makes it a ledger.
+            For one ledger's running balance, use the
+            <a href="{% url 'finance:report_general_ledger' %}">General Ledger report</a>.
+        </p>
+    </div>
+    <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Search</label>
+                <input type="text" name="q" value="{{ params.q }}" class="form-control"
+                       placeholder="Voucher no, description, reference">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Ledger</label>
+                <select name="account" class="form-select">
+                    <option value="">Every ledger</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.pk }}"
+                            {% if params.account == account.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ account.code }} {{ account.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Voucher type</label>
+                <select name="voucher_type" class="form-select">
+                    <option value="">All</option>
+                    {% for code, label in voucher_types %}
+                    <option value="{{ code }}"
+                            {% if params.voucher_type == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From</label>
+                <input type="date" name="date_from" value="{{ params.date_from }}" class="form-control">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To</label>
+                <input type="date" name="date_to" value="{{ params.date_to }}" class="form-control">
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+                <a href="{% url 'finance:gl_entries' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover align-middle mb-0"
+               data-export="General Ledger entries" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th><th>Voucher</th><th>Ledger</th><th>Party</th>
+                    <th>Reference</th><th>Description</th>
+                    <th class="text-end">Debit</th><th class="text-end">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in object_list %}
+                <tr>
+                    <td class="small text-nowrap">{{ entry.date|date:"d/m/Y" }}</td>
+                    <td class="small">
+                        <a href="{% url 'finance:voucher_detail' entry.voucher_id %}"
+                           class="text-decoration-none">{{ entry.voucher_number }}</a>
+                    </td>
+                    <td class="small">
+                        <a href="{% url 'finance:account_detail' entry.account_id %}"
+                           class="text-decoration-none">{{ entry.account.code }}
+                            {{ entry.account.name }}</a>
+                    </td>
+                    <td class="small text-muted">
+                        {% if entry.customer %}{{ entry.customer.name }}
+                        {% elif entry.supplier %}{{ entry.supplier.name }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="small text-muted">{{ entry.reference|default:"—" }}</td>
+                    <td class="small">{{ entry.description|default:"—" }}</td>
+                    <td class="text-end">{{ entry.debit|money_or_blank }}</td>
+                    <td class="text-end">{{ entry.credit|money_or_blank }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">
+                    Nothing in the ledger yet.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.previous_page_number %}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?{% query_replace page=page_obj.next_page_number %}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

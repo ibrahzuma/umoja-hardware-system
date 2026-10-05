@@ -1,0 +1,66 @@
+{% extends print_mode|yesno:"finance/report_print_base.html,base.html" %}
+{% load accounting %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 report-head">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">{{ title }}</h2>
+        <p class="text-muted mb-0 small">{{ company }}</p>
+    </div>
+    <div class="btn-group no-print">
+        <a href="?{% query_replace print=1 %}" class="btn btn-outline-secondary" target="_blank">
+            <i class="bi bi-printer"></i> Print
+        </a>
+        <a href="?{% query_replace export='csv' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-filetype-csv"></i> CSV
+        </a>
+        <a href="?{% query_replace export='xlsx' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-file-earmark-excel"></i> Excel
+        </a>
+        <a href="{% url 'finance:report_index' %}" class="btn btn-outline-secondary">Reports</a>
+    </div>
+</div>
+
+{% if not print_mode %}
+<div class="card shadow-sm border-0 mb-3 no-print">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            {% for field in form %}
+            <div class="col-md-3">
+                {% if field.field.widget.input_type == 'checkbox' %}
+                    <div class="form-check mt-4">
+                        {{ field }}
+                        <label class="form-check-label small" for="{{ field.id_for_label }}">
+                            {{ field.label }}</label>
+                    </div>
+                {% else %}
+                    <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">
+                        {{ field.label }}{% if field.field.required %}
+                            <span class="text-danger">*</span>{% endif %}
+                    </label>
+                    {{ field }}
+                {% endif %}
+                {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+            </div>
+            {% endfor %}
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Run</button>
+                <a href="{{ request.path }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if start or end or as_of %}
+<p class="text-muted small">
+    {% if as_of %}As at {{ as_of|date:"d F Y" }}{% endif %}
+    {% if start %}From {{ start|date:"d/m/Y" }}{% endif %}
+    {% if end %}to {{ end|date:"d/m/Y" }}{% endif %}
+</p>
+{% endif %}
+
+{% include report_template %}
+{% endblock %}

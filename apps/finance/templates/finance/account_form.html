@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if view.object %}Edit ledger{% else %}New ledger{% endif %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">
+            {% if view.object %}Edit {{ view.object.code }}{% else %}New ledger{% endif %}
+        </h2>
+        <p class="text-muted mb-0 small">
+            The <strong>kind</strong> decides which voucher dropdown this ledger appears in; the
+            <strong>type</strong> decides which side of the trial balance and which statement it
+            lands in. Leave the type blank and it follows the kind.
+        </p>
+    </div>
+    <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Chart of Accounts
+    </a>
+</div>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">What it is</h6></div>
+                <div class="card-body">
+                    {% include 'finance/_field.html' with field=form.code %}
+                    {% include 'finance/_field.html' with field=form.name %}
+                    {% include 'finance/_field.html' with field=form.kind %}
+                    {% include 'finance/_field.html' with field=form.account_type %}
+                    {% include 'finance/_field.html' with field=form.category %}
+                    {% include 'finance/_field.html' with field=form.currency %}
+                    {% include 'finance/_field.html' with field=form.is_active %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-header bg-white"><h6 class="fw-bold mb-0">Where it sits</h6></div>
+                <div class="card-body">
+                    {% include 'finance/_field.html' with field=form.parent %}
+                    {% include 'finance/_field.html' with field=form.is_group %}
+                    {% include 'finance/_field.html' with field=form.is_customer_control %}
+                    {% include 'finance/_field.html' with field=form.is_supplier_control %}
+                    {% include 'finance/_field.html' with field=form.vat_kind %}
+                </div>
+            </div>
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white">
+                    <h6 class="fw-bold mb-0">Balance brought forward</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Enter it as a positive figure and say which side it sits on. The opening
+                        balances across the whole chart should net to nothing — the Chart of
+                        Accounts page shows the difference if they do not.
+                    </p>
+                    {% include 'finance/_field.html' with field=form.opening_balance %}
+                    {% include 'finance/_field.html' with field=form.opening_side %}
+                    {% include 'finance/_field.html' with field=form.notes %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save</button>
+        <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

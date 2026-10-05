@@ -1,0 +1,157 @@
+{%  load accounting %}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ voucher.number }}</title>
+    <style>
+        /* A print layout, so no framework — the page has to look the same on
+           whatever machine the accountant prints from. */
+        * { box-sizing: border-box; }
+        body { font-family: "Segoe UI", Arial, sans-serif; font-size: 12px; color: #111;
+               margin: 0; padding: 24px; }
+        .sheet { max-width: 760px; margin: 0 auto; }
+        h1 { font-size: 18px; margin: 0 0 2px; }
+        h2 { font-size: 15px; margin: 18px 0 6px; text-transform: uppercase;
+             letter-spacing: .04em; color: #444; }
+        .head { display: flex; justify-content: space-between; align-items: flex-start;
+                border-bottom: 2px solid #111; padding-bottom: 10px; }
+        .muted { color: #666; }
+        .right { text-align: right; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        th, td { padding: 5px 6px; border-bottom: 1px solid #ddd; text-align: left;
+                 vertical-align: top; }
+        th { background: #f2f4f6; font-size: 11px; text-transform: uppercase;
+             letter-spacing: .03em; }
+        tfoot td { border-top: 2px solid #111; border-bottom: none; font-weight: 700; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .meta { margin-top: 10px; display: grid; grid-template-columns: repeat(4, 1fr);
+                gap: 8px 16px; }
+        .meta div span { display: block; }
+        .meta .label { font-size: 10px; text-transform: uppercase; color: #777;
+                       letter-spacing: .04em; }
+        .sign { margin-top: 36px; display: flex; gap: 48px; }
+        .sign div { flex: 1; border-top: 1px solid #111; padding-top: 4px; font-size: 11px;
+                    color: #555; }
+        .stamp { border: 2px solid #999; color: #999; display: inline-block; padding: 2px 10px;
+                 font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+                 transform: rotate(-4deg); }
+        @media print { body { padding: 0; } .noprint { display: none; } }
+    </style>
+</head>
+<body onload="window.print()">
+<div class="sheet">
+    <div class="head">
+        <div>
+            <h1>{{ company }}</h1>
+            <div class="muted">
+                {{ voucher.get_voucher_type_display }} voucher
+                {% if settings.efd_serial_number %}· EFD {{ settings.efd_serial_number }}{% endif %}
+            </div>
+        </div>
+        <div class="right">
+            <h1>{{ voucher.number }}</h1>
+            <div class="muted">{{ voucher.date|date:"d F Y" }}</div>
+            {% if voucher.status != 'posted' %}
+            <div style="margin-top:6px"><span class="stamp">{{ voucher.get_status_display }}</span></div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="meta">
+        {% if voucher.party %}
+        <div><span class="label">{% if voucher.customer %}Customer{% else %}Supplier{% endif %}</span>
+             <span>{{ voucher.party.name }}</span></div>
+        {% endif %}
+        {% if voucher.invoice_number %}
+        <div><span class="label">Invoice no</span><span>{{ voucher.invoice_number }}</span></div>
+        {% endif %}
+        {% if voucher.efd_number %}
+        <div><span class="label">EFD receipt</span><span>{{ voucher.efd_number }}</span></div>
+        {% endif %}
+        {% if voucher.reference %}
+        <div><span class="label">Reference</span><span>{{ voucher.reference }}</span></div>
+        {% endif %}
+        {% if voucher.payment_status %}
+        <div><span class="label">Payment</span><span>{{ voucher.get_payment_status_display }}</span></div>
+        {% endif %}
+        {% if voucher.financial_year %}
+        <div><span class="label">Financial year</span><span>{{ voucher.financial_year.code }}</span></div>
+        {% endif %}
+        {% if voucher.is_foreign_currency %}
+        <div><span class="label">Currency</span>
+             <span>{{ voucher.currency.code }} at {{ voucher.exchange_rate }}</span></div>
+        {% endif %}
+    </div>
+
+    <h2>Accounting lines</h2>
+    <table>
+        <thead>
+            <tr><th>Ledger</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th></tr>
+        </thead>
+        <tbody>
+        {% for line in lines %}
+            <tr>
+                <td>{{ line.account.code }} — {{ line.account.name }}</td>
+                <td>{{ line.narration }}</td>
+                <td class="num">{{ line.debit|money_or_blank }}</td>
+                <td class="num">{{ line.credit|money_or_blank }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2">Total</td>
+                <td class="num">{{ voucher.total_debit|money }}</td>
+                <td class="num">{{ voucher.total_credit|money }}</td>
+            </tr>
+            {% if voucher.vat_amount %}
+            <tr style="font-weight:400">
+                <td colspan="2" class="muted">
+                    VAT-exclusive {{ voucher.net_amount|money }} + VAT {{ voucher.vat_amount|money }}
+                </td>
+                <td class="num" colspan="2">{{ voucher.total|money }}</td>
+            </tr>
+            {% endif %}
+        </tfoot>
+    </table>
+
+    {% if allocations %}
+    <h2>Set against</h2>
+    <table>
+        <thead><tr><th>Reference</th><th>Note</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+        {% for alloc in allocations %}
+            <tr><td>{{ alloc.reference }}</td><td>{{ alloc.notes }}</td>
+                <td class="num">{{ alloc.amount|money }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    {% if voucher.description %}
+    <h2>Narration</h2>
+    <div>{{ voucher.description|linebreaksbr }}</div>
+    {% endif %}
+
+    <div class="sign">
+        <div>
+            Prepared by
+            {{ voucher.created_by.get_full_name|default:voucher.created_by.username|default:"—" }}
+            <br>{{ voucher.created_at|date:"d/m/Y H:i" }}
+        </div>
+        <div>
+            Posted by
+            {{ voucher.posted_by.get_full_name|default:voucher.posted_by.username|default:"—" }}
+            <br>{% if voucher.posted_at %}{{ voucher.posted_at|date:"d/m/Y H:i" }}{% else %}not posted{% endif %}
+        </div>
+        <div>Authorised by</div>
+    </div>
+
+    <p class="noprint" style="margin-top:24px">
+        <button onclick="window.print()">Print</button>
+        <button onclick="window.close()">Close</button>
+    </p>
+</div>
+</body>
+</html>

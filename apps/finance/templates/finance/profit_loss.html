@@ -176,19 +176,30 @@
         document.getElementById('cashLine').innerText =
             money(d.cash_confirmed) + ' confirmed, ' + money(d.cash_outstanding) + ' still to come in.';
 
+        // Lines are looked up by label, not by position: the statement gains
+        // rows as the system grows, and a positional index would silently
+        // start showing the wrong figure the day one is inserted.
         const by = {};
         (d.lines || []).forEach(l => { by[l.label] = l; });
         const src = k => (by[k] || {}).source || '';
+        const amt = k => (by[k] || {}).amount || '0';
+
+        // A row the business has nothing in is noise, so the voucher lines
+        // only appear once there is something on them.
+        const unless_zero = (label, options) =>
+            Number(amt(label)) ? line(label, amt(label), options) : '';
 
         document.getElementById('statementBody').innerHTML =
-            line('Revenue (posted sales)', d.revenue, { source: src('Revenue (posted sales)') })
+            line('Revenue (posted sales)', d.revenue_till, { source: src('Revenue (posted sales)') })
+            + unless_zero('Revenue (sales vouchers)', { source: src('Revenue (sales vouchers)') })
             + line('Cost of sales', d.cost_of_sales, { source: src('Cost of sales'), bracket: true })
             + line('Gross profit', d.gross_profit, { total: true, top: true })
 
-            + line('Sales commission', d.lines[2].amount, { source: src('Sales commission'), bracket: true })
-            + line('Expenses', d.lines[3].amount, { source: src('Expenses'), bracket: true })
-            + line('Petty cash paid out', d.lines[4].amount, { source: src('Petty cash paid out'), bracket: true })
-            + line('Other payments', d.lines[5].amount, { source: src('Other payments'), bracket: true })
+            + line('Sales commission', amt('Sales commission'), { source: src('Sales commission'), bracket: true })
+            + line('Expenses', amt('Expenses'), { source: src('Expenses'), bracket: true })
+            + unless_zero('Expenses (purchase vouchers)', { source: src('Expenses (purchase vouchers)'), bracket: true })
+            + line('Petty cash paid out', amt('Petty cash paid out'), { source: src('Petty cash paid out'), bracket: true })
+            + line('Other payments', amt('Other payments'), { source: src('Other payments'), bracket: true })
             + line('Operating profit', d.operating_profit, { total: true, top: true })
 
             + line('Other income', d.other_income, { source: src('Other income') })

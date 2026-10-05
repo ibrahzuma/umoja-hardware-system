@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Currencies{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Currencies and exchange rates</h2>
+        <p class="text-muted mb-0 small">
+            The General Ledger, the trial balance and every report are kept in the
+            <strong>base currency</strong>{% if base %} ({{ base.code }}){% endif %}. A voucher may
+            be keyed in any other active currency and is converted at its own rate, so both figures
+            are kept — what was invoiced, and what it is worth in the books.
+        </p>
+    </div>
+    <div class="btn-group">
+        <a href="{% url 'finance:currency_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New currency
+        </a>
+        <a href="{% url 'finance:rate_create' %}" class="btn btn-outline-primary">
+            <i class="bi bi-graph-up"></i> New rate
+        </a>
+        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white"><h6 class="fw-bold mb-0">Currencies</h6></div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0" data-export="Currencies">
+                    <thead class="table-light">
+                        <tr><th>Code</th><th>Name</th><th>Symbol</th><th class="text-end">Rates</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for currency in object_list %}
+                        <tr>
+                            <td class="fw-semibold">
+                                {{ currency.code }}
+                                {% if currency.is_base %}
+                                    <span class="badge text-bg-primary ms-1">Base</span>{% endif %}
+                                {% if not currency.is_active %}
+                                    <span class="badge text-bg-secondary ms-1">Off</span>{% endif %}
+                            </td>
+                            <td>{{ currency.name }}</td>
+                            <td class="small text-muted">{{ currency.display_symbol }}</td>
+                            <td class="text-end">{{ currency.rate_count }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'finance:currency_edit' currency.pk %}"
+                                   class="btn btn-sm btn-outline-primary">Edit</a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">No currency yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white">
+                <h6 class="fw-bold mb-0">Latest exchange rates</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover align-middle mb-0" data-export="Exchange rates">
+                    <thead class="table-light">
+                        <tr><th>Currency</th><th>Date</th><th class="text-end">Rate</th><th>Note</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                    {% for rate in rates %}
+                        <tr>
+                            <td class="fw-semibold">{{ rate.currency.code }}</td>
+                            <td class="small">{{ rate.rate_date|date:"d/m/Y" }}</td>
+                            <td class="text-end">{{ rate.rate }}</td>
+                            <td class="small text-muted">{{ rate.note|default:"—" }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'finance:rate_edit' rate.pk %}"
+                                   class="btn btn-sm btn-outline-primary">Edit</a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">
+                            No rate recorded. A single-currency set of books needs none — the
+                            currency boxes stay hidden on the voucher form until a second
+                            currency exists.
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% load accounting %}
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1 small fw-bold">Output VAT (on sales)</h6>
+                <h5 class="fw-bold mb-0">{{ output_total|money }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1 small fw-bold">Input VAT (on purchases)</h6>
+                <h5 class="fw-bold mb-0">{{ input_total|money }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 border-start border-4
+                    {% if net_vat >= 0 %}border-danger{% else %}border-info{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase mb-1 small fw-bold">
+                    {% if net_vat >= 0 %}Net VAT payable{% else %}Net VAT reclaimable{% endif %}
+                </h6>
+                <h5 class="fw-bold mb-0">{{ net_vat|abs_money }}</h5>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-header bg-white"><h6 class="fw-bold mb-0">Output VAT — on sales</h6></div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" data-export="Output VAT" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th><th>Voucher</th><th>Invoice no</th><th>EFD no</th>
+                    <th>Customer</th><th class="text-end">VAT excl.</th>
+                    <th class="text-end">VAT</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in output_rows %}
+                <tr>
+                    <td class="small text-nowrap">{{ row.voucher.date|date:"d/m/Y" }}</td>
+                    <td class="small">
+                        <a href="{% url 'finance:voucher_detail' row.voucher.pk %}"
+                           class="text-decoration-none">{{ row.voucher.number }}</a>
+                    </td>
+                    <td class="small">{{ row.voucher.invoice_number|default:"—" }}</td>
+                    <td class="small text-muted">{{ row.voucher.efd_number|default:"—" }}</td>
+                    <td class="small">{{ row.party.name|default:"Cash" }}</td>
+                    <td class="text-end">{{ row.net|money_or_blank }}</td>
+                    <td class="text-end fw-semibold">{{ row.amount|money }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-3">
+                    No output VAT in this period.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr><td colspan="6">Output VAT total</td>
+                    <td class="text-end">{{ output_total|money }}</td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-header bg-white"><h6 class="fw-bold mb-0">Input VAT — on purchases</h6></div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" data-export="Input VAT" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th><th>Voucher</th><th>Invoice no</th><th>EFD no</th>
+                    <th>Supplier</th><th class="text-end">VAT excl.</th>
+                    <th class="text-end">VAT</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in input_rows %}
+                <tr>
+                    <td class="small text-nowrap">{{ row.voucher.date|date:"d/m/Y" }}</td>
+                    <td class="small">
+                        <a href="{% url 'finance:voucher_detail' row.voucher.pk %}"
+                           class="text-decoration-none">{{ row.voucher.number }}</a>
+                    </td>
+                    <td class="small">{{ row.voucher.invoice_number|default:"—" }}</td>
+                    <td class="small text-muted">{{ row.voucher.efd_number|default:"—" }}</td>
+                    <td class="small">{{ row.party.name|default:"Cash" }}</td>
+                    <td class="text-end">{{ row.net|money_or_blank }}</td>
+                    <td class="text-end fw-semibold">{{ row.amount|money }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-3">
+                    No input VAT in this period.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr><td colspan="6">Input VAT total</td>
+                    <td class="text-end">{{ input_total|money }}</td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+            <strong class="text-uppercase small">
+                {% if net_vat >= 0 %}Net VAT payable{% else %}Net VAT reclaimable{% endif %}
+            </strong>
+            <div class="text-muted small">
+                Output VAT less input VAT. A reversal shows with the opposite sign and nets itself
+                off, rather than inflating either side.
+            </div>
+        </div>
+        <h4 class="fw-bold mb-0">{{ net_vat|abs_money }}</h4>
+    </div>
+</div>

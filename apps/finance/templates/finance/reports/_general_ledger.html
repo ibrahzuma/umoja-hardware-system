@@ -1,0 +1,62 @@
+{% load accounting %}
+{% for section in sections %}
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap">
+        <h6 class="fw-bold mb-0">
+            <a href="{% url 'finance:account_detail' section.account.pk %}"
+               class="text-decoration-none">{{ section.account.code }} — {{ section.account.name }}</a>
+        </h6>
+        <span class="small text-muted">{{ section.account.ledger_kind }}</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" data-no-paginate
+               data-export="GL {{ section.account.code }}">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th><th>Voucher</th><th>Related ledger</th><th>Description</th>
+                    <th class="text-end">Debit</th><th class="text-end">Credit</th>
+                    <th class="text-end">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="table-light">
+                    <td colspan="6" class="fw-semibold">Opening balance</td>
+                    <td class="text-end fw-semibold">
+                        {{ section.opening|abs_money }} {{ section.opening|dr_cr }}
+                    </td>
+                </tr>
+            {% for row in section.rows %}
+                <tr>
+                    <td class="small text-nowrap">{{ row.entry.date|date:"d/m/Y" }}</td>
+                    <td class="small">{{ row.entry.voucher_number }}</td>
+                    <td class="small text-muted">
+                        {% for other in row.related %}{{ other.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                    </td>
+                    <td class="small">{{ row.entry.description|default:"—" }}</td>
+                    <td class="text-end">{{ row.entry.debit|money_or_blank }}</td>
+                    <td class="text-end">{{ row.entry.credit|money_or_blank }}</td>
+                    <td class="text-end">{{ row.balance|abs_money }}
+                        <span class="text-muted small">{{ row.balance|dr_cr }}</span></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-3">
+                    No movement in this period.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td colspan="4">Closing balance</td>
+                    <td class="text-end">{{ section.debit|money }}</td>
+                    <td class="text-end">{{ section.credit|money }}</td>
+                    <td class="text-end">{{ section.closing|abs_money }} {{ section.closing|dr_cr }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% empty %}
+<div class="alert alert-light border">
+    Nothing has been posted in this period.
+</div>
+{% endfor %}

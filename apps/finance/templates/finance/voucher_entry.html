@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% load accounting static %}
+
+{% block title %}{% if voucher %}Edit{% else %}New{% endif %} {{ type_label }} voucher{% endblock %}
+
+{% block extra_css %}
+<style>
+    .amount-input { text-align: right; font-variant-numeric: tabular-nums; }
+    .line-auto .amount-input { background: #fff8e1; }
+    .totals-bar { position: sticky; bottom: 0; z-index: 5; }
+    .diff-ok { color: #198754; }
+    .diff-bad { color: #dc3545; }
+    .lines-table td { vertical-align: middle; }
+    .shortcut-key { font-size: .7rem; border: 1px solid #ced4da; border-radius: .2rem;
+                    padding: 0 .25rem; background: #f8f9fa; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">
+            {% if voucher %}Edit{% else %}New{% endif %} {{ type_label }} voucher
+            <span class="badge bg-secondary align-middle fs-6">{{ next_number }}</span>
+        </h2>
+        <p class="text-muted mb-0 small"><strong>{{ blurb.0 }}.</strong> {{ blurb.1 }}</p>
+    </div>
+    <div class="btn-group">
+        {% for code, label in voucher_types %}
+        <a href="{% url 'finance:voucher_entry' voucher_type=code %}"
+           class="btn btn-sm {% if code == voucher_type %}btn-primary{% else %}btn-outline-primary{% endif %}">
+            {{ label }}</a>
+        {% endfor %}
+        <a href="{% url 'finance:voucher_register' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-list-ul"></i> Register</a>
+    </div>
+</div>
+
+{% if voucher and voucher.is_draft %}
+<div class="alert alert-secondary py-2 small">
+    <i class="bi bi-pencil"></i> This is a <strong>draft</strong>. It is numbered
+    ({{ voucher.number }}) and saved, but nothing has reached the General Ledger yet.
+</div>
+{% endif %}
+
+<form method="post" id="voucherForm" novalidate>
+    {% csrf_token %}
+    {{ lines.management_form }}
+    {{ allocs.management_form }}
+
+    {% if header.non_field_errors or lines.non_form_errors %}
+    <div class="alert alert-danger">
+        {{ header.non_field_errors }}{{ lines.non_form_errors }}
+    </div>
+    {% endif %}
+
+    <!-- The header -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    {% include 'finance/_field.html' with field=header.date %}
+                </div>
+                {% if is_invoice %}
+                <div class="col-md-4">
+                    {% include 'finance/_field.html' with field=header.invoice_number %}
+                </div>
+                <div class="col-md-5">
+                    {% include 'finance/_field.html' with field=header.efd_number %}
+                    <div id="efdNotice" class="small mt-1 d-none"></div>
+                </div>
+                {% endif %}
+                {% if header.reference %}
+                <div class="col-md-3">
+                    {% include 'finance/_field.html' with field=header.reference %}
+                </div>
+                {% endif %}
+                {% if multi_currency %}
+                <div class="col-md-2">
+                    {% include 'finance/_field.html' with field=header.currency %}
+                </div>
+                <div class="col-md-2">
+                    {% include 'finance/_field.html' with field=header.exchange_rate %}
+                </div>
+                {% else %}
+                    {{ header.currency }}{{ header.exchange_rate }}
+                {% endif %}
+                <div class="col-12">
+                    {% include 'finance/_field.html' with field=header.description %}
+                </div>
+            </div>
+            {% if is_invoice %}
+            <div class="alert alert-light border small mb-0">
+                <i class="bi bi-info-circle"></i>
+                There is no {{ voucher_type|default:"party" }} box, and that is deliberate: the
+                {% if voucher_type == 'sales' %}customer{% else %}supplier{% endif %}, the payment
+                status and the VAT split are all read off the lines below, so there is no second
+                place for them to disagree with the accounting.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- The lines -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="fw-bold mb-0">Accounting lines</h6>
+            <div class="small text-muted">
+                Debit: {{ restriction_debit }} · Credit: {{ restriction_credit }}
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm lines-table mb-0" data-no-paginate>
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:38%">Ledger</th>
+                        <th class="text-end" style="width:16%">Debit</th>
+                        <th class="text-end" style="width:16%">Credit</th>
+                        <th>Description</th>
+                        <th style="width:40px"></th>
+                    </tr>
+                </thead>
+                <tbody id="lineRows"></tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="addLine">
+                <i class="bi bi-plus-lg"></i> Add line
+            </button>
+            <div class="small text-muted">
+                <span class="shortcut-key">Alt</span>+<span class="shortcut-key">D</span> /
+                <span class="shortcut-key">Alt</span>+<span class="shortcut-key">C</span> add a line ·
+                <span class="shortcut-key">Ctrl</span>+<span class="shortcut-key">S</span> save draft ·
+                <span class="shortcut-key">Ctrl</span>+<span class="shortcut-key">Enter</span> post
+            </div>
+        </div>
+    </div>
+
+    {% if lines.errors %}
+    <div class="alert alert-danger">
+        <strong>Lines:</strong>
+        {% for form_errors in lines.errors %}{% for field, errors in form_errors.items %}
+            {% for error in errors %}<div>{{ error }}</div>{% endfor %}
+        {% endfor %}{% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Invoice allocation -->
+    <div class="card shadow-sm border-0 mb-3 d-none" id="allocPanel">
+        <div class="card-header bg-white">
+            <h6 class="fw-bold mb-0">
+                Set against <span id="allocParty" class="text-primary"></span>'s open items
+            </h6>
+            <div class="small text-muted">
+                Their balance is <strong id="allocBalance">0.00</strong>. Anything left
+                unallocated stays on account.
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0" data-no-paginate>
+                <thead class="table-light">
+                    <tr>
+                        <th>Reference</th><th>Kind</th><th>Date</th>
+                        <th class="text-end">Original</th><th class="text-end">Settled</th>
+                        <th class="text-end">Outstanding</th><th style="width:130px">Allocate</th>
+                    </tr>
+                </thead>
+                <tbody id="allocRows"></tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between">
+                <span class="small text-muted">Allocated</span>
+                <strong id="allocTotal">0.00</strong>
+            </div>
+            <div id="allocWarning" class="small text-danger d-none mt-1"></div>
+        </div>
+    </div>
+
+    <!-- Totals and the buttons -->
+    <div class="card shadow-sm border-0 totals-bar">
+        <div class="card-body">
+            <div class="row align-items-center g-3">
+                <div class="col-md-2">
+                    <div class="text-muted text-uppercase small fw-bold">Total debit</div>
+                    <div class="fs-5 fw-bold" id="totalDebit">0.00</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted text-uppercase small fw-bold">Total credit</div>
+                    <div class="fs-5 fw-bold" id="totalCredit">0.00</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="text-muted text-uppercase small fw-bold">Difference</div>
+                    <div class="fs-5 fw-bold diff-bad" id="difference">0.00</div>
+                </div>
+                <div class="col-md-6">
+                    <div id="balanceNote" class="small text-muted mb-2"></div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" name="action" value="save" id="saveButton"
+                                class="btn btn-outline-primary">
+                            <i class="bi bi-save"></i> Save draft
+                        </button>
+                        {% if can_post %}
+                        <button type="submit" name="action" value="post" id="postButton"
+                                class="btn btn-success" disabled>
+                            <i class="bi bi-journal-check"></i> Post to the ledger
+                        </button>
+                        {% endif %}
+                        <button type="submit" name="action" value="save_new"
+                                class="btn btn-outline-secondary">
+                            <i class="bi bi-plus-lg"></i> Save &amp; new
+                        </button>
+                        <a href="{% url 'finance:voucher_register' %}" class="btn btn-link">Cancel</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- One blank line, cloned by the JS -->
+<template id="lineTemplate">
+    <tr>
+        <td><select data-name="account" class="form-select form-select-sm"></select></td>
+        <td><input type="number" step="0.01" min="0" data-name="debit"
+                   class="form-control form-control-sm amount-input"></td>
+        <td><input type="number" step="0.01" min="0" data-name="credit"
+                   class="form-control form-control-sm amount-input"></td>
+        <td><input type="text" maxlength="200" data-name="description"
+                   class="form-control form-control-sm"></td>
+        <td class="text-end">
+            <button type="button" class="btn btn-sm btn-link text-danger remove-line p-0"
+                    title="Remove this line"><i class="bi bi-x-lg"></i></button>
+        </td>
+    </tr>
+</template>
+
+{{ config|json_script:"voucherConfig" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/voucher_entry.js' %}"></script>
+{% endblock %}

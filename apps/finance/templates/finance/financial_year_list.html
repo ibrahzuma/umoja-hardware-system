@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load accounting %}
+
+{% block title %}Financial years{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Financial years</h2>
+        <p class="text-muted mb-0 small">
+            A voucher can only be posted into a year that exists, is not closed, and is not locked
+            up to its date. The year's code is what goes into the voucher number.
+        </p>
+    </div>
+    <div class="btn-group">
+        <a href="{% url 'finance:financial_year_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New year
+        </a>
+        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0" data-export="Financial years">
+            <thead class="table-light">
+                <tr>
+                    <th>Code</th><th>Name</th><th>From</th><th>To</th>
+                    <th class="text-end">Vouchers</th><th>State</th><th>Locked up to</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for year in object_list %}
+                <tr>
+                    <td class="fw-semibold">{{ year.code }}</td>
+                    <td>{{ year.name }}</td>
+                    <td class="small">{{ year.start_date|date:"d/m/Y" }}</td>
+                    <td class="small">{{ year.end_date|date:"d/m/Y" }}</td>
+                    <td class="text-end">{{ year.voucher_count }}</td>
+                    <td>
+                        {% if year.is_closed %}
+                            <span class="badge text-bg-danger">Closed</span>
+                        {% elif year.is_active %}
+                            <span class="badge text-bg-success">Active</span>
+                        {% else %}
+                            <span class="badge text-bg-secondary">Open</span>
+                        {% endif %}
+                    </td>
+                    <td class="small">{{ year.lock_date|date:"d/m/Y"|default:"—" }}</td>
+                    <td class="text-end">
+                        <a href="{% url 'finance:financial_year_edit' year.pk %}"
+                           class="btn btn-sm btn-outline-primary">Edit</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">
+                    No financial year yet — nothing can be posted until there is one.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

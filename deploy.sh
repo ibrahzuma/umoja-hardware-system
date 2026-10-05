@@ -32,6 +32,12 @@ pip install -r requirements.txt
 echo "⚙️ Running database migrations..."
 python manage.py migrate --noinput
 
+# Open the books: the base currency, a financial year, the six voucher types
+# and the chart of accounts. Idempotent — on a system already running it
+# checks and does nothing, so it is safe on every deploy.
+echo "📒 Checking the accounting books are open..."
+python manage.py open_books
+
 # Collect static files
 echo "📁 Collecting static files..."
 python manage.py collectstatic --noinput

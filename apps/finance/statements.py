@@ -15,6 +15,20 @@ Where the system does not hold a figure, these say so rather than invent one.
 There are no capital accounts here — no opening balances, no drawings, no fixed
 assets — so the balance sheet reports what it can measure and names the
 remainder as unrecorded rather than quietly plugging it into equity.
+
+**The voucher ledger is counted here too, and it is counted once.** Nothing
+auto-posts a voucher: `signals.py` mirrors a sale into the *sales* ledger and
+keeps a chart-of-accounts row per party, and that is all. So every
+`GeneralLedgerEntry` came from a voucher somebody keyed — a back-dated
+invoice, a supplier bill the till never saw, a journal — and none of it is
+also in `SalesLedgerEntry`, `Expense`, `Income`, `TaxPayment`,
+`PettyCashTransaction`, `OtherPayment` or `SupplierPayment`. The two sources
+are disjoint by construction, which is why they can simply be added.
+
+Each statement therefore reports the ledger's contribution on its own named
+lines ("… (vouchers)") rather than blending it into the till's figures: the
+totals are complete, and anyone reading can still see which record a number
+came from.
 """
 
 from __future__ import annotations
@@ -27,11 +41,64 @@ from django.db.models import F, Sum
 from apps.inventory.models import PurchaseOrder, Stock
 from .credit import credit_balances
 from .models import (
-    Expense, Income, OtherPayment, PettyCashTransaction, SalesLedgerEntry,
-    SupplierPayment, TaxPayment,
+    Expense, GeneralLedgerEntry, Income, Invoice, LedgerAccount, OtherPayment,
+    PettyCashTransaction, SalesLedgerEntry, SupplierPayment, TaxPayment,
 )
 
 ZERO = Decimal('0')
+
+
+# ---------------------------------------------------------------------------
+# What the voucher ledger contributes
+# ---------------------------------------------------------------------------
+
+def _ledger_movement(account_type, date_from=None, date_to=None, kinds=None,
+                     exclude_kinds=None):
+    """Movement on one account type over a window, read the way that type is
+    read: debit-positive for assets and expenses, credit-positive for income,
+    liabilities and equity. So every figure comes back as the positive number
+    a reader expects, and a reversal shows as a reduction rather than a second
+    entry.
+    """
+    qs = GeneralLedgerEntry.objects.filter(account__account_type=account_type)
+    if kinds:
+        qs = qs.filter(account__kind__in=kinds)
+    if exclude_kinds:
+        qs = qs.exclude(account__kind__in=exclude_kinds)
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    agg = qs.aggregate(d=Sum('debit'), c=Sum('credit'))
+    debit, credit = (agg['d'] or ZERO), (agg['c'] or ZERO)
+    if account_type in (LedgerAccount.ASSET, LedgerAccount.EXPENSE):
+        return debit - credit
+    return credit - debit
+
+
+def _voucher_money_flow(date_from, date_to):
+    """What moved through the cash books and bank accounts on vouchers.
+
+    `in` is what was debited to a money ledger and `out` what was credited —
+    a Receipt brings money in, a Payment takes it out, and a Contra does both
+    at once, which is why a transfer between our own pockets nets to nothing
+    here instead of being double-counted.
+    """
+    qs = GeneralLedgerEntry.objects.filter(account__kind__in=LedgerAccount.MONEY_KINDS)
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    agg = qs.aggregate(d=Sum('debit'), c=Sum('credit'))
+    return (agg['d'] or ZERO), (agg['c'] or ZERO)
+
+
+def _register_outstanding(party_field):
+    """What the books' own invoice register still shows as owed, one way or
+    the other. Derived from the register, never stored."""
+    rows = (Invoice.objects.outstanding()
+            .filter(**{f'{party_field}__isnull': False}))
+    return sum((row.outstanding_amount for row in rows), ZERO)
 
 
 def period_from(params):
@@ -84,8 +151,14 @@ def profit_and_loss(date_from, date_to):
     other_income = _sum(Income.objects.filter(
         date_received__gte=date_from, date_received__lte=date_to))
 
-    gross_profit = revenue - cost
-    operating_costs = expenses + petty + other_out + commission
+    # The voucher ledger's own income and expense over the same window. These
+    # are the invoices and journals the till never saw, so they are added to
+    # rather than reconciled against the figures above (see the module note).
+    voucher_income = _ledger_movement(LedgerAccount.INCOME, date_from, date_to)
+    voucher_expense = _ledger_movement(LedgerAccount.EXPENSE, date_from, date_to)
+
+    gross_profit = revenue + voucher_income - cost
+    operating_costs = expenses + petty + other_out + commission + voucher_expense
     operating_profit = gross_profit - operating_costs
     net_profit = operating_profit + other_income - taxes
 
@@ -93,7 +166,9 @@ def profit_and_loss(date_from, date_to):
         'date_from': str(date_from),
         'date_to': str(date_to),
         'sales_count': posted.count(),
-        'revenue': str(revenue),
+        'revenue': str(revenue + voucher_income),
+        'revenue_till': str(revenue),
+        'revenue_vouchers': str(voucher_income),
         'discounts': str(sales['discounts'] or ZERO),
         'cost_of_sales': str(cost),
         'gross_profit': str(gross_profit),
@@ -106,9 +181,13 @@ def profit_and_loss(date_from, date_to):
         'cash_outstanding': str(revenue - confirmed),
         'lines': [
             _line('Revenue (posted sales)', revenue, 'Sales accounting, posted only', 'revenue'),
+            _line('Revenue (sales vouchers)', voucher_income,
+                  'General Ledger — income on posted vouchers', 'revenue'),
             _line('Cost of sales', cost, 'Product cost at the time of each sale'),
             _line('Sales commission', commission, 'Commission frozen on each sale line'),
             _line('Expenses', expenses, 'Finance > Expenses'),
+            _line('Expenses (purchase vouchers)', voucher_expense,
+                  'General Ledger — expense on posted vouchers'),
             _line('Petty cash paid out', petty, 'Cashier > Petty Cash'),
             _line('Other payments', other_out, 'Cashier > Other Payments'),
             _line('Other income', other_income, 'Finance > Other Income', 'revenue'),
@@ -131,6 +210,11 @@ def cash_flow(date_from, date_to):
 
     Petty cash top-ups are a transfer between our own pockets, not a flow, so
     they are reported separately and never counted in either direction.
+
+    Money that moved on a **voucher** counts too, on its own lines: what was
+    debited to a cash book or bank account came in, what was credited went
+    out. A Contra does both at once, so moving money between our own pockets
+    nets to nothing here rather than appearing twice.
     """
     receipts = _sum(SalesLedgerEntry.objects.filter(
         payment_status='confirmed',
@@ -156,8 +240,10 @@ def cash_flow(date_from, date_to):
     taxes = _sum(TaxPayment.objects.filter(
         payment_date__gte=date_from, payment_date__lte=date_to))
 
-    money_in = receipts + other_income
-    money_out = supplier_cash + expenses + petty_out + other_out + taxes
+    voucher_in, voucher_out = _voucher_money_flow(date_from, date_to)
+
+    money_in = receipts + other_income + voucher_in
+    money_out = supplier_cash + expenses + petty_out + other_out + taxes + voucher_out
     net = money_in - money_out
 
     # What was invoiced in the window but has not been confirmed as received —
@@ -180,12 +266,16 @@ def cash_flow(date_from, date_to):
         'petty_cash_in': str(petty_in),
         'other_payments': str(other_out),
         'taxes': str(taxes),
+        'voucher_receipts': str(voucher_in),
+        'voucher_payments': str(voucher_out),
         'invoiced_posted': str(invoiced),
         'not_yet_collected': str(invoiced - receipts),
         'in_lines': [
             _line('Sales receipts confirmed', receipts,
                   'Sales accounting, dated by when Accounts confirmed the money', 'revenue'),
             _line('Other income', other_income, 'Finance > Other Income', 'revenue'),
+            _line('Received on vouchers', voucher_in,
+                  'General Ledger — cash books and bank accounts debited', 'revenue'),
         ],
         'out_lines': [
             _line('Supplier payments', supplier_cash, 'Approved payments, excluding credit applications'),
@@ -193,6 +283,8 @@ def cash_flow(date_from, date_to):
             _line('Petty cash paid out', petty_out, 'Cashier > Petty Cash'),
             _line('Other payments', other_out, 'Cashier > Other Payments'),
             _line('Taxes paid', taxes, 'Finance > Taxes & Govt'),
+            _line('Paid on vouchers', voucher_out,
+                  'General Ledger — cash books and bank accounts credited'),
         ],
         'notes': [
             ('Petty cash top-ups of %s are a transfer between our own pockets, '
@@ -276,8 +368,16 @@ def balance_sheet():
 
     creditors = _creditors()
 
-    assets = cash + stock + debtors + supplier_credit
-    liabilities = creditors
+    # The books' own invoice register: invoices and bills the till never saw,
+    # so they are owed in addition to the above rather than instead of it.
+    # An `Invoice` row is only ever raised by posting a Sales or Purchase
+    # voucher, or as a party opening balance — never by a `Sale` or a
+    # `PurchaseOrder` — so the two cannot overlap.
+    register_debtors = _register_outstanding('customer')
+    register_creditors = _register_outstanding('supplier')
+
+    assets = cash + stock + debtors + register_debtors + supplier_credit
+    liabilities = creditors + register_creditors
     net_assets = assets - liabilities
 
     # Everything the business has earned since it started keeping these books.
@@ -293,6 +393,8 @@ def balance_sheet():
         'unrecorded': str(net_assets - retained),
         'cash': str(cash),
         'petty_cash_float': str(petty),
+        'debtors': str(debtors + register_debtors),
+        'creditors': str(creditors + register_creditors),
         'asset_lines': [
             _line('Cash and bank', cash,
                   'Confirmed receipts and income, less every payment out, since the books began',
@@ -300,11 +402,15 @@ def balance_sheet():
             _line('   of which petty cash float', petty, 'Cashier > Petty Cash, in less out', 'memo'),
             _line('Stock at cost', stock, 'Quantity on hand x product cost', 'revenue'),
             _line('Debtors', debtors, 'Invoices Accounts have not confirmed as paid', 'revenue'),
+            _line('Debtors (invoice register)', register_debtors,
+                  'Unpaid customer invoices in the books themselves', 'revenue'),
             _line('Credit held with suppliers', supplier_credit, 'Overpayments not yet applied', 'revenue'),
         ],
         'liability_lines': [
             _line('Owed to suppliers', creditors,
                   'Every live purchase order, less approved payments'),
+            _line('Owed to suppliers (invoice register)', register_creditors,
+                  'Unpaid supplier bills in the books themselves'),
         ],
         'caveats': [
             'Cash is derived from the movements this system holds, not read from a bank statement — '

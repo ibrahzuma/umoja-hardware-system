@@ -1,0 +1,77 @@
+{% load accounting %}
+{% comment %}
+Shared by the customer and the supplier statement. A customer's balance is
+debit-positive (what they owe us); a supplier's is credit-positive (what we
+owe them) — `party_statement` flips the sign, so both read as the positive
+figure the party expects.
+{% endcomment %}
+{% if not party %}
+<div class="alert alert-light border">
+    Pick a {{ title|lower|cut:" statement" }} above and press Run.
+</div>
+{% else %}
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h5 class="fw-bold mb-1">{{ party.name }}</h5>
+                <div class="text-muted small">
+                    {% if party.phone %}{{ party.phone }}{% endif %}
+                    {% if party.email %} · {{ party.email }}{% endif %}
+                    {% if party.address %}<br>{{ party.address }}{% endif %}
+                </div>
+            </div>
+            <div class="col-md-6 text-md-end">
+                <div class="text-muted text-uppercase small fw-bold">Balance</div>
+                <h4 class="fw-bold mb-0">{{ closing|money }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0" data-export="Statement {{ party.name }}" data-no-paginate>
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th><th>Reference</th><th>Voucher</th><th>Description</th>
+                    <th class="text-end">Debit</th><th class="text-end">Credit</th>
+                    <th class="text-end">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="table-light">
+                    <td colspan="6" class="fw-semibold">Opening balance</td>
+                    <td class="text-end fw-semibold">{{ opening|money }}</td>
+                </tr>
+            {% for row in rows %}
+                <tr>
+                    <td class="small text-nowrap">{{ row.entry.date|date:"d/m/Y" }}</td>
+                    <td class="small">{{ row.entry.reference|default:"—" }}</td>
+                    <td class="small">
+                        <a href="{% url 'finance:voucher_detail' row.entry.voucher_id %}"
+                           class="text-decoration-none">{{ row.entry.voucher_number }}</a>
+                    </td>
+                    <td class="small">{{ row.entry.description|default:"—" }}</td>
+                    <td class="text-end">{{ row.entry.debit|money_or_blank }}</td>
+                    <td class="text-end">{{ row.entry.credit|money_or_blank }}</td>
+                    <td class="text-end">{{ row.balance|money }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-4">
+                    No entries in this period.
+                </td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold">
+                <tr>
+                    <td colspan="4">Closing balance</td>
+                    <td class="text-end">{{ debit_total|money }}</td>
+                    <td class="text-end">{{ credit_total|money }}</td>
+                    <td class="text-end">{{ closing|money }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endif %}
