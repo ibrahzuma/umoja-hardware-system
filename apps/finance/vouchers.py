@@ -304,6 +304,8 @@ def _outstanding_invoice_vouchers(voucher_type, party_field, party, ledger, side
     vouchers = (Voucher.objects
                 .filter(voucher_type=voucher_type, status__in=Voucher.EFFECTIVE_STATUSES,
                         **{party_field: party})
+                # A voucher written for a till sale is offered as that sale.
+                .filter(sales_entry__isnull=True)
                 .order_by('date', 'id'))
     ids = [v.id for v in vouchers]
     on_ledger = {

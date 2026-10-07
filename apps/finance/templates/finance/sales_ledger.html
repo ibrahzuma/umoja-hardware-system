@@ -356,7 +356,9 @@
             <td>${moneyCell(e)}</td>
             <td><span class="badge ${STATUS_BADGE[e.status] || 'bg-secondary'}">
                     ${escapeHtml(e.status_display || '')}</span>
-                ${e.note ? '<div><small class="text-muted">' + escapeHtml(e.note) + '</small></div>' : ''}</td>
+                ${e.note ? '<div><small class="text-muted">' + escapeHtml(e.note) + '</small></div>' : ''}
+                ${e.voucher ? '<div><a href="/finance/vouchers/' + e.voucher.id + '/" class="small">'
+                    + '<i class="bi bi-journal-check"></i> ' + escapeHtml(e.voucher.number) + '</a></div>' : ''}</td>
             <td class="text-end pe-4 text-nowrap">
                 ${actionsFor(e)}
             </td>

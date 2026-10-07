@@ -24,6 +24,7 @@ from apps.core.notify import notify
 from apps.core.models import SystemSettings
 from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
 from .statements import profit_and_loss, cash_flow, balance_sheet, period_from
+from .sales_ledger import post_to_books
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -806,7 +807,7 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
     The only things that move are `post` and `query`."""
     queryset = SalesLedgerEntry.objects.select_related(
         'sale', 'branch', 'sold_by', 'posted_by'
-    ).all()
+    ).prefetch_related('vouchers').all()
     serializer_class = SalesLedgerEntrySerializer
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
     filterset_fields = ['status', 'settlement', 'branch', 'sold_by']
@@ -827,6 +828,10 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         entry = self.get_object()
         if entry.status == 'posted' and entry.payment_status == 'confirmed':
             return Response({'detail': 'That sale is already posted and paid.'}, status=400)
+        return self._post_entry(request, entry)
+
+    @transaction.atomic
+    def _post_entry(self, request, entry):
 
         method = (request.data.get('method') or '').strip()
         valid = dict(SalesLedgerEntry.CONFIRMED_METHODS)
@@ -867,6 +872,21 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         if document is not None:
             entry.invoice_document = document
         entry.save()
+
+        # ...and into the books proper: a Sales voucher in the General Ledger.
+        # If the books refuse it, nothing above is kept either.
+        try:
+            post_to_books(entry, request.user, request)
+        except ValidationError as exc:
+            transaction.set_rollback(True)
+            detail = exc.detail.get('detail', exc.detail) if isinstance(exc.detail, dict) else exc.detail
+            if isinstance(detail, dict):
+                detail = next(iter(detail.values()), '')
+            if isinstance(detail, (list, tuple)):
+                detail = ' '.join(str(d) for d in detail)
+            return Response({'detail': f'The books refused this sale: {detail}'}, status=400)
+        # Re-read it: the vouchers were prefetched before this one existed.
+        entry = self.get_queryset().get(pk=entry.pk)
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=['post'])

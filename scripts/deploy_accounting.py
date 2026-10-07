@@ -35,6 +35,7 @@ EXPECTED_MIGRATIONS = [
     "0020_currency_exchangerate_financialyear_invoice_and_more",
     "0021_open_the_books",
     "0022_remove_invoice_unique_customer_invoice_number_and_more",
+    "0023_voucher_sales_entry",
 ]
 
 

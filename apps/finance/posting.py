@@ -475,6 +475,11 @@ class VoucherPostingService:
         why a cash sale lands `paid` and a credit sale `open`.
         """
         voucher = self.voucher
+        if voucher.sales_entry_id:
+            # A till sale posted from Sales Accounting: the sale itself is
+            # what gets allocated against, so a register row would be a
+            # second copy of the same debt.
+            return None
         if voucher.voucher_type == 'sales' and voucher.customer_id:
             kind, party_field, side = Invoice.SALES, 'customer', 'debit'
         elif voucher.voucher_type == 'purchase' and voucher.supplier_id:

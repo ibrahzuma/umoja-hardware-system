@@ -184,6 +184,15 @@ class SalesLedgerEntrySerializer(serializers.ModelSerializer):
     sold_by_name = serializers.SerializerMethodField()
     posted_by_name = serializers.CharField(source='posted_by.username', read_only=True, default='')
     balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    voucher = serializers.SerializerMethodField()
+
+    def get_voucher(self, obj):
+        """The Sales voucher the Post button wrote into the General Ledger."""
+        # Read off the prefetched vouchers, so a page of entries costs one query.
+        live = [v for v in obj.vouchers.all()
+                if v.status in ('posted', 'reversed') and v.reversal_of_id is None]
+        v = max(live, key=lambda v: v.id) if live else None
+        return {'id': v.id, 'number': v.number, 'status': v.status} if v else None
 
     def get_sold_by_name(self, obj):
         u = obj.sold_by

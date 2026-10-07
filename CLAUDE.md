@@ -296,13 +296,24 @@ See `DEPLOYMENT.md` for one-time server setup.
   - **The audit trail** — `AccountingAuditLog`, written by `audit.log_action` on every create, edit,
     post, cancel, reversal and allocation, with the user and the IP. Separate from
     `core.SystemActivity` (the shop floor's live feed) and read-only everywhere.
-  - **The statements read both records, and count each thing once.** Nothing auto-posts a voucher —
-    `finance/signals.py` mirrors a sale into the *sales* ledger and keeps a ledger per party, and
-    that is all — so `GeneralLedgerEntry` holds voucher-sourced entries only and is disjoint from
-    `SalesLedgerEntry`, `Expense`, `Income`, `TaxPayment`, `PettyCashTransaction`, `OtherPayment`
-    and `SupplierPayment`. `statements.py` therefore *adds* the ledger's contribution on its own
-    named "… (vouchers)" lines rather than blending it in. If anything ever starts posting a voucher
-    from a sale, `StatementsAndTheLedgerTest` is where the double counting will show up.
+  - **Posting a sale in Sales Accounting also writes it into the books.** `post_entry` calls
+    `sales_ledger.post_to_books`, which posts a Sales voucher dated on the sale: Dr cash book (cash/
+    other) or bank (bank/mobile/cheque) for the confirmed amount, Dr the customer's ledger for what
+    is still owed (walk-in: `Walk-in Debtors`), Cr `Sales Revenue` for the total, Cr the customer
+    (walk-in: `Customer Deposits`) for any overpayment. The voucher carries `Voucher.sales_entry`;
+    it raises **no** invoice-register row and is left out of `outstanding_invoices`, because the
+    till sale is already offered for allocation as itself. If the books refuse it (closed period,
+    duplicate invoice number) the whole Post rolls back with "The books refused this sale: …".
+    Idempotent; `python manage.py post_sales_to_books [--dry-run]` backfills sales posted before
+    this existed.
+  - **The statements read both records, and count each thing once.** The only voucher anything
+    auto-posts is the one above, and `statements._voucher_gl()` leaves its GL rows (and its
+    reversal's) out, since the sale is already counted through its `SalesLedgerEntry`. Every other
+    `GeneralLedgerEntry` is from a voucher somebody keyed, disjoint from `SalesLedgerEntry`,
+    `Expense`, `Income`, `TaxPayment`, `PettyCashTransaction`, `OtherPayment` and
+    `SupplierPayment`. `statements.py` therefore *adds* the ledger's contribution on its own
+    named "… (vouchers)" lines rather than blending it in. `StatementsAndTheLedgerTest` and
+    `SalesAccountingPostsToTheBooksTest` are where any double counting will show up.
     **The P&L template looks its lines up by label, not by position** — inserting a line used to
     silently shift the figures.
   - **The ledger never gates the shop floor.** Posting, querying and confirming touch nothing on `Sale`; a sale

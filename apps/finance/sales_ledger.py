@@ -195,3 +195,140 @@ def backfill():
             else:
                 created += 1
     return created, refreshed
+
+
+# ---------------------------------------------------------------------------
+# Posting a sale into the books
+# ---------------------------------------------------------------------------
+
+# How the money came in -> which kind of money ledger it went into.
+_BANK_METHODS = ('bank', 'mobile', 'cheque')
+
+
+def _ledger(kind, name):
+    """A ledger the books keep by name, created the first time it is needed."""
+    from .models import LedgerAccount
+    ledger = (LedgerAccount.objects.filter(kind=kind, name=name, is_group=False)
+              .order_by('id').first())
+    if ledger is None:
+        ledger = LedgerAccount.objects.create(kind=kind, name=name)
+    return ledger
+
+
+def _first(qs):
+    return qs.filter(is_active=True, is_group=False).order_by('id').first()
+
+
+def _revenue_ledger(settings):
+    from .models import LedgerAccount
+    return (settings.default_sales_account
+            or _first(LedgerAccount.objects.filter(kind='income', name='Sales Revenue'))
+            or _ledger('income', 'Sales Revenue'))
+
+
+def _money_ledger(settings, method):
+    """Cash goes to the cash book; bank, mobile money and cheques to the bank."""
+    from .models import LedgerAccount
+    cash = (settings.default_cash_account
+            or _first(LedgerAccount.objects.filter(kind='cash', name='Main Cash Book'))
+            or _ledger('cash', 'Main Cash Book'))
+    if method in _BANK_METHODS:
+        return (settings.default_bank_account
+                or _first(LedgerAccount.objects.filter(kind='bank'))
+                or cash)
+    return cash
+
+
+def _customer_ledger(entry):
+    """The sale's customer's own sub-ledger, or None for a walk-in."""
+    sale = entry.sale
+    customer = getattr(sale, 'customer', None) if sale else None
+    if customer is None:
+        return None
+    from .vouchers import ensure_ledger_for
+    ledger = getattr(customer, 'ledger', None)
+    if ledger is None:
+        ensure_ledger_for(customer)
+        customer.refresh_from_db()
+        ledger = getattr(customer, 'ledger', None)
+    return ledger
+
+
+def books_voucher(entry):
+    """The live Sales voucher this entry was posted to, if any."""
+    from .models import Voucher
+    return (entry.vouchers.filter(status__in=Voucher.LIVE_STATUSES, reversal_of__isnull=True)
+            .order_by('-id').first())
+
+
+def post_to_books(entry, user, request=None):
+    """Write the posted sale into the General Ledger as a Sales voucher.
+
+    The accountant's Post is one act — the sale goes into the books and the
+    money is recorded as received — so the voucher says both:
+
+        Dr  cash book / bank        the amount confirmed
+        Dr  the customer's ledger   whatever is still owed (walk-in: Walk-in Debtors)
+        Cr  Sales Revenue           the sale's total
+        Cr  the customer's ledger   anything paid over the total (walk-in: Customer Deposits)
+
+    It is dated on the sale and numbered like any other Sales voucher, so it
+    shows in the voucher register, the General Ledger, the trial balance and
+    the customer's statement. It raises **no** invoice-register row: the till
+    sale is already offered for allocation as itself, and the statements
+    already count it through this entry (see `Voucher.sales_entry`).
+
+    Idempotent: an entry already in the books returns its voucher. Raises a
+    DRF `ValidationError` — and the caller's transaction rolls back — when
+    the books refuse it (a closed period, a duplicate invoice number…).
+    """
+    from .models import AccountingSettings
+    from .posting import VoucherPostingService, VoucherValidationError
+    from .vouchers import open_the_books, post_voucher
+    from rest_framework.exceptions import ValidationError
+
+    existing = books_voucher(entry)
+    if existing is not None:
+        return existing
+
+    open_the_books()
+    settings = AccountingSettings.get_solo()
+    total = Decimal(entry.total_amount or 0)
+    paid = Decimal(entry.confirmed_amount or 0)
+    if total <= 0:
+        raise ValidationError({'detail': 'A sale of nothing cannot go into the books.'})
+
+    who = entry.customer_name or 'Walk-in Customer'
+    customer = _customer_ledger(entry)
+    lines = []
+    received = min(paid, total)
+    if received > 0:
+        lines.append({'account': _money_ledger(settings, entry.confirmed_method).id,
+                      'side': 'debit', 'amount': str(received),
+                      'narration': f'Received ({entry.get_confirmed_method_display() or "cash"})'
+                                   + (f' {entry.confirmed_reference}' if entry.confirmed_reference else '')})
+    owed = total - received
+    if owed > 0:
+        lines.append({'account': (customer or _ledger('asset', 'Walk-in Debtors')).id,
+                      'side': 'debit', 'amount': str(owed), 'narration': f'Owed by {who}'})
+    lines.append({'account': _revenue_ledger(settings).id, 'side': 'credit',
+                  'amount': str(total), 'narration': f'Sale {entry.invoice_number}'})
+    over = paid - total
+    if over > 0:
+        lines.append({'account': (customer or _ledger('liability', 'Customer Deposits')).id,
+                      'side': 'credit', 'amount': str(over), 'narration': f'Paid over the invoice by {who}'})
+
+    voucher = post_voucher(
+        'sales', entry.sale_date,
+        f'Sale {entry.invoice_number} to {who} — posted from Sales Accounting',
+        lines, user, header={'invoice_number': entry.invoice_number},
+        request=request, reference=entry.invoice_number, draft_only=True,
+    )
+    voucher.sales_entry = entry
+    voucher.save(update_fields=['sales_entry'])
+    try:
+        VoucherPostingService(voucher, user, request).post()
+    except VoucherValidationError as exc:
+        raise ValidationError({'detail': exc.errors})
+    voucher.refresh_from_db()
+    return voucher

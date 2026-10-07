@@ -52,6 +52,18 @@ ZERO = Decimal('0')
 # What the voucher ledger contributes
 # ---------------------------------------------------------------------------
 
+def _voucher_gl():
+    """GL rows the statements add on their own "(vouchers)" lines.
+
+    Leaves out the vouchers Sales Accounting writes when a sale is posted
+    (and their reversals): that sale is already in these statements through
+    its `SalesLedgerEntry`, so counting the voucher too would count it twice.
+    """
+    return (GeneralLedgerEntry.objects
+            .filter(voucher__sales_entry__isnull=True)
+            .filter(voucher__reversal_of__sales_entry__isnull=True))
+
+
 def _ledger_movement(account_type, date_from=None, date_to=None, kinds=None,
                      exclude_kinds=None):
     """Movement on one account type over a window, read the way that type is
@@ -60,7 +72,7 @@ def _ledger_movement(account_type, date_from=None, date_to=None, kinds=None,
     a reader expects, and a reversal shows as a reduction rather than a second
     entry.
     """
-    qs = GeneralLedgerEntry.objects.filter(account__account_type=account_type)
+    qs = _voucher_gl().filter(account__account_type=account_type)
     if kinds:
         qs = qs.filter(account__kind__in=kinds)
     if exclude_kinds:
@@ -84,7 +96,7 @@ def _voucher_money_flow(date_from, date_to):
     at once, which is why a transfer between our own pockets nets to nothing
     here instead of being double-counted.
     """
-    qs = GeneralLedgerEntry.objects.filter(account__kind__in=LedgerAccount.MONEY_KINDS)
+    qs = _voucher_gl().filter(account__kind__in=LedgerAccount.MONEY_KINDS)
     if date_from:
         qs = qs.filter(date__gte=date_from)
     if date_to:

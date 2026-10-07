@@ -1322,6 +1322,13 @@ class Voucher(models.Model):
                                     related_name='vat_vouchers',
                                     help_text="Output VAT ledger (sales) or Input VAT ledger (purchases)")
 
+    # The Sales voucher Accounts' Post button writes for a till sale (see
+    # `sales_ledger.post_to_books`). The statements already count that sale
+    # through `SalesLedgerEntry`, so they skip this voucher's GL rows — and
+    # its reversal's — rather than count the sale twice.
+    sales_entry = models.ForeignKey('SalesLedgerEntry', null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name='vouchers')
+
     # A reversal is an ordinary Journal voucher that points back at what it undid.
     reversal_of = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
                                     related_name='reversals')

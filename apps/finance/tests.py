@@ -1413,7 +1413,10 @@ class ReportsTest(LedgerTestCase):
         self.client.force_login(self.accountant)
         res = self.client.get(reverse('finance:report_trial_balance') + '?print=1')
         self.assertEqual(res.status_code, 200)
-        self.assertIn(b'window.print()', res.content)
+        # The carried-over shell: `auto-print` makes accounting_app.js open the
+        # print dialog, and accounting.css hides the sidebar, topbar and filters.
+        self.assertIn(b'<body class="auto-print">', res.content)
+        self.assertIn(b'js/accounting_app.js', res.content)
 
     def test_the_trial_balance_balances(self):
         rows, totals = trial_balance_rows()
@@ -1639,3 +1642,91 @@ class StatementsAndTheLedgerTest(LedgerTestCase):
             self.assertEqual(self.client.get(reverse(name)).status_code, 200, name)
         for url in ('/api/profit-loss/', '/api/cash-flow/', '/api/balance-sheet/'):
             self.assertEqual(self.client.get(url).status_code, 200, url)
+
+
+class SalesAccountingPostsToTheBooksTest(LedgerTestCase):
+    """Accounts' Post on Sales Accounting writes the sale into the General
+    Ledger as a Sales voucher — and the statements still count it once."""
+
+    def setUp(self):
+        super().setUp()
+        vouchers.open_the_books()
+
+    def make_sale(self, number, total, customer=True):
+        Sale.objects.create(invoice_number=number, branch=self.branch,
+                            customer=self.customer if customer else None,
+                            customer_name=self.customer.name if customer else 'Walk-in Customer',
+                            total_amount=Decimal(total), status='approved')
+        return SalesLedgerEntry.objects.get(invoice_number=number)
+
+    def post_entry(self, entry, method='cash', amount=None):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.accountant)
+        data = {'method': method,
+                'invoice_document': SimpleUploadedFile('inv.pdf', b'%PDF-1.4', 'application/pdf')}
+        if amount is not None:
+            data['amount'] = str(amount)
+        return self.client.post(f'/api/sales-ledger/{entry.id}/post_entry/', data)
+
+    def gl(self, voucher):
+        return {(e.account_id, e.debit, e.credit)
+                for e in GeneralLedgerEntry.objects.filter(voucher=voucher)}
+
+    def test_posting_a_paid_sale_writes_a_sales_voucher(self):
+        entry = self.make_sale('PS-1', 300000)
+        res = self.post_entry(entry)
+        self.assertEqual(res.status_code, 200, res.content)
+        voucher = Voucher.objects.get(sales_entry=entry)
+        self.assertEqual(voucher.voucher_type, 'sales')
+        self.assertEqual(voucher.status, 'posted')
+        self.assertEqual(voucher.invoice_number, 'PS-1')
+        self.assertEqual(self.gl(voucher), {(self.cash.id, Decimal('300000'), Decimal('0')),
+                                            (self.sales.id, Decimal('0'), Decimal('300000'))})
+        self.assertEqual(res.json()['voucher']['number'], voucher.number)
+        # The till sale is what gets allocated against — no second copy.
+        self.assertFalse(Invoice.objects.filter(voucher=voucher).exists())
+
+    def test_a_bank_payment_goes_to_the_bank(self):
+        entry = self.make_sale('PS-2', 100000)
+        self.post_entry(entry, method='bank')
+        voucher = Voucher.objects.get(sales_entry=entry)
+        self.assertIn((self.bank_ledger.id, Decimal('100000'), Decimal('0')), self.gl(voucher))
+
+    def test_a_part_payment_leaves_the_rest_on_the_customer(self):
+        entry = self.make_sale('PS-3', 500000)
+        self.post_entry(entry, amount=200000)
+        voucher = Voucher.objects.get(sales_entry=entry)
+        self.assertEqual(self.gl(voucher), {
+            (self.cash.id, Decimal('200000'), Decimal('0')),
+            (self.customer_ledger.id, Decimal('300000'), Decimal('0')),
+            (self.sales.id, Decimal('0'), Decimal('500000'))})
+        # Offered for allocation once — as the till sale, not again as a voucher.
+        targets = [r['target'] for r in vouchers.outstanding_invoices(self.customer)]
+        self.assertNotIn('voucher', targets)
+
+    def test_a_walk_in_part_payment_goes_to_walk_in_debtors(self):
+        entry = self.make_sale('PS-4', 50000, customer=False)
+        self.post_entry(entry, amount=20000)
+        voucher = Voucher.objects.get(sales_entry=entry)
+        debtors = LedgerAccount.objects.get(name='Walk-in Debtors')
+        self.assertIn((debtors.id, Decimal('30000'), Decimal('0')), self.gl(voucher))
+
+    def test_the_statements_do_not_count_the_sale_twice(self):
+        entry = self.make_sale('PS-5', 300000)
+        self.post_entry(entry)
+        entry.refresh_from_db()
+        day = entry.sale_date.isoformat()
+        data = profit_and_loss(day, day)
+        self.assertEqual(Decimal(data['revenue_till']), Decimal('300000'))
+        self.assertEqual(Decimal(data['revenue_vouchers']), Decimal('0'))
+        self.assertEqual(Decimal(cash_flow(day, day)['voucher_receipts']), Decimal('0'))
+
+    def test_a_refused_posting_changes_nothing(self):
+        entry = self.make_sale('PS-6', 300000)
+        FinancialYear.objects.update(is_closed=True)
+        res = self.post_entry(entry)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('books refused', res.json()['detail'])
+        entry.refresh_from_db()
+        self.assertEqual(entry.status, 'pending')
+        self.assertFalse(Voucher.objects.filter(sales_entry=entry).exists())
