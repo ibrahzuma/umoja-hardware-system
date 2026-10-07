@@ -1,0 +1,17 @@
+{% load accounting %}
+{% if is_paginated %}
+<nav class="d-flex justify-content-between align-items-center mt-3">
+  <small class="text-muted">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ paginator.count }}</small>
+  <ul class="pagination pagination-sm mb-0">
+    {% if page_obj.has_previous %}
+      <li class="page-item"><a class="page-link" href="?{% query_replace page=1 %}">&laquo;</a></li>
+      <li class="page-item"><a class="page-link" href="?{% query_replace page=page_obj.previous_page_number %}">&lsaquo;</a></li>
+    {% endif %}
+    <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ paginator.num_pages }}</span></li>
+    {% if page_obj.has_next %}
+      <li class="page-item"><a class="page-link" href="?{% query_replace page=page_obj.next_page_number %}">&rsaquo;</a></li>
+      <li class="page-item"><a class="page-link" href="?{% query_replace page=paginator.num_pages %}">&raquo;</a></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}

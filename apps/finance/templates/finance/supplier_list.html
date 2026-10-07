@@ -1,0 +1,32 @@
+{% extends "finance/accounting_base.html" %}
+{% load accounting %}
+{% block page_actions %}{% if perms.finance.add_supplier %}<a class="btn btn-primary btn-sm" href="{% url 'finance:supplier_list' %}"><i class="bi bi-plus-lg"></i> New supplier</a>{% endif %}{% endblock %}
+{% block content %}
+<form method="get" class="card mb-3 filter-bar"><div class="card-body row g-2 align-items-end">
+  <div class="col-md-5"><label class="form-label">Search</label>{{ filter_form.q }}</div>
+  <div class="col-md-3"><div class="form-check mt-4">{{ filter_form.show_inactive }}<label class="form-check-label" for="{{ filter_form.show_inactive.id_for_label }}">Show inactive</label></div></div>
+  <div class="col-md-1 d-grid"><button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i></button></div>
+</div></form>
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0">
+  <thead><tr><th>Code</th><th>Name</th><th>Phone</th><th>Email</th><th>Tax no</th><th>Account</th><th class="num">Credit limit</th><th class="num">Balance</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% with c=row.supplier %}
+  <tr class="{% if not c.ledger.is_active %}text-muted{% endif %}">
+    <td><a class="table-link" href="{% url 'finance:supplier_detail' c.pk %}">{{ c.ledger.code }}</a></td>
+    <td><a class="table-link" href="{% url 'finance:supplier_detail' c.pk %}">{{ c.name }}</a></td>
+    <td>{{ c.phone }}</td><td>{{ c.email }}</td><td class="text-muted-sm">&mdash;</td>
+    <td class="text-muted-sm">{{ c.ledger.code }}</td>
+    <td class="num">{{ c.ledger.opening_balance|money_or_blank }}</td>
+    <td class="num {% if row.balance > 0 %}fw-semibold{% endif %}">{{ row.balance|money }}</td>
+    <td>{% if c.ledger.is_active %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-x-circle text-danger"></i>{% endif %}</td>
+    <td class="text-end text-nowrap">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:supplier_statement' c.pk %}" title="Statement"><i class="bi bi-file-text"></i></a>
+      {% if perms.finance.change_supplier %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:supplier_detail' c.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>{% endif %}
+    </td>
+  </tr>
+  {% endwith %}{% empty %}<tr><td colspan="10" class="text-center text-muted py-3">No suppliers found.</td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% include "finance/includes/pagination.html" %}
+{% endblock %}

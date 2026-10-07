@@ -1,0 +1,74 @@
+{% extends "finance/accounting_base.html" %}
+{% load accounting %}
+{% block page_actions %}
+<a class="btn btn-outline-success btn-sm" href="{% url 'finance:voucher_entry' 'sales' %}?customer={{ object.pk }}"><i class="bi bi-cart-check"></i> New sale</a>
+<a class="btn btn-outline-primary btn-sm" href="{% url 'finance:voucher_entry' 'receipt' %}?customer={{ object.pk }}"><i class="bi bi-cash-coin"></i> New receipt</a>
+<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:customer_statement' object.pk %}"><i class="bi bi-file-text"></i> Statement</a>
+{% if perms.finance.change_customer %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:customer_detail' object.pk %}"><i class="bi bi-pencil"></i> Edit</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card mb-3"><div class="card-header">Customer details</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-5">Code</dt><dd class="col-7">{{ object.code }}</dd>
+        <dt class="col-5">Name</dt><dd class="col-7">{{ object.name }}</dd>
+        <dt class="col-5">Address</dt><dd class="col-7">{{ object.address|linebreaksbr|default:"-" }}</dd>
+        <dt class="col-5">Phone</dt><dd class="col-7">{{ object.phone|default:"-" }}</dd>
+        <dt class="col-5">Email</dt><dd class="col-7">{{ object.email|default:"-" }}</dd>
+        <dt class="col-5">Tax / VAT no</dt><dd class="col-7">{{ object.tax_number|default:"-" }}</dd>
+        <dt class="col-5">Ledger account</dt><dd class="col-7"><a href="{% url 'finance:account_detail' object.ledger.pk %}">{{ object.ledger.code }}</a></dd>
+        <dt class="col-5">Opening balance</dt><dd class="col-7">{{ object.ledger.opening_balance|money }}</dd>
+        <dt class="col-5">Credit limit</dt><dd class="col-7">{{ object.ledger.opening_balance|money }}</dd>
+        <dt class="col-5">Current balance</dt><dd class="col-7 fw-bold {% if balance > 0 %}text-danger{% endif %}">{{ balance|money }}</dd>
+        <dt class="col-5">Outstanding invoices</dt><dd class="col-7 fw-semibold">{{ outstanding_total|money }}</dd>
+        <dt class="col-5">Status</dt><dd class="col-7">{% if object.ledger.is_active %}Active{% else %}Inactive{% endif %}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header">Outstanding invoices</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Invoice</th><th>Date</th><th>Type</th><th class="num">Original</th><th class="num">Paid</th><th class="num">Outstanding</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for inv in outstanding_invoices %}
+        <tr>
+          <td>{% if inv.voucher %}<a href="{% url 'finance:voucher_detail' inv.voucher.pk %}">{{ inv.invoice_number }}</a>{% else %}{{ inv.invoice_number }}{% endif %}</td>
+          <td>{{ inv.invoice_date|date:"d/m/Y" }}</td><td>{{ inv.get_kind_display }}</td>
+          <td class="num">{{ inv.original_amount|money }}</td><td class="num">{{ inv.allocated_amount|money }}</td>
+          <td class="num fw-semibold">{{ inv.outstanding_amount|money }}</td><td>{{ inv.status|status_badge }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="7" class="text-center text-muted py-3">No outstanding invoices.</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-sales" type="button">Sales / invoice history</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-receipts" type="button">Receipt history</button></li>
+    </ul>
+    <div class="tab-content card border-top-0 rounded-top-0">
+      <div class="tab-pane fade show active" id="tab-sales">
+        <div class="table-responsive"><table class="table table-sm mb-0">
+          <thead><tr><th>Voucher</th><th>Date</th><th>Invoice</th><th>EFD</th><th>Payment</th><th class="num">Total</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for v in sales %}
+          <tr><td><a href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td><td>{{ v.transaction_date|date:"d/m/Y" }}</td><td>{{ v.invoice_number }}</td><td>{{ v.efd_rct_number }}</td><td>{{ v.get_payment_status_display }}</td><td class="num">{{ v.total_debit|money }}</td><td>{{ v.status|status_badge }}</td></tr>
+          {% empty %}<tr><td colspan="7" class="text-center text-muted py-3">No sales vouchers.</td></tr>{% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      <div class="tab-pane fade" id="tab-receipts">
+        <div class="table-responsive"><table class="table table-sm mb-0">
+          <thead><tr><th>Voucher</th><th>Date</th><th>Reference</th><th>Narration</th><th class="num">Amount</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for v in receipts %}
+          <tr><td><a href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td><td>{{ v.transaction_date|date:"d/m/Y" }}</td><td>{{ v.reference }}</td><td>{{ v.narration|truncatechars:50 }}</td><td class="num">{{ v.total_debit|money }}</td><td>{{ v.status|status_badge }}</td></tr>
+          {% empty %}<tr><td colspan="6" class="text-center text-muted py-3">No receipts.</td></tr>{% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -18,6 +18,7 @@ layout (`?print=1`), the CSV (`?export=csv`) and the Excel file
 import calendar
 import json
 from datetime import date
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -39,6 +40,7 @@ from . import accounting_reports as reports
 from . import vouchers as engine
 from .accounting_forms import (
     AccountImportForm, AccountRangeForm, AccountingSettingsForm, AllocationFormSet, AsOfForm,
+    GeneralLedgerFilterForm, PartyFilterForm, StatementFilterForm,
     CancelVoucherForm, CurrencyForm, CustomerRangeForm, DateRangeForm, ExchangeRateForm,
     FinancialYearForm, LedgerAccountFilterForm, LedgerAccountForm, ReverseVoucherForm,
     SupplierRangeForm, VoucherFilterForm, VoucherHeaderForm, VoucherLineFormSet,
@@ -70,10 +72,23 @@ VOUCHER_SLUGS = dict(Voucher.TYPES)
 
 class AccountingMixin(LoginRequiredMixin, UserPassesTestMixin):
     """Admins and the accountant. The same gate as the sales ledger and the
-    statements, so the whole accounting area is one decision."""
+    statements, so the whole accounting area is one decision.
+
+    `page_title` and `breadcrumbs` are what the shell prints in the <title>
+    and the breadcrumb bar; a view that sets neither simply shows neither.
+    """
+
+    page_title = ''
+    breadcrumbs = ()
 
     def test_func(self):
         return can_use_accounting(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx.setdefault('page_title', self.page_title)
+        ctx.setdefault('breadcrumbs', list(self.breadcrumbs))
+        return ctx
 
 
 class AccountingPermissionMixin(AccountingMixin):
@@ -149,6 +164,7 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
     each way, what is in the bank, and what is still sitting in draft."""
 
     template_name = 'finance/accounting_dashboard.html'
+    page_title = 'Dashboard'
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -171,7 +187,8 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
         _, purchase_values = _month_series(financial_year, 'purchase')
 
         ctx.update({
-            'financial_year': financial_year,
+            'page_title': 'Dashboard',
+            'fy': financial_year,
             'sales_total': quantize(posted.filter(year_filter, voucher_type='sales')
                                     .aggregate(t=Sum('total'))['t'] or ZERO),
             'purchase_total': quantize(posted.filter(year_filter, voucher_type='purchase')
@@ -181,11 +198,11 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
             'cash_balance': quantize(sum((b for a, b in balances if a.kind == 'cash'), ZERO)),
             'bank_balance': quantize(sum((b for a, b in balances if a.kind == 'bank'), ZERO)),
             'bank_cash_balances': balances,
-            'customer_outstanding_count': customer_invoices.count(),
-            'customer_outstanding_total': quantize(
+            'cust_outstanding_count': customer_invoices.count(),
+            'cust_outstanding_total': quantize(
                 sum((i.outstanding_amount for i in customer_invoices), ZERO)),
-            'supplier_outstanding_count': supplier_bills.count(),
-            'supplier_outstanding_total': quantize(
+            'supp_outstanding_count': supplier_bills.count(),
+            'supp_outstanding_total': quantize(
                 sum((i.outstanding_amount for i in supplier_bills), ZERO)),
             'draft_count': status_counts.get('draft', 0),
             'posted_count': status_counts.get('posted', 0),
@@ -193,10 +210,11 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
             'recent_vouchers': (Voucher.objects
                                 .select_related('customer', 'supplier', 'created_by')
                                 .order_by('-created_at')[:10]),
-            'chart_labels': json.dumps(labels),
-            'chart_sales': json.dumps(sales_values),
-            'chart_purchases': json.dumps(purchase_values),
-            'voucher_types': Voucher.TYPES,
+            'chart_labels': labels,
+            'chart_sales': sales_values,
+            'chart_purchases': purchase_values,
+            'voucher_kinds': Voucher.TYPES,
+            'setup_needed': not FinancialYear.objects.exists() or not LedgerAccount.objects.exists(),
             'reports': _report_links(),
         })
         return ctx
@@ -210,6 +228,7 @@ class AccountingSettingsView(AccountingPermissionMixin, UpdateView):
     model = AccountingSettings
     form_class = AccountingSettingsForm
     template_name = 'finance/accounting_settings.html'
+    page_title = 'Accounting configuration'
     permission_required = 'finance.change_accountingsettings'
     success_url = reverse_lazy('finance:accounting_settings')
 
@@ -250,6 +269,7 @@ class AccountingSettingsView(AccountingPermissionMixin, UpdateView):
 class FinancialYearListView(AccountingMixin, ListView):
     model = FinancialYear
     template_name = 'finance/financial_year_list.html'
+    page_title = 'Financial years'
 
     def get_queryset(self):
         return FinancialYear.objects.annotate(voucher_count=Count('vouchers'))
@@ -259,6 +279,7 @@ class FinancialYearCreateView(AccountingPermissionMixin, CreateView):
     model = FinancialYear
     form_class = FinancialYearForm
     template_name = 'finance/financial_year_form.html'
+    page_title = 'Financial year'
     permission_required = 'finance.add_financialyear'
     success_url = reverse_lazy('finance:financial_year_list')
 
@@ -289,6 +310,7 @@ class FinancialYearUpdateView(AccountingPermissionMixin, UpdateView):
 class CurrencyListView(AccountingMixin, ListView):
     model = Currency
     template_name = 'finance/currency_list.html'
+    page_title = 'Currencies and exchange rates'
 
     def get_queryset(self):
         return Currency.objects.annotate(rate_count=Count('rates')).order_by('-is_base', 'code')
@@ -305,6 +327,7 @@ class CurrencyCreateView(AccountingPermissionMixin, CreateView):
     model = Currency
     form_class = CurrencyForm
     template_name = 'finance/currency_form.html'
+    page_title = 'Currency'
     permission_required = 'finance.add_currency'
     success_url = reverse_lazy('finance:currency_list')
 
@@ -336,6 +359,7 @@ class ExchangeRateCreateView(AccountingPermissionMixin, CreateView):
     model = ExchangeRate
     form_class = ExchangeRateForm
     template_name = 'finance/exchange_rate_form.html'
+    page_title = 'Exchange rate'
     permission_required = 'finance.add_exchangerate'
     success_url = reverse_lazy('finance:currency_list')
 
@@ -369,6 +393,7 @@ class AuditTrailView(AccountingMixin, ListView):
 
     model = AccountingAuditLog
     template_name = 'finance/audit_trail.html'
+    page_title = 'Audit trail'
     paginate_by = 50
 
     def get_queryset(self):
@@ -407,6 +432,7 @@ class LedgerAccountListView(AccountingMixin, ListView):
 
     model = LedgerAccount
     template_name = 'finance/account_list.html'
+    page_title = 'Chart of Accounts'
 
     def get_queryset(self):
         engine.open_the_books()
@@ -489,7 +515,7 @@ class LedgerAccountDetailView(AccountingMixin, DetailView):
         opening, rows, closing = ledger_statement(self.object)
         ctx.update({
             'opening': opening, 'closing': closing,
-            'rows': rows[-200:], 'entry_count': len(rows),
+            'rows': rows[-100:], 'entry_count': len(rows),
             'children': self.object.children.order_by('code'),
         })
         return ctx
@@ -499,6 +525,7 @@ class LedgerAccountCreateView(AccountingPermissionMixin, CreateView):
     model = LedgerAccount
     form_class = LedgerAccountForm
     template_name = 'finance/account_form.html'
+    page_title = 'Account'
     permission_required = 'finance.add_ledgeraccount'
 
     def get_initial(self):
@@ -575,7 +602,12 @@ def account_import(request):
                     messages.success(request, summary)
     else:
         form = AccountImportForm()
-    return render(request, 'finance/account_import.html', {'form': form, 'results': results})
+    return render(request, 'finance/account_import.html', {
+        'form': form, 'results': results,
+        'page_title': 'Bulk upload - Chart of Accounts',
+        'breadcrumbs': [('Chart of Accounts', reverse('finance:account_list')),
+                        ('Bulk upload', None)],
+    })
 
 
 @login_required
@@ -619,7 +651,9 @@ class VoucherRegisterView(AccountingMixin, ListView):
 
     model = Voucher
     template_name = 'finance/voucher_register.html'
+    page_title = 'Vouchers'
     paginate_by = 25
+    page_title = 'Vouchers'
 
     def get_queryset(self):
         self.filter_form = VoucherFilterForm(self.request.GET or None)
@@ -670,14 +704,38 @@ class VoucherRegisterView(AccountingMixin, ListView):
         return ctx
 
 
+# What an open item is called in the allocation panel. The Pradeep system had
+# only invoices; here a customer may also owe on a till sale, and a supplier
+# on a purchase order, so each row says which it is.
+OPEN_ITEM_LABELS = {
+    'invoice': 'Invoice',
+    'sale': 'Till sale',
+    'purchase_order': 'Purchase order',
+    'voucher': 'Invoice voucher',
+}
+
+
+def _allocation_token(alloc):
+    """The "<target>:<pk>" token identifying what an allocation points at."""
+    for name in ('invoice', 'sale', 'purchase_order', 'voucher'):
+        target_id = getattr(alloc, f'{name}_id', None)
+        if target_id:
+            return f'{name}:{target_id}'
+    return ''
+
+
 def _account_payload(qs):
+    """One ledger, in the shape `static/js/voucher_form.js` expects — the
+    same keys the Pradeep system's own payload used, so the script is
+    unchanged."""
     return [{
-        'id': a.pk, 'code': a.code, 'name': a.name, 'label': f"{a.code} — {a.name}",
-        'kind': a.kind, 'kindLabel': a.ledger_kind, 'type': a.account_type,
-        'isMoney': a.is_money,
-        'customerId': a.customer_id, 'supplierId': a.supplier_id,
-        'vatKind': a.vat_kind,
-        'currency': a.currency_id,
+        'id': a.pk, 'code': a.code, 'name': a.name, 'label': f"{a.code} - {a.name}",
+        'kind': a.ledger_kind,
+        'type': a.account_type,
+        'is_bank_cash': a.is_cash_or_bank,
+        'customer_id': a.customer_id,
+        'supplier_id': a.supplier_id,
+        'vat_kind': a.vat_kind,
     } for a in qs]
 
 
@@ -702,10 +760,11 @@ def _form_config(voucher_type, voucher, settings_row):
                 'description': line.narration,
             })
         for alloc in allocations_of(voucher):
+            # `invoice` is the "<target>:<pk>" token the open-items list uses,
+            # so a drafted allocation matches its row when the panel reloads.
             existing_allocations.append({
-                'invoice': alloc.invoice_id, 'sale': alloc.sale_id,
-                'purchase_order': alloc.purchase_order_id, 'voucher': alloc.voucher_id,
-                'reference': alloc.reference, 'amount': str(alloc.amount),
+                'invoice': _allocation_token(alloc),
+                'amount': str(alloc.amount),
             })
 
     debit_accounts = allowed_accounts(voucher_type, 'debit').order_by('code')
@@ -715,11 +774,7 @@ def _form_config(voucher_type, voucher, settings_row):
     return {
         'type': voucher_type,
         'typeLabel': VOUCHER_SLUGS[voucher_type],
-        'prefix': Voucher.PREFIX[voucher_type],
-        'isInvoice': voucher_type in Voucher.INVOICE_TYPES,
-        'partyKind': ('customer' if voucher_type == 'sales'
-                      else 'supplier' if voucher_type == 'purchase' else ''),
-        'currencySymbol': settings_row.currency_symbol,
+        'currency': settings_row.currency_symbol,
         'vatRate': str(settings_row.default_vat_rate),
         'efdPolicy': settings_row.efd_duplicate_policy,
         'debitAccounts': _account_payload(debit_accounts),
@@ -772,19 +827,15 @@ def _submitted_lines(formset):
 
 
 def _submitted_allocations(formset):
+    """What was keyed into the allocation panels, in the shape the screen's
+    script reads back — one `invoice` token per row."""
     rows = []
     for form in formset.forms:
         amount = form.data.get(form.add_prefix('amount'), '')
-        if quantize(amount) <= 0:
+        token = form.data.get(form.add_prefix('invoice'), '')
+        if quantize(amount) <= 0 or not token:
             continue
-        row = {'amount': str(quantize(amount)),
-               'reference': form.data.get(form.add_prefix('reference'), '')}
-        for name in ('invoice', 'sale', 'purchase_order', 'voucher'):
-            value = form.data.get(form.add_prefix(name), '')
-            if value.isdigit():
-                row[name] = int(value)
-                break
-        rows.append(row)
+        rows.append({'invoice': token, 'amount': str(quantize(amount))})
     return rows
 
 
@@ -863,7 +914,12 @@ def _handle_voucher_form(request, voucher_type, voucher=None):
     next_number = (voucher.number if voucher is not None
                    else VoucherNumberService(settings_row).peek_next(voucher_type, financial_year))
 
+    label = VOUCHER_SLUGS[voucher_type]
     return render(request, 'finance/voucher_entry.html', {
+        'page_title': f"{'Edit' if voucher else 'New'} {label} voucher",
+        'breadcrumbs': [('Vouchers', reverse('finance:voucher_register')),
+                        (label, reverse('finance:voucher_register') + f'?kind={voucher_type}'),
+                        (voucher.number if voucher else 'New', None)],
         'header': header, 'lines': lines, 'allocs': allocations, 'voucher': voucher,
         'voucher_type': voucher_type, 'type_label': VOUCHER_SLUGS[voucher_type],
         # The dict, not a JSON string — the template hands it to `json_script`,
@@ -912,6 +968,9 @@ def voucher_detail(request, pk):
     if voucher.is_draft:
         validation_errors = VoucherPostingService(voucher, request.user, request).validate()
     return render(request, 'finance/voucher_detail.html', {
+        'page_title': f'{voucher.get_voucher_type_display()} {voucher.number}',
+        'breadcrumbs': [('Vouchers', reverse('finance:voucher_register')),
+                        (voucher.number, None)],
         'voucher': voucher,
         'lines': lines,
         'debits': [l for l in lines if l.side == 'debit'],
@@ -937,7 +996,6 @@ def voucher_print(request, pk):
     """A clean page that prints itself — company details, the document's own
     references, its lines, its totals and who prepared and posted it."""
     _guard(request)
-    from .views import _company_name
     voucher = get_object_or_404(
         Voucher.objects.select_related('customer', 'supplier', 'currency', 'created_by',
                                        'posted_by'), pk=pk)
@@ -945,7 +1003,6 @@ def voucher_print(request, pk):
         'voucher': voucher,
         'lines': voucher.lines.select_related('account'),
         'allocations': allocations_of(voucher),
-        'company': _company_name(),
         'settings': AccountingSettings.get_solo(),
     })
 
@@ -1051,20 +1108,31 @@ def api_outstanding(request):
         draft = Voucher.objects.filter(pk=int(current)).first()
         if draft is not None:
             for alloc in allocations_of(draft):
-                for name in ('invoice', 'sale', 'purchase_order', 'voucher'):
-                    target_id = getattr(alloc, f'{name}_id', None)
-                    if target_id:
-                        drafted[(name, target_id)] = str(alloc.amount)
-                        break
-    for item in items:
-        item['drafted'] = drafted.get((item['target'], item['id']), '')
+                drafted[_allocation_token(alloc)] = str(alloc.amount)
 
+    # The shape the entry screen's script expects, key for key. An open item
+    # here may be a till sale or a purchase order as well as an invoice, so
+    # its `id` is a "<target>:<pk>" token rather than a bare primary key.
     ledger = getattr(party, 'ledger', None)
+    invoices = []
+    for item in items:
+        token = f"{item['target']}:{item['id']}"
+        invoices.append({
+            'id': token,
+            'invoice_number': item['reference'],
+            'kind': OPEN_ITEM_LABELS.get(item['target'], item['target']),
+            'invoice_date': item['date'],
+            'original_amount': item['total'],
+            'allocated_amount': item['paid'],
+            'outstanding_amount': item['outstanding'],
+            'efd_rct_number': '',
+            'drafted': drafted.get(token, ''),
+        })
     return JsonResponse({
         'party': {'id': party.pk, 'name': party.name, 'kind': kind,
                   'account': ledger.pk if ledger else None,
                   'balance': str(ledger.balance() if ledger else ZERO)},
-        'items': items,
+        'invoices': invoices,
     })
 
 
@@ -1137,32 +1205,35 @@ class GeneralLedgerEntryListView(AccountingMixin, ListView):
 
     model = GeneralLedgerEntry
     template_name = 'finance/gl_entry_list.html'
+    page_title = 'General Ledger entries'
     paginate_by = 50
 
     def get_queryset(self):
+        self.filter_form = GeneralLedgerFilterForm(self.request.GET or None)
         qs = (GeneralLedgerEntry.objects
-              .select_related('account', 'voucher', 'customer', 'supplier', 'currency')
+              .select_related('account', 'voucher', 'customer', 'supplier', 'currency',
+                              'created_by')
               .order_by('-date', '-voucher_id', '-id'))
-        params = self.request.GET
-        if params.get('q'):
-            q = params['q']
-            qs = qs.filter(Q(voucher_number__icontains=q) | Q(description__icontains=q)
-                           | Q(reference__icontains=q))
-        if params.get('account'):
-            qs = qs.filter(account_id=params['account'])
-        if params.get('voucher_type'):
-            qs = qs.filter(voucher_type=params['voucher_type'])
-        if params.get('date_from'):
-            qs = qs.filter(date__gte=params['date_from'])
-        if params.get('date_to'):
-            qs = qs.filter(date__lte=params['date_to'])
+        if self.filter_form.is_valid():
+            data = self.filter_form.cleaned_data
+            if data['q']:
+                q = data['q']
+                qs = qs.filter(Q(voucher_number__icontains=q) | Q(description__icontains=q)
+                               | Q(reference__icontains=q))
+            if data['account']:
+                qs = qs.filter(account=data['account'])
+            if data['voucher_type']:
+                qs = qs.filter(voucher_type=data['voucher_type'])
+            if data['date_from']:
+                qs = qs.filter(date__gte=data['date_from'])
+            if data['date_to']:
+                qs = qs.filter(date__lte=data['date_to'])
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx['accounts'] = LedgerAccount.objects.filter(is_group=False).order_by('code')
-        ctx['voucher_types'] = Voucher.TYPES
-        ctx['params'] = self.request.GET
+        ctx['filter_form'] = self.filter_form
+        ctx['page_title'] = 'General Ledger entries'
         return ctx
 
 
@@ -1172,6 +1243,7 @@ class GeneralLedgerEntryListView(AccountingMixin, ListView):
 
 class ReportIndexView(AccountingMixin, TemplateView):
     template_name = 'finance/report_index.html'
+    page_title = 'Reports'
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1222,12 +1294,12 @@ class BaseReportView(AccountingMixin, TemplateView):
         return self.render_to_response(ctx)
 
     def get_context_data(self, **kwargs):
-        from .views import _company_name
         ctx = super().get_context_data(**kwargs)
         ctx.update({
             'title': self.title, 'slug': self.slug,
+            'page_title': self.title,
+            'breadcrumbs': [('Reports', reverse('finance:report_index')), (self.title, None)],
             'print_mode': self.request.GET.get('print') == '1',
-            'company': _company_name(),
             'settings': AccountingSettings.get_solo(),
             'report_template': f'finance/reports/_{self.slug}.html',
             'params': self.request.GET,
@@ -1358,3 +1430,145 @@ REPORT_VIEWS = {
     'journal': JournalReportView,
     'vat': VatReportView,
 }
+
+
+# ---------------------------------------------------------------------------
+# Customer and supplier masters
+#
+# The Pradeep system owned its own customer and supplier tables. Here the
+# parties are `sales.Customer` and `inventory.Supplier` — the ones the shop
+# floor already uses — and each carries its accounting life on the sub-ledger
+# that hangs under the matching control account. So these screens read the
+# party for its name and contacts, and the ledger for everything accounting:
+# the code, the opening balance, whether it is still open, and the balance.
+# ---------------------------------------------------------------------------
+
+class _PartyListView(AccountingMixin, ListView):
+    template_name = 'finance/customer_list.html'
+    paginate_by = 50
+    model = Customer
+    row_key = 'customer'
+    page_title = 'Customers'
+
+    def get_queryset(self):
+        engine.open_the_books()
+        self.filter_form = PartyFilterForm(self.request.GET or None)
+        qs = self.model.objects.select_related('ledger')
+        if self.filter_form.is_valid():
+            data = self.filter_form.cleaned_data
+            if data['q']:
+                q = data['q']
+                qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q)
+                               | Q(email__icontains=q))
+            if not data['show_inactive']:
+                qs = qs.exclude(ledger__is_active=False)
+        # Annotated or not, a paginated queryset needs a unique tiebreaker.
+        return qs.order_by('name', 'id')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['filter_form'] = self.filter_form
+        ctx['page_title'] = self.page_title
+        balances = engine.account_balances()
+        rows = []
+        for party in ctx['object_list']:
+            ledger = getattr(party, 'ledger', None)
+            signed = balances.get(ledger.id, ZERO) if ledger else ZERO
+            # A supplier's balance reads positive when we owe them.
+            rows.append({self.row_key: party,
+                         'balance': signed if self.row_key == 'customer' else -signed})
+        ctx['rows'] = rows
+        return ctx
+
+
+class CustomerListView(_PartyListView):
+    pass
+
+
+class SupplierListView(_PartyListView):
+    template_name = 'finance/supplier_list.html'
+    model = Supplier
+    row_key = 'supplier'
+    page_title = 'Suppliers'
+
+
+class _PartyDetailView(AccountingMixin, DetailView):
+    template_name = 'finance/customer_detail.html'
+    model = Customer
+    party_field = 'customer'
+    sale_type = 'sales'
+    settle_type = 'receipt'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        party = self.object
+        ledger = getattr(party, 'ledger', None)
+        ctx['page_title'] = party.name
+        ctx['balance'] = (ledger.balance() if ledger else ZERO)
+        if self.party_field == 'supplier':
+            ctx['balance'] = -ctx['balance']
+
+        open_items = (engine.outstanding_invoices(party) if self.party_field == 'customer'
+                      else engine.outstanding_bills(party))
+        ctx['open_items'] = open_items
+        ctx['outstanding_total'] = sum(
+            (Decimal(row['outstanding']) for row in open_items), ZERO)
+        ctx['outstanding_invoices'] = (
+            Invoice.objects.filter(**{self.party_field: party}).outstanding()
+            .select_related('voucher').order_by('invoice_date', 'id'))
+
+        live = {self.party_field: party, 'status__in': Voucher.LIVE_STATUSES}
+        ctx['sales'] = (Voucher.objects.filter(voucher_type=self.sale_type, **live)
+                        .order_by('-date', '-id')[:25])
+        ctx['receipts'] = (Voucher.objects
+                           .filter(voucher_type=self.settle_type,
+                                   lines__account__isnull=False,
+                                   **{f'lines__{self.party_field}': party})
+                           .distinct().order_by('-date', '-id')[:25])
+        return ctx
+
+
+class CustomerDetailView(_PartyDetailView):
+    pass
+
+
+class SupplierDetailView(_PartyDetailView):
+    template_name = 'finance/supplier_detail.html'
+    model = Supplier
+    party_field = 'supplier'
+    sale_type = 'purchase'
+    settle_type = 'payment'
+
+
+def _party_statement(request, party, template, filename):
+    """One party's statement, with the same CSV / Excel / print toolbar every
+    report has."""
+    _guard(request)
+    form = StatementFilterForm(request.GET or None)
+    start = end = None
+    if form.is_valid():
+        start, end = form.cleaned_data['date_from'], form.cleaned_data['date_to']
+    data = reports.statement(party, start, end)
+    fmt = request.GET.get('export')
+    if fmt in ('csv', 'xlsx'):
+        return export_response(fmt, f'{filename}_{party.pk}', data['columns'],
+                               data['export_rows'], title=f'Statement - {party.name}')
+    ctx = dict(data)
+    ctx.update({
+        'customer': party, 'supplier': party, 'form': form,
+        'page_title': f'Statement - {party.name}',
+        'print_mode': request.GET.get('print') == '1',
+    })
+    return render(request, template, ctx)
+
+
+@login_required
+def customer_statement(request, pk):
+    return _party_statement(request, get_object_or_404(Customer, pk=pk),
+                            'finance/customer_statement.html', 'customer_statement')
+
+
+@login_required
+def supplier_statement(request, pk):
+    return _party_statement(request, get_object_or_404(Supplier, pk=pk),
+                            'finance/supplier_statement.html', 'supplier_statement')

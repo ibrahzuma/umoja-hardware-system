@@ -1,317 +1,184 @@
-{% extends 'base.html' %}
+{% extends "finance/accounting_base.html" %}
 {% load accounting %}
+{% comment %}
+The Pradeep system's `templates/vouchers/voucher_detail.html`, markup for
+markup: the three-column details/audit panel on the left, the accounting
+entries with their totals-and-difference footer on the right, then the
+invoice, the allocations, the ledger entries and the audit trail, and the
+cancel and reverse modals at the end.
 
-{% block title %}{{ voucher.number }}{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">
-            {{ voucher.number }}
-            <span class="align-middle">{{ voucher.status|status_badge }}</span>
-        </h2>
-        <p class="text-muted mb-0 small">
-            {{ voucher.get_voucher_type_display }} voucher ·
-            {{ voucher.date|date:"d F Y" }}
-            {% if voucher.financial_year %}· {{ voucher.financial_year.code }}{% endif %}
-            {% if voucher.party %}· {{ voucher.party.name }}{% endif %}
-            {% if voucher.is_foreign_currency %}
-                · {{ voucher.currency.code }} at {{ voucher.exchange_rate }}{% endif %}
-        </p>
-    </div>
-    <div class="btn-group">
-        <a href="{% url 'finance:voucher_print' voucher.pk %}" class="btn btn-outline-secondary"
-           target="_blank"><i class="bi bi-printer"></i> Print</a>
-        {% if voucher.is_draft %}
-        <a href="{% url 'finance:voucher_edit' voucher.pk %}" class="btn btn-outline-primary">
-            <i class="bi bi-pencil"></i> Edit</a>
-        {% endif %}
-        <a href="{% url 'finance:voucher_register' %}" class="btn btn-outline-secondary">Register</a>
-    </div>
-</div>
-
+Name differences only — see `voucher_register.html` for the full list. One
+structural difference: an allocation here hangs off a voucher *line*, so the
+settling voucher is `a.line.voucher` rather than `a.voucher`.
+{% endcomment %}
+{% block heading %}{{ voucher.get_voucher_type_display }} <span class="text-primary">{{ voucher.number }}</span> {{ voucher.status|status_badge }}{% endblock %}
+{% block page_actions %}
+<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:voucher_print' voucher.pk %}" target="_blank"><i class="bi bi-printer"></i> Print</a>
 {% if voucher.is_draft %}
-    {% if validation_errors %}
-    <div class="alert alert-warning">
-        <strong><i class="bi bi-exclamation-triangle"></i> This draft cannot be posted yet:</strong>
-        <ul class="mb-0 mt-2">
-            {% for error in validation_errors %}<li>{{ error }}</li>{% endfor %}
-        </ul>
-    </div>
-    {% else %}
-    <div class="alert alert-success d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span><i class="bi bi-check-circle"></i> This draft balances and is ready to post.</span>
-        {% if can_post %}
-        <form method="post" action="{% url 'finance:voucher_post' voucher.pk %}" class="d-inline">
-            {% csrf_token %}
-            <button class="btn btn-success btn-sm">
-                <i class="bi bi-journal-check"></i> Post to the General Ledger
-            </button>
-        </form>
-        {% endif %}
-    </div>
-    {% endif %}
+  {% if perms.finance.change_voucher %}<a class="btn btn-outline-primary btn-sm" href="{% url 'finance:voucher_edit' voucher.pk %}"><i class="bi bi-pencil"></i> Edit</a>{% endif %}
+  {% if perms.finance.post_voucher %}
+  <form method="post" action="{% url 'finance:voucher_post' voucher.pk %}" class="d-inline" data-confirm="Post voucher {{ voucher.number }} to the General Ledger? Posted vouchers cannot be edited.">{% csrf_token %}
+    <button class="btn btn-success btn-sm" {% if validation_errors %}disabled title="Fix the validation issues first"{% endif %}><i class="bi bi-check2-circle"></i> Post voucher</button>
+  </form>
+  {% endif %}
+  {% if perms.finance.cancel_voucher %}<button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#cancelModal"><i class="bi bi-x-circle"></i> Cancel</button>{% endif %}
+  {% if perms.finance.delete_voucher %}
+  <form method="post" action="{% url 'finance:voucher_delete' voucher.pk %}" class="d-inline" data-confirm="Delete draft {{ voucher.number }}? This cannot be undone.">{% csrf_token %}<button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Delete</button></form>
+  {% endif %}
+{% elif voucher.is_posted and perms.finance.reverse_voucher %}
+  <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#reverseModal"><i class="bi bi-arrow-counterclockwise"></i> Reverse</button>
 {% endif %}
-
-{% if voucher.status == 'reversed' %}
+{% endblock %}
+{% block content %}
+{% if validation_errors %}
 <div class="alert alert-warning">
-    <i class="bi bi-arrow-counterclockwise"></i>
-    This voucher was <strong>reversed</strong>
-    {% if voucher.cancelled_at %}on {{ voucher.cancelled_at|date:"d/m/Y" }}{% endif %}
-    {% if voucher.cancelled_by %}by {{ voucher.cancelled_by.get_full_name|default:voucher.cancelled_by.username }}{% endif %}.
-    Its entries stay in the ledger — the reversing journal cancels them out rather than erasing
-    them.
-    {% if voucher.cancel_reason %}<div class="mt-1"><em>{{ voucher.cancel_reason }}</em></div>{% endif %}
-    {% for reversal in reversals %}
-    <div class="mt-1">Reversed by
-        <a href="{% url 'finance:voucher_detail' reversal.pk %}" class="alert-link">{{ reversal.number }}</a>.
-    </div>
-    {% endfor %}
-</div>
-{% elif voucher.status == 'cancelled' %}
-<div class="alert alert-danger">
-    <i class="bi bi-x-circle"></i> This voucher was <strong>cancelled</strong>
-    {% if voucher.cancelled_at %}on {{ voucher.cancelled_at|date:"d/m/Y" }}{% endif %}.
-    {% if voucher.cancel_reason %}<div class="mt-1"><em>{{ voucher.cancel_reason }}</em></div>{% endif %}
+  <strong><i class="bi bi-exclamation-triangle me-1"></i>This draft cannot be posted yet:</strong>
+  <ul class="mb-0 mt-1">{% for e in validation_errors %}<li>{{ e }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
-
-{% if voucher.is_reversal %}
-<div class="alert alert-info">
-    <i class="bi bi-arrow-return-left"></i> This is the journal that reversed
-    <a href="{% url 'finance:voucher_detail' voucher.reversal_of_id %}"
-       class="alert-link">{{ voucher.reversal_of.number }}</a>.
-</div>
+{% if voucher.status == "reversed" %}
+<div class="alert alert-warning py-2">This voucher was reversed{% for r in reversals %} by <a href="{% url 'finance:voucher_detail' r.pk %}">{{ r.number }}</a>{% endfor %}. {{ voucher.cancel_reason }}</div>
+{% endif %}
+{% if voucher.reversal_of %}
+<div class="alert alert-info py-2">This journal reverses <a href="{% url 'finance:voucher_detail' voucher.reversal_of.pk %}">{{ voucher.reversal_of.number }}</a>.</div>
+{% endif %}
+{% if voucher.status == "cancelled" %}
+<div class="alert alert-danger py-2">Cancelled by {{ voucher.cancelled_by.username }} on {{ voucher.cancelled_at|date:"d/m/Y H:i" }}: {{ voucher.cancel_reason }}</div>
 {% endif %}
 
 <div class="row g-3">
-    <div class="col-lg-8">
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">Accounting lines</h6></div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0" data-no-paginate data-export="Voucher {{ voucher.number }}">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Ledger</th><th>Description</th>
-                            <th class="text-end">Debit</th><th class="text-end">Credit</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for line in lines %}
-                        <tr>
-                            <td>
-                                <a href="{% url 'finance:account_detail' line.account_id %}"
-                                   class="text-decoration-none">{{ line.account.code }}
-                                    {{ line.account.name }}</a>
-                            </td>
-                            <td class="small text-muted">{{ line.narration|default:"—" }}</td>
-                            <td class="text-end">{{ line.debit|money_or_blank }}</td>
-                            <td class="text-end">{{ line.credit|money_or_blank }}</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                    <tfoot class="table-light">
-                        <tr class="fw-bold">
-                            <td colspan="2">Total</td>
-                            <td class="text-end">{{ voucher.total_debit|money }}</td>
-                            <td class="text-end">{{ voucher.total_credit|money }}</td>
-                        </tr>
-                        {% if voucher.is_foreign_currency %}
-                        <tr class="small text-muted">
-                            <td colspan="2">In the base currency, at {{ voucher.exchange_rate }}</td>
-                            <td class="text-end">{{ voucher.base_total_debit|money }}</td>
-                            <td class="text-end">{{ voucher.base_total_credit|money }}</td>
-                        </tr>
-                        {% endif %}
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-
-        {% if allocations %}
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white">
-                <h6 class="fw-bold mb-0">Set against</h6>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0" data-no-paginate>
-                    <thead class="table-light">
-                        <tr><th>Reference</th><th>Kind</th><th class="text-end">Amount</th><th>Note</th></tr>
-                    </thead>
-                    <tbody>
-                    {% for alloc in allocations %}
-                        <tr>
-                            <td class="small fw-semibold">{{ alloc.reference }}</td>
-                            <td class="small text-muted">
-                                {% if alloc.invoice_id %}Invoice register
-                                {% elif alloc.sale_id %}Till sale
-                                {% elif alloc.purchase_order_id %}Purchase order
-                                {% elif alloc.voucher_id %}Invoice voucher
-                                {% else %}—{% endif %}
-                            </td>
-                            <td class="text-end">{{ alloc.amount|money }}</td>
-                            <td class="small text-muted">{{ alloc.notes|default:"—" }}</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if gl_entries %}
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white">
-                <h6 class="fw-bold mb-0">General Ledger entries</h6>
-                <div class="small text-muted">
-                    What actually went into the books, in the base currency.
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-sm mb-0" data-no-paginate>
-                    <thead class="table-light">
-                        <tr><th>Date</th><th>Ledger</th><th>Reference</th>
-                            <th class="text-end">Debit</th><th class="text-end">Credit</th></tr>
-                    </thead>
-                    <tbody>
-                    {% for entry in gl_entries %}
-                        <tr>
-                            <td class="small">{{ entry.date|date:"d/m/Y" }}</td>
-                            <td class="small">{{ entry.account.code }} {{ entry.account.name }}</td>
-                            <td class="small text-muted">{{ entry.reference|default:"—" }}</td>
-                            <td class="text-end">{{ entry.debit|money_or_blank }}</td>
-                            <td class="text-end">{{ entry.credit|money_or_blank }}</td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-    </div>
-
-    <div class="col-lg-4">
+  <div class="col-lg-4">
+    <div class="card mb-3"><div class="card-header">Voucher details</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-5">Voucher number</dt><dd class="col-7 fw-semibold">{{ voucher.number }}</dd>
+        <dt class="col-5">Type</dt><dd class="col-7">{{ voucher.get_voucher_type_display }}</dd>
+        <dt class="col-5">Transaction date</dt><dd class="col-7">{{ voucher.date|date:"d/m/Y" }}</dd>
+        <dt class="col-5">Financial year</dt><dd class="col-7">{{ voucher.financial_year.code }}</dd>
+        {% if voucher.customer %}<dt class="col-5">Customer</dt><dd class="col-7"><a href="{% url 'finance:customer_detail' voucher.customer.pk %}">{{ voucher.customer.name }}</a></dd>{% endif %}
+        {% if voucher.supplier %}<dt class="col-5">Supplier</dt><dd class="col-7"><a href="{% url 'finance:supplier_detail' voucher.supplier.pk %}">{{ voucher.supplier.name }}</a></dd>{% endif %}
+        {% if voucher.invoice_number %}<dt class="col-5">Invoice number</dt><dd class="col-7">{{ voucher.invoice_number }}</dd>{% endif %}
+        {% if voucher.efd_number %}<dt class="col-5">EFD RCT number</dt><dd class="col-7">{{ voucher.efd_number }}</dd>{% endif %}
+        {% if voucher.payment_status %}<dt class="col-5">Payment status</dt><dd class="col-7">{{ voucher.get_payment_status_display }}</dd>{% endif %}
         {% if voucher.is_invoice %}
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">The invoice</h6></div>
-            <div class="card-body small">
-                <dl class="row mb-0">
-                    <dt class="col-6 text-muted fw-normal">Invoice number</dt>
-                    <dd class="col-6 text-end fw-semibold">{{ voucher.invoice_number|default:"—" }}</dd>
-                    <dt class="col-6 text-muted fw-normal">EFD receipt</dt>
-                    <dd class="col-6 text-end">{{ voucher.efd_number|default:"—" }}</dd>
-                    <dt class="col-6 text-muted fw-normal">Payment status</dt>
-                    <dd class="col-6 text-end">{{ voucher.get_payment_status_display|default:"—" }}</dd>
-                    <dt class="col-6 text-muted fw-normal">VAT-exclusive</dt>
-                    <dd class="col-6 text-end">{{ voucher.net_amount|money }}</dd>
-                    <dt class="col-6 text-muted fw-normal">VAT</dt>
-                    <dd class="col-6 text-end">{{ voucher.vat_amount|money }}</dd>
-                    <dt class="col-6 text-muted fw-normal">Total</dt>
-                    <dd class="col-6 text-end fw-bold">{{ voucher.total|money }}</dd>
-                </dl>
-                {% if invoice %}
-                <hr>
-                <div class="d-flex justify-content-between">
-                    <span class="text-muted">In the register</span>
-                    {{ invoice.status|status_badge }}
-                </div>
-                <div class="d-flex justify-content-between mt-1">
-                    <span class="text-muted">Still outstanding</span>
-                    <strong>{{ invoice.outstanding_amount|money }}</strong>
-                </div>
-                {% endif %}
-            </div>
-        </div>
+        <dt class="col-5">VAT exclusive</dt><dd class="col-7">{{ voucher.net_amount|money }}</dd>
+        <dt class="col-5">VAT</dt><dd class="col-7">{{ voucher.vat_amount|money }}{% if voucher.vat_account %} <span class="text-muted-sm">({{ voucher.vat_account.code }})</span>{% endif %}</dd>
+        <dt class="col-5">Total (incl. VAT)</dt><dd class="col-7 fw-semibold">{{ voucher.total|money }}</dd>
         {% endif %}
+        {% if voucher.currency %}<dt class="col-5">Currency</dt><dd class="col-7">{{ voucher.currency.code }}{% if voucher.is_foreign_currency %} <span class="text-muted-sm">@ {{ voucher.exchange_rate|floatformat:2 }} {{ accounting_currency_code }}</span>{% endif %}</dd>{% endif %}
+        {% if voucher.reference %}<dt class="col-5">Reference</dt><dd class="col-7">{{ voucher.reference }}</dd>{% endif %}
+        <dt class="col-5">Narration</dt><dd class="col-7">{{ voucher.description|default:"-"|linebreaksbr }}</dd>
+      </dl>
+    </div></div>
+    <div class="card mb-3"><div class="card-header">Audit information</div><div class="card-body">
+      <dl class="row mb-0 text-muted-sm">
+        <dt class="col-5">Created by</dt><dd class="col-7">{{ voucher.created_by.username|default:"-" }}<br>{{ voucher.created_at|date:"d/m/Y H:i:s" }}</dd>
+        <dt class="col-5">Last updated</dt><dd class="col-7">{{ voucher.updated_by.username|default:"-" }}<br>{{ voucher.updated_at|date:"d/m/Y H:i:s" }}</dd>
+        {% if voucher.posted_at %}<dt class="col-5">Posted by</dt><dd class="col-7">{{ voucher.posted_by.username|default:"-" }}<br>{{ voucher.posted_at|date:"d/m/Y H:i:s" }}</dd>{% endif %}
+      </dl>
+      {% if voucher.date != voucher.created_at.date %}<div class="alert alert-light border py-1 px-2 mt-2 mb-0 small"><i class="bi bi-clock-history me-1"></i>Transaction date {{ voucher.date|date:"d/m/Y" }} differs from the entry date {{ voucher.created_at|date:"d/m/Y" }}.</div>{% endif %}
+    </div></div>
+  </div>
 
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">The document</h6></div>
-            <div class="card-body small">
-                <dl class="row mb-0">
-                    {% if voucher.reference %}
-                    <dt class="col-5 text-muted fw-normal">Reference</dt>
-                    <dd class="col-7 text-end">{{ voucher.reference }}</dd>
-                    {% endif %}
-                    <dt class="col-5 text-muted fw-normal">Entered by</dt>
-                    <dd class="col-7 text-end">
-                        {{ voucher.created_by.get_full_name|default:voucher.created_by.username|default:"—" }}
-                    </dd>
-                    <dt class="col-5 text-muted fw-normal">Entered on</dt>
-                    <dd class="col-7 text-end">{{ voucher.created_at|date:"d/m/Y H:i" }}</dd>
-                    {% if voucher.posted_by %}
-                    <dt class="col-5 text-muted fw-normal">Posted by</dt>
-                    <dd class="col-7 text-end">
-                        {{ voucher.posted_by.get_full_name|default:voucher.posted_by.username }}
-                    </dd>
-                    <dt class="col-5 text-muted fw-normal">Posted on</dt>
-                    <dd class="col-7 text-end">{{ voucher.posted_at|date:"d/m/Y H:i" }}</dd>
-                    {% endif %}
-                </dl>
-                {% if voucher.description %}
-                <hr><div class="text-muted">{{ voucher.description|linebreaksbr }}</div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- The things you can do to it -->
-        {% if voucher.is_draft and can_cancel %}
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">Cancel this draft</h6></div>
-            <div class="card-body">
-                <p class="text-muted small">
-                    It never reached the ledger, so there is nothing to undo. The document stays
-                    for the audit trail.
-                </p>
-                <form method="post" action="{% url 'finance:voucher_cancel' voucher.pk %}">
-                    {% csrf_token %}
-                    {% include 'finance/_field.html' with field=cancel_form.reason %}
-                    <button class="btn btn-outline-danger btn-sm w-100">
-                        <i class="bi bi-x-lg"></i> Cancel the draft
-                    </button>
-                </form>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if voucher.is_posted and can_reverse %}
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">Reverse this voucher</h6></div>
-            <div class="card-body">
-                <p class="text-muted small">
-                    A posted voucher is never edited. Reversing it posts the mirror-image journal
-                    and marks this one reversed — both documents stay in the books, which is what
-                    an audit needs to see.
-                </p>
-                <form method="post" action="{% url 'finance:voucher_reverse' voucher.pk %}">
-                    {% csrf_token %}
-                    {% include 'finance/_field.html' with field=reverse_form.reversal_date %}
-                    {% include 'finance/_field.html' with field=reverse_form.reason %}
-                    <button class="btn btn-outline-warning btn-sm w-100">
-                        <i class="bi bi-arrow-counterclockwise"></i> Reverse
-                    </button>
-                </form>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if audit_logs %}
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">What happened to it</h6></div>
-            <div class="list-group list-group-flush small">
-            {% for entry in audit_logs %}
-                <div class="list-group-item">
-                    <div class="d-flex justify-content-between">
-                        <span>{{ entry.action|status_badge }}</span>
-                        <span class="text-muted">{{ entry.timestamp|date:"d/m/Y H:i" }}</span>
-                    </div>
-                    <div class="text-muted mt-1">
-                        {{ entry.username|default:"system" }} — {{ entry.description }}
-                    </div>
-                </div>
-            {% endfor %}
-            </div>
-        </div>
-        {% endif %}
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header">Accounting entries</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>#</th><th>Account</th><th>Kind</th><th>Description</th><th class="num">Debit ({{ voucher.currency_code }})</th><th class="num">Credit ({{ voucher.currency_code }})</th></tr></thead>
+        <tbody>
+        {% for l in lines %}
+        <tr>
+          <td class="text-muted">{{ forloop.counter }}</td>
+          <td><a href="{% url 'finance:account_detail' l.account.pk %}">{{ l.account }}</a></td>
+          <td><span class="badge text-bg-light text-dark">{{ l.account.ledger_kind }}</span></td>
+          <td>{{ l.narration }}</td>
+          <td class="num">{{ l.debit|money_or_blank }}</td>
+          <td class="num">{{ l.credit|money_or_blank }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="6" class="text-center text-muted py-3">No lines.</td></tr>{% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-light fw-semibold"><td colspan="4" class="text-end">Total</td><td class="num">{{ voucher.total_debit|money }}</td><td class="num">{{ voucher.total_credit|money }}</td></tr>
+          {% if voucher.is_foreign_currency %}
+          <tr class="text-muted-sm"><td colspan="4" class="text-end">In {{ accounting_currency_code }} @ {{ voucher.exchange_rate|floatformat:2 }}</td>
+            <td class="num">{{ voucher.base_total_debit|money }}</td><td class="num">{{ voucher.base_total_credit|money }}</td></tr>
+          {% endif %}
+          <tr class="{% if voucher.difference == 0 %}table-success{% else %}table-danger{% endif %}"><td colspan="4" class="text-end">Difference</td><td colspan="2" class="num">{{ voucher.difference|abs_value|money }}{% if voucher.difference == 0 %} <i class="bi bi-check-circle"></i>{% endif %}</td></tr>
+        </tfoot>
+      </table></div>
     </div>
+
+    {% if invoice %}
+    <div class="card mb-3"><div class="card-header">{{ invoice.get_kind_display }} {{ invoice.invoice_number }}</div>
+      <div class="card-body py-2">
+        <div class="row">
+          <div class="col-md-3"><div class="stat-label text-muted-sm">Original</div>{{ invoice.original_amount|money }}</div>
+          <div class="col-md-3"><div class="stat-label text-muted-sm">Paid / allocated</div>{{ invoice.allocated_amount|money }}</div>
+          <div class="col-md-3"><div class="stat-label text-muted-sm">Outstanding</div><strong>{{ invoice.outstanding_amount|money }}</strong></div>
+          <div class="col-md-3"><div class="stat-label text-muted-sm">Status</div>{{ invoice.status|status_badge }}</div>
+        </div>
+        {% with allocs=invoice.allocations.all %}{% if allocs %}
+        <table class="table table-sm mt-2 mb-0"><thead><tr><th>Settled by</th><th>Date</th><th>Note</th><th class="num">Amount</th></tr></thead><tbody>
+        {% for a in allocs %}<tr><td><a href="{% url 'finance:voucher_detail' a.line.voucher.pk %}">{{ a.line.voucher.number }}</a> {{ a.line.voucher.status|status_badge }}</td><td>{{ a.line.voucher.date|date:"d/m/Y" }}</td><td>{{ a.notes }}</td><td class="num">{{ a.amount|money }}</td></tr>{% endfor %}
+        </tbody></table>
+        {% endif %}{% endwith %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if allocations %}
+    <div class="card mb-3"><div class="card-header">Invoice allocations</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Invoice / bill</th><th>Party</th><th>Date</th><th class="num">Original</th><th class="num">Outstanding now</th><th class="num">Allocated</th></tr></thead>
+        <tbody>{% for a in allocations %}
+          <tr><td>{% if a.invoice.voucher %}<a href="{% url 'finance:voucher_detail' a.invoice.voucher.pk %}">{{ a.reference }}</a>{% elif a.voucher %}<a href="{% url 'finance:voucher_detail' a.voucher.pk %}">{{ a.reference }}</a>{% else %}{{ a.reference }}{% endif %}</td>
+            <td>{{ a.invoice.party.name|default:"" }}</td><td>{{ a.invoice.invoice_date|date:"d/m/Y" }}</td>
+            <td class="num">{{ a.invoice.original_amount|money_or_blank }}</td><td class="num">{{ a.invoice.outstanding_amount|money_or_blank }}</td><td class="num fw-semibold">{{ a.amount|money }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% endif %}
+
+    {% if gl_entries %}
+    <div class="card mb-3"><div class="card-header">General Ledger entries</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Reference</th><th class="num">Debit</th><th class="num">Credit</th><th>Created</th></tr></thead>
+        <tbody>{% for e in gl_entries %}
+          <tr><td>{{ e.date|date:"d/m/Y" }}</td><td>{{ e.account }}</td><td>{{ e.description }}</td><td class="text-muted-sm">{{ e.reference }}</td>
+            <td class="num">{{ e.debit|money_or_blank }}</td><td class="num">{{ e.credit|money_or_blank }}</td><td class="text-muted-sm">{{ e.created_at|date:"d/m/Y H:i" }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% endif %}
+
+    <div class="card"><div class="card-header">Audit trail</div>
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Status</th><th>Description</th><th>IP</th></tr></thead>
+        <tbody>{% for log in audit_logs %}
+          <tr><td class="text-nowrap">{{ log.timestamp|date:"d/m/Y H:i:s" }}</td><td>{{ log.username }}</td><td>{{ log.get_action_display }}</td>
+            <td class="text-muted-sm">{% if log.new_status %}{{ log.previous_status|default:"-" }} &rarr; {{ log.new_status }}{% endif %}</td><td class="text-muted-sm">{{ log.description }}</td><td class="text-muted-sm">{{ log.ip_address|default:"" }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="text-muted text-center">No audit entries.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+  </div>
 </div>
+
+<div class="modal fade" id="cancelModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{% url 'finance:voucher_cancel' voucher.pk %}">{% csrf_token %}
+    <div class="modal-header"><h5 class="modal-title">Cancel draft {{ voucher.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><label class="form-label">Reason</label>{{ cancel_form.reason }}<div class="form-text">The voucher number is retained for audit purposes; no ledger entries are affected.</div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button class="btn btn-danger">Cancel voucher</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="reverseModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="{% url 'finance:voucher_reverse' voucher.pk %}">{% csrf_token %}
+    <div class="modal-header"><h5 class="modal-title">Reverse {{ voucher.number }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p class="small text-muted">A journal voucher with equal and opposite entries will be posted. The original voucher stays in the ledger and is marked as reversed. Any invoice created by it is cancelled and its allocations are released.</p>
+      <div class="mb-2"><label class="form-label">Reversal date</label>{{ reverse_form.reversal_date }}</div>
+      <div><label class="form-label">Reason</label>{{ reverse_form.reason }}</div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button class="btn btn-warning">Post reversal</button></div>
+  </form>
+</div></div></div>
 {% endblock %}

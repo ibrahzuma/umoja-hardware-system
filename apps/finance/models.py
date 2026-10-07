@@ -1166,6 +1166,21 @@ class LedgerAccount(models.Model):
         from django.urls import reverse
         return reverse('finance:account_detail', args=[self.pk])
 
+    # ------------------------------------------------ names the screens use
+    # The accounting screens are the Pradeep system's templates, carried over
+    # unchanged. Where that system named a field differently, the name is
+    # kept here as a read-only alias rather than edited out of every template
+    # — it is the templates that have to stay faithful, and an alias is far
+    # easier to check than a hundred renamed references.
+    @property
+    def opening_balance_type(self):
+        """'DR' / 'CR', the way that system stored the side."""
+        return 'DR' if (self.opening_side or self.normal_side) == 'debit' else 'CR'
+
+    @property
+    def description(self):
+        return self.notes
+
     def __str__(self):
         return f"{self.code} {self.name}"
 
@@ -1439,6 +1454,38 @@ class Voucher(models.Model):
         from django.urls import reverse
         return reverse('finance:voucher_detail', args=[self.pk])
 
+    # ------------------------------------------------ names the screens use
+    # Read-only aliases so the accounting templates — the Pradeep system's,
+    # carried over unchanged — can keep that system's field names. See the
+    # same note on `LedgerAccount`.
+    @property
+    def voucher_number(self):
+        return self.number
+
+    @property
+    def transaction_date(self):
+        return self.date
+
+    @property
+    def narration(self):
+        return self.description
+
+    @property
+    def efd_rct_number(self):
+        return self.efd_number
+
+    @property
+    def cancellation_reason(self):
+        return self.cancel_reason
+
+    @property
+    def vat_exclusive_amount(self):
+        return self.net_amount
+
+    @property
+    def total_amount(self):
+        return self.total
+
     def __str__(self):
         return f"{self.number} ({self.get_voucher_type_display()}) {self.total}"
 
@@ -1481,6 +1528,17 @@ class VoucherLine(models.Model):
     @property
     def credit(self):
         return self.amount if self.side == 'credit' else Decimal('0.00')
+
+    # Aliases for the carried-over accounting templates; see `LedgerAccount`.
+    # Note the pair is crossed: a *line's* narration is that system's
+    # `description`, while a *voucher's* description is its `narration`.
+    @property
+    def line_number(self):
+        return (self.position or 0) + 1
+
+    @property
+    def description(self):
+        return self.narration
 
     def save(self, *args, **kwargs):
         """Keep the party references and the base amount in step with the

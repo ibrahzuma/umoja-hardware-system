@@ -1,41 +1,16 @@
-{% extends 'base.html' %}
-
-{% block title %}{{ view.object|yesno:"Edit ,New " }}Financial year{% endblock %}
-
+{% extends "finance/accounting_base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">
-            {% if view.object %}Edit{% else %}New{% endif %} Financial year
-        </h2>
-        <p class="text-muted mb-0 small">A year of account. Closing it, or setting a lock date, stops normal users posting into it.</p>
-    </div>
-    <a href="{% url 'finance:financial_year_list' %}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left"></i> Financial years
-    </a>
-</div>
-
-<div class="row">
-    <div class="col-lg-7">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <form method="post" novalidate>
-                    {% csrf_token %}
-                    {% if form.non_field_errors %}
-                        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
-                    {% endif %}
-                    {% for field in form %}
-                        {% include 'finance/_field.html' with field=field %}
-                    {% endfor %}
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-lg"></i> Save
-                        </button>
-                        <a href="{% url 'finance:financial_year_list' %}" class="btn btn-outline-secondary">Cancel</a>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
+<div class="card" style="max-width: 640px;"><div class="card-body">
+  <form method="post">{% csrf_token %}
+    {% include "finance/includes/form_errors.html" %}
+    <div class="row"><div class="col-md-4">{% include "finance/includes/field.html" with field=form.code %}</div><div class="col-md-8">{% include "finance/includes/field.html" with field=form.name %}</div></div>
+    <div class="row"><div class="col-md-6">{% include "finance/includes/field.html" with field=form.start_date %}</div><div class="col-md-6">{% include "finance/includes/field.html" with field=form.end_date %}</div></div>
+    {% include "finance/includes/field.html" with field=form.lock_date %}
+    {% include "finance/includes/field.html" with field=form.is_active %}
+    {% include "finance/includes/field.html" with field=form.is_closed %}
+    {% include "finance/includes/field.html" with field=form.notes %}
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-link" href="{% url 'finance:financial_year_list' %}">Cancel</a>
+  </form>
+</div></div>
 {% endblock %}

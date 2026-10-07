@@ -92,6 +92,18 @@ urlpatterns = [
     path('accounting/vouchers/<int:pk>/reverse/', acc.voucher_reverse, name='voucher_reverse'),
     path('accounting/vouchers/<int:pk>/delete/', acc.voucher_delete, name='voucher_delete'),
 
+    # Customer and supplier masters, over sales.Customer / inventory.Supplier
+    path('accounting/customers/', acc.CustomerListView.as_view(), name='customer_list'),
+    path('accounting/customers/<int:pk>/', acc.CustomerDetailView.as_view(),
+         name='customer_detail'),
+    path('accounting/customers/<int:pk>/statement/', acc.customer_statement,
+         name='customer_statement'),
+    path('accounting/suppliers/', acc.SupplierListView.as_view(), name='supplier_list'),
+    path('accounting/suppliers/<int:pk>/', acc.SupplierDetailView.as_view(),
+         name='supplier_detail'),
+    path('accounting/suppliers/<int:pk>/statement/', acc.supplier_statement,
+         name='supplier_statement'),
+
     # The General Ledger browser
     path('accounting/gl-entries/', acc.GeneralLedgerEntryListView.as_view(), name='gl_entries'),
 

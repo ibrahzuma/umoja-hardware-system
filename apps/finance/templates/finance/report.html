@@ -1,66 +1,27 @@
-{% extends print_mode|yesno:"finance/report_print_base.html,base.html" %}
+{% extends "finance/accounting_base.html" %}
 {% load accounting %}
-
-{% block title %}{{ title }}{% endblock %}
-
+{% block body_class %}{% if print_mode %}auto-print{% endif %}{% endblock %}
+{% block page_actions %}{% include "finance/includes/report_toolbar.html" %}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2 report-head">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">{{ title }}</h2>
-        <p class="text-muted mb-0 small">{{ company }}</p>
-    </div>
-    <div class="btn-group no-print">
-        <a href="?{% query_replace print=1 %}" class="btn btn-outline-secondary" target="_blank">
-            <i class="bi bi-printer"></i> Print
-        </a>
-        <a href="?{% query_replace export='csv' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-filetype-csv"></i> CSV
-        </a>
-        <a href="?{% query_replace export='xlsx' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-file-earmark-excel"></i> Excel
-        </a>
-        <a href="{% url 'finance:report_index' %}" class="btn btn-outline-secondary">Reports</a>
-    </div>
-</div>
-
-{% if not print_mode %}
-<div class="card shadow-sm border-0 mb-3 no-print">
-    <div class="card-body">
-        <form method="get" class="row g-2 align-items-end">
-            {% for field in form %}
-            <div class="col-md-3">
-                {% if field.field.widget.input_type == 'checkbox' %}
-                    <div class="form-check mt-4">
-                        {{ field }}
-                        <label class="form-check-label small" for="{{ field.id_for_label }}">
-                            {{ field.label }}</label>
-                    </div>
-                {% else %}
-                    <label class="form-label small fw-semibold" for="{{ field.id_for_label }}">
-                        {{ field.label }}{% if field.field.required %}
-                            <span class="text-danger">*</span>{% endif %}
-                    </label>
-                    {{ field }}
-                {% endif %}
-                {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-            </div>
-            {% endfor %}
-            <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Run</button>
-                <a href="{{ request.path }}" class="btn btn-outline-secondary btn-sm">Reset</a>
-            </div>
-        </form>
-    </div>
-</div>
-{% endif %}
-
-{% if start or end or as_of %}
-<p class="text-muted small">
-    {% if as_of %}As at {{ as_of|date:"d F Y" }}{% endif %}
-    {% if start %}From {{ start|date:"d/m/Y" }}{% endif %}
-    {% if end %}to {{ end|date:"d/m/Y" }}{% endif %}
-</p>
-{% endif %}
-
-{% include report_template %}
+<form method="get" class="card mb-3 filter-bar no-print"><div class="card-body row g-2 align-items-end">
+  {% for field in form %}
+    {% if field.field.widget.input_type == "checkbox" %}
+      <div class="col-md-2"><div class="form-check mt-4">{{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div></div>
+    {% else %}
+      <div class="col-md-{% if field.name == 'account' or field.name == 'customer' or field.name == 'supplier' %}4{% else %}2{% endif %}"><label class="form-label">{{ field.label }}</label>{{ field }}{% for e in field.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    {% endif %}
+  {% endfor %}
+  <div class="col-md-2 d-grid"><button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Run report</button></div>
+</div></form>
+<div class="card"><div class="card-body">
+  <div class="print-header d-flex justify-content-between">
+    <div><h2 class="h5 mb-0">{{ company_name }}</h2><div class="text-muted-sm">{{ company.address|linebreaksbr }}{% if company.tax_number %}<br>TIN/VRN: {{ company.tax_number }}{% endif %}</div></div>
+    <div class="text-end"><h3 class="h5 mb-0">{{ title }}</h3>
+      <div class="text-muted-sm">
+        {% if as_of %}As at {{ as_of|date:"d/m/Y" }}{% elif start or end %}{% if start %}{{ start|date:"d/m/Y" }}{% else %}Beginning{% endif %} to {% if end %}{{ end|date:"d/m/Y" }}{% else %}{{ today|date:"d/m/Y" }}{% endif %}{% else %}All dates{% endif %}
+        &middot; All amounts in {{ accounting_currency_code }} &middot; Generated {{ today|date:"d/m/Y" }}
+      </div></div>
+  </div>
+  {% include report_template %}
+</div></div>
 {% endblock %}

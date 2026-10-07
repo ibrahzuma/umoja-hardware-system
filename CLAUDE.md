@@ -257,6 +257,36 @@ See `DEPLOYMENT.md` for one-time server setup.
     twice, `outstanding_invoices`/`outstanding_bills` report a voucher-raised invoice under target
     `voucher` and only a register row *no voucher raised* under target `invoice` — and an allocation
     naming a `voucher` also stores the `invoice_id` it raised, so one row keeps both in step.
+  - **The accounting screens are the Pradeep system's own, carried over.** They do **not** extend
+    `core/base.html`: they extend `finance/accounting_base.html`, that system's shell — the 240px
+    slate sidebar, the sticky white topbar with breadcrumbs and the New voucher dropdown — styled
+    by `static/css/accounting.css`, which is its `app.css` byte for byte. `static/js/accounting_app.js`
+    is its `app.js` unchanged, and `static/js/voucher_form.js` its voucher-entry script with six
+    renames and nothing else. Bootstrap, the icon font and Chart.js are the bundled copies under
+    `static/vendor/`, as there, so the area works with no CDN. The two systems' styles never meet.
+    **Keep it that way** — when changing an accounting screen, match the original rather than the
+    Umoja house style, and leave `core/base.html` out of it.
+    - The templates are verbatim bar the names: URLs onto the `finance:` namespace, `perms.*` onto
+      `finance`, and the field names below. Where this project's model named a field differently
+      the **old name is kept as a read-only alias on the model** (`Voucher.voucher_number`,
+      `.transaction_date`, `.narration`, `.efd_rct_number`, `.vat_exclusive_amount`,
+      `.total_amount`, `.cancellation_reason`; `VoucherLine.line_number`, `.description`;
+      `LedgerAccount.opening_balance_type`, `.description`) so the markup did not have to be
+      edited. Note `narration`/`description` is *crossed*: a line's narration is that system's
+      `description`, a voucher's description its `narration`.
+    - `finance/context_processors.py::accounting` supplies the shell's `company` (a letterhead
+      object built from `core.SystemSettings`), `company_name`, `current_financial_year`,
+      `accounting_currency_code`, `user_role` and `today`. It returns `{}` outside `/finance/`.
+    - A view's `page_title` and `breadcrumbs` are what the shell prints; `AccountingMixin` gives
+      both a default.
+    - **Customer and supplier masters** (`/finance/accounting/customers/`, `…/suppliers/`) are that
+      system's screens over `sales.Customer` and `inventory.Supplier`. Those models are minimal, so
+      the accounting fields come off the party's **sub-ledger** — its code is the party's code, its
+      `is_active` is whether the party is open, its opening balance is theirs. There is no second
+      party register.
+    - Open items for allocation are posted as a single `"<target>:<pk>"` token (`voucher:12`,
+      `sale:5`), because an open item here may be a till sale or a purchase order as well as an
+      invoice. `AllocationForm._split` takes it apart again.
   - **Thirteen reports** (`accounting_reports.py`, `/finance/accounting/reports/`): General Ledger,
     Trial Balance, Customer/Supplier Statement, Customer/Supplier Outstanding (with 0-30/31-60/
     61-90/90+ ageing), the six voucher registers, and VAT (output less input). One view class

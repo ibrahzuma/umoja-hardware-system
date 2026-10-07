@@ -1,3 +1,11 @@
-{# The contra report uses the plain voucher register layout — the
-   layout is identical and the figures come from the same builder. #}
-{% include 'finance/reports/_simple_register.html' %}
+{% load accounting %}
+<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+  <thead><tr><th>Date</th><th>Voucher</th><th>Debit accounts</th><th>Credit accounts</th><th>Customer / Supplier</th><th>Reference</th><th>Narration</th><th class="num">Amount</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for r in rows %}{% with v=r.voucher %}
+  <tr><td>{{ v.transaction_date|date:"d/m/Y" }}</td><td><a href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td><td class="text-muted-sm">{{ r.debits }}</td><td class="text-muted-sm">{{ r.credits }}</td>
+    <td>{{ v.customer|default:v.supplier|default:"" }}</td><td>{{ v.reference }}</td><td>{{ v.narration|truncatechars:60 }}</td><td class="num">{{ v.total_debit|money }}</td><td>{{ v.status|status_badge }}</td></tr>
+  {% endwith %}{% empty %}<tr><td colspan="9" class="text-center text-muted py-4">No vouchers in this period.</td></tr>{% endfor %}
+  </tbody>
+  <tfoot><tr class="table-light fw-bold"><td colspan="7" class="text-end">TOTAL</td><td class="num">{{ total|money }}</td><td></td></tr></tfoot>
+</table></div>

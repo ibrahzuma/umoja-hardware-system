@@ -1,0 +1,98 @@
+/* The accounting area's own stylesheet.
+
+   This is the Pradeep accounting system's `static/css/app.css`, carried over
+   as-is so the books' screens keep that system's exact layout, spacing and
+   alignment — the 240px slate sidebar, the small-caps table headers, the
+   right-aligned tabular `.num` columns, the voucher-entry totals box and the
+   print rules.
+
+   It is deliberately NOT merged into `static/css/style.css`: the accounting
+   screens extend `finance/accounting_base.html` rather than `core/base.html`,
+   so the two systems' styles never meet and neither can drift into the other.
+   Edit this file only to track the original. */
+
+:root {
+  --sidebar-width: 240px;
+  --sidebar-bg: #1f2a3a;
+  --sidebar-hover: #2b3a4f;
+  --topbar-height: 56px;
+  --bs-primary-rgb: 25, 84, 148;
+}
+
+body { background: #f3f5f8; font-size: 0.925rem; }
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar --------------------------------------------------------------- */
+.sidebar {
+  width: var(--sidebar-width); background: var(--sidebar-bg); color: #cfd8e3;
+  position: fixed; top: 0; bottom: 0; left: 0; overflow-y: auto; z-index: 1030;
+  display: flex; flex-direction: column; transition: transform .2s ease;
+}
+.sidebar-brand { padding: 1rem 1.25rem; font-weight: 600; font-size: 1.05rem; border-bottom: 1px solid rgba(255,255,255,.08); }
+.sidebar-brand a { color: #fff; text-decoration: none; display: flex; align-items: center; }
+.sidebar-nav { list-style: none; margin: 0; padding: .5rem 0; flex: 1; }
+.sidebar-nav li a { display: flex; align-items: center; gap: .6rem; padding: .5rem 1.25rem; color: #cfd8e3; text-decoration: none; font-size: .9rem; }
+.sidebar-nav li a:hover { background: var(--sidebar-hover); color: #fff; }
+.sidebar-nav li a.active { background: rgba(25,84,148,.55); color: #fff; border-left: 3px solid #4da3ff; padding-left: calc(1.25rem - 3px); }
+.sidebar-nav li a i { width: 1.1rem; text-align: center; }
+.sidebar-heading { padding: .9rem 1.25rem .25rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #8797ab; }
+.sidebar-footer { padding: .75rem 1.25rem; border-top: 1px solid rgba(255,255,255,.08); }
+
+.main-area { margin-left: var(--sidebar-width); flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar { height: var(--topbar-height); background: #fff; border-bottom: 1px solid #e3e7ec; position: sticky; top: 0; z-index: 1020; }
+.content { padding: 1.25rem 1.5rem 3rem; }
+
+@media (max-width: 991.98px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.show { transform: translateX(0); }
+  .main-area { margin-left: 0; }
+  .content { padding: 1rem; }
+}
+
+/* Cards & tables ------------------------------------------------------- */
+.card { border: 1px solid #e3e7ec; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+.card-header { background: #fff; font-weight: 600; }
+.stat-card .stat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #6c757d; }
+.stat-card .stat-value { font-size: 1.35rem; font-weight: 600; white-space: nowrap; }
+.stat-card .stat-icon { font-size: 1.8rem; opacity: .35; }
+.table-sm td, .table-sm th { padding: .35rem .5rem; }
+.table thead th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #5b6b7c; background: #f8f9fb; white-space: nowrap; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table .num { text-align: right; }
+.text-muted-sm { font-size: .8rem; color: #6c757d; }
+.filter-bar .form-label { font-size: .75rem; margin-bottom: .15rem; color: #5b6b7c; }
+.breadcrumb { font-size: .85rem; }
+.badge { font-weight: 500; }
+a.table-link { text-decoration: none; }
+a.table-link:hover { text-decoration: underline; }
+
+/* Voucher entry --------------------------------------------------------- */
+.voucher-lines th, .voucher-lines td { vertical-align: middle; }
+.voucher-lines .form-control, .voucher-lines .form-select { font-size: .9rem; }
+.voucher-lines tr.line-auto { background: #fff8e1; }
+.voucher-lines tr.line-auto select { border-color: #f0ad4e; }
+.voucher-lines .amount-input { text-align: right; font-variant-numeric: tabular-nums; }
+.voucher-lines .side-badge { font-size: .7rem; }
+.totals-box { background: #f8f9fb; border: 1px solid #e3e7ec; border-radius: .375rem; padding: .75rem 1rem; }
+.totals-box .total-row { display: flex; justify-content: space-between; padding: .2rem 0; font-variant-numeric: tabular-nums; }
+.totals-box .total-row.difference { border-top: 1px solid #dee2e6; margin-top: .25rem; padding-top: .45rem; font-weight: 600; }
+.totals-box .balanced { color: #198754; }
+.totals-box .unbalanced { color: #dc3545; }
+.alloc-table input.alloc-input { width: 150px; text-align: right; }
+.sticky-actions { position: sticky; bottom: 0; background: #fff; border-top: 1px solid #e3e7ec; padding: .75rem 1rem; z-index: 5; }
+.kbd-hint { font-size: .75rem; color: #6c757d; }
+kbd { font-size: .7rem; }
+
+/* Print ----------------------------------------------------------------- */
+.print-header { border-bottom: 2px solid #333; margin-bottom: 1rem; padding-bottom: .5rem; }
+@media print {
+  .sidebar, .topbar, .page-actions, .no-print, .toast-container, .filter-bar, .btn { display: none !important; }
+  .main-area { margin-left: 0; }
+  .content { padding: 0; }
+  body { background: #fff; font-size: 11pt; }
+  .card { border: none; box-shadow: none; }
+  a { text-decoration: none; color: inherit; }
+  .table { font-size: 10pt; }
+}
+body.print-page { background: #fff; }
+body.print-page .print-wrap { max-width: 900px; margin: 1.5rem auto; padding: 1.5rem; background: #fff; }

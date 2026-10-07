@@ -1,3 +1,15 @@
-{# The customer statement report uses the party statement — the
-   layout is identical and the figures come from the same builder. #}
-{% include 'finance/reports/_statement.html' %}
+{% load accounting %}
+{% if party %}
+<div class="mb-2"><strong>{{ party.code }} - {{ party.name }}</strong> <span class="text-muted-sm">{{ party.address }} {{ party.phone }}</span></div>
+<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+  <thead><tr><th>Date</th><th>Reference</th><th>Voucher</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+  <tbody>
+    <tr class="table-light"><td colspan="6">Opening balance</td><td class="num">{{ opening|money }}</td></tr>
+    {% for r in rows %}{% with e=r.entry %}
+    <tr><td>{{ e.transaction_date|date:"d/m/Y" }}</td><td>{{ e.reference }}</td><td><a href="{% url 'finance:voucher_detail' e.voucher_id %}">{{ e.voucher_number }}</a></td><td>{{ e.description }}</td>
+      <td class="num">{{ e.debit|money_or_blank }}</td><td class="num">{{ e.credit|money_or_blank }}</td><td class="num">{{ r.balance|money }}</td></tr>
+    {% endwith %}{% empty %}<tr><td colspan="7" class="text-center text-muted">No transactions in this period.</td></tr>{% endfor %}
+    <tr class="table-light fw-semibold"><td colspan="4">Totals / closing balance</td><td class="num">{{ debit_total|money }}</td><td class="num">{{ credit_total|money }}</td><td class="num">{{ closing|money }}</td></tr>
+  </tbody>
+</table></div>
+{% else %}<p class="text-muted text-center py-4">Select a customer and run the report.</p>{% endif %}

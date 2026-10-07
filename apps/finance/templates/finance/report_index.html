@@ -1,62 +1,15 @@
-{% extends 'base.html' %}
-
-{% block title %}Accounting reports{% endblock %}
-
+{% extends "finance/accounting_base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">Accounting reports</h2>
-        <p class="text-muted mb-0 small">
-            Every report is built from posted ledger entries, the invoice register and the
-            allocations against it — nothing is stored, so none of them can drift out of step
-            with the books. Each one filters, prints and exports to CSV or Excel.
-        </p>
-    </div>
-    <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left"></i> Back
-    </a>
-</div>
-
 <div class="row g-3">
-{% for url, title, icon, description in reports %}
-    <div class="col-md-6 col-lg-4">
-        <a href="{{ url }}" class="card shadow-sm border-0 h-100 text-decoration-none">
-            <div class="card-body">
-                <div class="d-flex align-items-start gap-3">
-                    <span class="fs-3 text-primary"><i class="bi {{ icon }}"></i></span>
-                    <div>
-                        <h6 class="fw-bold mb-1 text-dark">{{ title }}</h6>
-                        <p class="text-muted small mb-0">{{ description }}</p>
-                    </div>
-                </div>
-            </div>
-        </a>
-    </div>
-{% endfor %}
-</div>
-
-<div class="card shadow-sm border-0 mt-4">
-    <div class="card-body">
-        <h6 class="fw-bold">Also here</h6>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{% url 'finance:profit_loss' %}" class="btn btn-sm btn-outline-primary">
-                Profit &amp; Loss</a>
-            <a href="{% url 'finance:balance_sheet' %}" class="btn btn-sm btn-outline-primary">
-                Balance Sheet</a>
-            <a href="{% url 'finance:cash_flow' %}" class="btn btn-sm btn-outline-primary">
-                Cash Flow</a>
-            <a href="{% url 'finance:sales_ledger' %}" class="btn btn-sm btn-outline-primary">
-                Sales Accounting</a>
-            <a href="{% url 'finance:gl_entries' %}" class="btn btn-sm btn-outline-secondary">
-                General Ledger entries</a>
-            <a href="{% url 'finance:audit_trail' %}" class="btn btn-sm btn-outline-secondary">
-                Audit trail</a>
-        </div>
-        <p class="text-muted small mb-0 mt-3">
-            The three statements answer "how is the business doing", and read the till and the
-            cash desk as well as the ledger. The reports above answer "what do the books say",
-            and read the ledger alone.
-        </p>
-    </div>
+  {% for url, name, icon, desc in reports %}
+  <div class="col-md-6 col-xl-4">
+    <a href="{{ url }}" class="card h-100 text-decoration-none">
+      <div class="card-body d-flex align-items-center gap-3">
+        <i class="bi {{ icon }} text-primary" style="font-size: 1.8rem;"></i>
+        <div><div class="fw-semibold text-dark">{{ name }}</div><div class="text-muted-sm">{{ desc }}</div></div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
 </div>
 {% endblock %}

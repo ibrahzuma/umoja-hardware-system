@@ -1,0 +1,6 @@
+{% load accounting %}
+<div class="btn-group btn-group-sm no-print">
+  <a class="btn btn-outline-secondary" href="?{% query_replace print=1 %}" target="_blank"><i class="bi bi-printer"></i> Print</a>
+  <a class="btn btn-outline-secondary" href="?{% query_replace export='csv' %}"><i class="bi bi-filetype-csv"></i> CSV</a>
+  <a class="btn btn-outline-secondary" href="?{% query_replace export='xlsx' %}"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+</div>

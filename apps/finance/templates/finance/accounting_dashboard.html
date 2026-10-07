@@ -1,239 +1,128 @@
-{% extends 'base.html' %}
-{% load accounting %}
-
-{% block title %}Accounting{% endblock %}
-
+{% extends "finance/accounting_base.html" %}
+{% load static accounting humanize %}
+{% block page_actions %}
+<span class="text-muted-sm">Financial year: <strong>{{ fy.name|default:"not configured" }}</strong></span>
+{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">Accounting</h2>
-        <p class="text-muted mb-0 small">
-            What the books say: vouchers, the General Ledger and the reports built off it.
-            {% if financial_year %}
-                <span class="badge bg-light text-dark border ms-1">{{ financial_year.name }}</span>
-            {% endif %}
-        </p>
-    </div>
-    <div class="btn-group">
-        <a href="{% url 'finance:voucher_register' %}" class="btn btn-outline-primary">
-            <i class="bi bi-journal-text"></i> Vouchers
-        </a>
-        <a href="{% url 'finance:report_index' %}" class="btn btn-outline-primary">
-            <i class="bi bi-file-earmark-bar-graph"></i> Reports
-        </a>
-        <a href="{% url 'finance:accounting_settings' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-gear"></i> Settings
-        </a>
-    </div>
-</div>
-
-{% if not financial_year %}
+{% if setup_needed %}
 <div class="alert alert-warning">
-    <i class="bi bi-exclamation-triangle"></i>
-    No financial year is open, so nothing can be posted.
-    <a href="{% url 'finance:financial_year_create' %}" class="alert-link">Create one</a>.
+  <strong>Setup required.</strong> Create a financial year and the chart of accounts before entering vouchers,
+  or run <code>python manage.py seed_demo_data</code> to load demonstration data.
 </div>
 {% endif %}
 
-<!-- New voucher, one button per type -->
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-body">
-        <h6 class="text-muted text-uppercase small fw-bold mb-3">New voucher</h6>
-        <div class="d-flex flex-wrap gap-2">
-            {% for code, label in voucher_types %}
-            <a href="{% url 'finance:voucher_entry' voucher_type=code %}"
-               class="btn btn-outline-primary btn-sm">
-                <i class="bi bi-plus-lg"></i> {{ label }}
-            </a>
-            {% endfor %}
-        </div>
-    </div>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Total sales (FY)</div><div class="stat-value">{{ sales_total|money }}</div></div><i class="bi bi-cart-check stat-icon text-success"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Total purchases (FY)</div><div class="stat-value">{{ purchase_total|money }}</div></div><i class="bi bi-bag-check stat-icon text-danger"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Receivables</div><div class="stat-value">{{ receivables|money }}</div></div><i class="bi bi-people stat-icon text-primary"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Payables</div><div class="stat-value">{{ payables|money }}</div></div><i class="bi bi-truck stat-icon text-warning"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Cash balance</div><div class="stat-value">{{ cash_balance|money }}</div></div><i class="bi bi-cash-stack stat-icon text-success"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Bank balance</div><div class="stat-value">{{ bank_balance|money }}</div></div><i class="bi bi-bank stat-icon text-primary"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Outstanding customer invoices</div><div class="stat-value">{{ cust_outstanding_total|money }}</div><small class="text-muted">{{ cust_outstanding_count }} invoice{{ cust_outstanding_count|pluralize }}</small></div><i class="bi bi-receipt stat-icon text-info"></i></div></div></div>
+  <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
+    <div><div class="stat-label">Outstanding supplier bills</div><div class="stat-value">{{ supp_outstanding_total|money }}</div><small class="text-muted">{{ supp_outstanding_count }} bill{{ supp_outstanding_count|pluralize }}</small></div><i class="bi bi-receipt-cutoff stat-icon text-secondary"></i></div></div></div>
 </div>
 
-<!-- The figures -->
-<div class="row g-3 mb-4">
-    <div class="col-sm-6 col-lg-3">
-        <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Sales this year</h6>
-                <h4 class="fw-bold mb-0">{{ sales_total|money }}</h4>
-            </div>
-        </div>
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Sales vs purchases by month</span>
+        <span class="text-muted-sm">{{ fy.code }}</span>
+      </div>
+      <div class="card-body"><canvas id="salesChart" height="110"></canvas></div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Purchases this year</h6>
-                <h4 class="fw-bold mb-0">{{ purchase_total|money }}</h4>
-            </div>
-        </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-header">Quick actions</div>
+      <div class="card-body d-grid gap-2">
+        <a class="btn btn-outline-success" href="{% url 'finance:voucher_entry' 'sales' %}"><i class="bi bi-cart-check me-1"></i> Sales voucher</a>
+        <a class="btn btn-outline-danger" href="{% url 'finance:voucher_entry' 'purchase' %}"><i class="bi bi-bag-check me-1"></i> Purchase voucher</a>
+        <a class="btn btn-outline-primary" href="{% url 'finance:voucher_entry' 'receipt' %}"><i class="bi bi-cash-coin me-1"></i> Receipt</a>
+        <a class="btn btn-outline-warning" href="{% url 'finance:voucher_entry' 'payment' %}"><i class="bi bi-credit-card me-1"></i> Payment</a>
+        <a class="btn btn-outline-info" href="{% url 'finance:voucher_entry' 'contra' %}"><i class="bi bi-arrow-left-right me-1"></i> Contra</a>
+        <a class="btn btn-outline-secondary" href="{% url 'finance:voucher_entry' 'journal' %}"><i class="bi bi-journal-bookmark me-1"></i> Journal</a>
+      </div>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Owed to us</h6>
-                <h4 class="fw-bold mb-0">{{ receivables|money }}</h4>
-                <a href="{% url 'finance:report_customer_outstanding' %}" class="small text-decoration-none">
-                    {{ customer_outstanding_count }} open invoice{{ customer_outstanding_count|pluralize }}
-                    ({{ customer_outstanding_total|money }})
-                </a>
-            </div>
-        </div>
+    <div class="card">
+      <div class="card-header">Voucher status</div>
+      <ul class="list-group list-group-flush">
+        <li class="list-group-item d-flex justify-content-between"><a href="{% url 'finance:voucher_register' %}?status=DRAFT">Draft vouchers</a><span class="badge text-bg-secondary">{{ draft_count }}</span></li>
+        <li class="list-group-item d-flex justify-content-between"><a href="{% url 'finance:voucher_register' %}?status=POSTED">Posted vouchers</a><span class="badge text-bg-success">{{ posted_count }}</span></li>
+        <li class="list-group-item d-flex justify-content-between"><a href="{% url 'finance:voucher_register' %}?status=REVERSED">Reversed vouchers</a><span class="badge text-bg-warning">{{ reversed_count }}</span></li>
+      </ul>
     </div>
-    <div class="col-sm-6 col-lg-3">
-        <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Owed by us</h6>
-                <h4 class="fw-bold mb-0 text-danger">{{ payables|money }}</h4>
-                <a href="{% url 'finance:report_supplier_outstanding' %}" class="small text-decoration-none">
-                    {{ supplier_outstanding_count }} open bill{{ supplier_outstanding_count|pluralize }}
-                    ({{ supplier_outstanding_total|money }})
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-lg-8">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white border-0 pb-0">
-                <h6 class="fw-bold mb-0">Sales against purchases</h6>
-            </div>
-            <div class="card-body">
-                <canvas id="monthlyChart" height="110"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white border-0 pb-0">
-                <h6 class="fw-bold mb-0">Cash and bank</h6>
-            </div>
-            <div class="card-body">
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted small">Cash books</span>
-                    <strong>{{ cash_balance|money }}</strong>
-                </div>
-                <div class="d-flex justify-content-between mb-3">
-                    <span class="text-muted small">Bank accounts</span>
-                    <strong>{{ bank_balance|money }}</strong>
-                </div>
-                <table class="table table-sm mb-0" data-no-paginate>
-                    <tbody>
-                    {% for account, balance in bank_cash_balances %}
-                        <tr>
-                            <td class="small">
-                                <a href="{% url 'finance:account_detail' account.pk %}"
-                                   class="text-decoration-none">{{ account.name }}</a>
-                            </td>
-                            <td class="text-end small">{{ balance|money }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td class="text-muted small">No cash book or bank account yet.</td></tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+  </div>
 </div>
 
 <div class="row g-3">
-    <div class="col-lg-7">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold mb-0">Latest vouchers</h6>
-                <span>
-                    {% if draft_count %}
-                    <a href="{% url 'finance:voucher_register' %}?status=draft"
-                       class="badge text-bg-secondary text-decoration-none">{{ draft_count }} draft</a>
-                    {% endif %}
-                    <span class="badge text-bg-success">{{ posted_count }} posted</span>
-                    {% if reversed_count %}
-                    <span class="badge text-bg-warning">{{ reversed_count }} reversed</span>
-                    {% endif %}
-                </span>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-sm table-hover mb-0" data-export="Latest vouchers">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Voucher</th><th>Date</th><th>Party</th>
-                            <th class="text-end">Amount</th><th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% for voucher in recent_vouchers %}
-                        <tr>
-                            <td>
-                                <a href="{% url 'finance:voucher_detail' voucher.pk %}"
-                                   class="text-decoration-none fw-semibold">{{ voucher.number }}</a>
-                                <div class="text-muted small">{{ voucher.get_voucher_type_display }}</div>
-                            </td>
-                            <td class="small">{{ voucher.date|date:"d/m/Y" }}</td>
-                            <td class="small">{{ voucher.party.name|default:"—" }}</td>
-                            <td class="text-end">{{ voucher.total|money }}</td>
-                            <td>{{ voucher.status|status_badge }}</td>
-                        </tr>
-                    {% empty %}
-                        <tr><td colspan="5" class="text-center text-muted py-4">
-                            No vouchers yet.
-                        </td></tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between"><span>Recent transactions</span><a href="{% url 'finance:voucher_register' %}" class="small">View all</a></div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Voucher</th><th>Type</th><th>Date</th><th>Party</th><th class="num">Amount</th><th>Status</th><th>By</th></tr></thead>
+          <tbody>
+          {% for v in recent_vouchers %}
+          <tr>
+            <td><a class="table-link" href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td>
+            <td>{{ v.get_voucher_type_display }}</td>
+            <td>{{ v.transaction_date|date:"d/m/Y" }}</td>
+            <td>{{ v.party|default:"—" }}</td>
+            <td class="num">{{ v.total_debit|money }}</td>
+            <td>{{ v.status|status_badge }}</td>
+            <td class="text-muted-sm">{{ v.created_by.username|default:"—" }}</td>
+          </tr>
+          {% empty %}<tr><td colspan="7" class="text-center text-muted py-3">No vouchers yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-    <div class="col-lg-5">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white">
-                <h6 class="fw-bold mb-0">Reports</h6>
-            </div>
-            <div class="list-group list-group-flush" style="max-height:420px;overflow-y:auto">
-                {% for url, title, icon, description in reports %}
-                <a href="{{ url }}" class="list-group-item list-group-item-action">
-                    <i class="bi {{ icon }} text-primary me-2"></i>
-                    <span class="fw-semibold">{{ title }}</span>
-                    <div class="text-muted small ms-4">{{ description }}</div>
-                </a>
-                {% endfor %}
-            </div>
-        </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header">Cash books &amp; bank accounts</div>
+      <ul class="list-group list-group-flush">
+        {% for account, balance in bank_cash_balances %}
+        <li class="list-group-item d-flex justify-content-between">
+          <a href="{% url 'finance:account_detail' account.pk %}" class="table-link"><i class="bi {% if account.is_money %}bi-bank{% else %}bi-cash{% endif %} me-1"></i>{{ account.name }}</a>
+          <span class="num {% if balance < 0 %}text-danger{% endif %}">{{ balance|money }}</span>
+        </li>
+        {% empty %}<li class="list-group-item text-muted">No cash or bank accounts defined.</li>{% endfor %}
+      </ul>
     </div>
+  </div>
 </div>
 {% endblock %}
-
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+{{ chart_labels|json_script:"chartLabels" }}
+{{ chart_sales|json_script:"chartSales" }}
+{{ chart_purchases|json_script:"chartPurchases" }}
 <script>
 (function () {
-    const labels = {{ chart_labels|safe }};
-    const sales = {{ chart_sales|safe }};
-    const purchases = {{ chart_purchases|safe }};
-    const canvas = document.getElementById('monthlyChart');
-    if (!canvas || !labels.length) { return; }
-    new Chart(canvas, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                { label: 'Sales', data: sales, backgroundColor: 'rgba(25,135,84,0.7)' },
-                { label: 'Purchases', data: purchases, backgroundColor: 'rgba(13,110,253,0.7)' }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { position: 'bottom' } },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { callback: v => v.toLocaleString() }
-                }
-            }
-        }
-    });
+  var labels = JSON.parse(document.getElementById('chartLabels').textContent);
+  if (!labels.length || typeof Chart === 'undefined') { return; }
+  new Chart(document.getElementById('salesChart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Sales', data: JSON.parse(document.getElementById('chartSales').textContent), backgroundColor: 'rgba(25,135,84,.7)' },
+        { label: 'Purchases', data: JSON.parse(document.getElementById('chartPurchases').textContent), backgroundColor: 'rgba(220,53,69,.6)' }
+      ]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: function (v) { return v.toLocaleString(); } } } },
+               plugins: { tooltip: { callbacks: { label: function (c) { return c.dataset.label + ': ' + AccountingUI.formatMoney(c.parsed.y); } } } } }
+  });
 })();
 </script>
 {% endblock %}

@@ -1,106 +1,72 @@
-{% extends 'base.html' %}
-
-{% block title %}Bulk upload — Chart of Accounts{% endblock %}
-
+{% extends "finance/accounting_base.html" %}
+{% block page_actions %}
+<a class="btn btn-outline-primary btn-sm" href="{% url 'finance:account_import_template' %}"><i class="bi bi-download"></i> Download template (.xlsx)</a>
+<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:account_list' %}"><i class="bi bi-diagram-3"></i> Chart of Accounts</a>
+{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">Bulk upload — Chart of Accounts</h2>
-        <p class="text-muted mb-0 small">
-            One row per ledger. A code that already exists is <em>updated</em> rather than
-            refused, so the same file can be corrected and uploaded again. Every row is reported
-            back: a chart with three bad rows lands the rest and names the three.
-        </p>
-    </div>
-    <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left"></i> Chart of Accounts
-    </a>
-</div>
-
 <div class="row g-3">
-    <div class="col-lg-5">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">Upload</h6></div>
-            <div class="card-body">
-                <a href="{% url 'finance:account_import_template' %}"
-                   class="btn btn-outline-primary btn-sm mb-3">
-                    <i class="bi bi-download"></i> Download the template
-                </a>
-                <p class="text-muted small">
-                    The workbook holds the headings, worked examples, the rules on its own sheet,
-                    and the chart as it stands so codes can be copied rather than retyped.
-                </p>
-                <form method="post" enctype="multipart/form-data" novalidate>
-                    {% csrf_token %}
-                    {% include 'finance/_field.html' with field=form.file %}
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-upload"></i> Upload
-                    </button>
-                </form>
-            </div>
-        </div>
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-upload me-1"></i>Upload ledgers</div>
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.file.id_for_label }}">{{ form.file.label }}</label>
+            {{ form.file }}
+            {% for e in form.file.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            <div class="form-text">{{ form.file.help_text }}</div>
+          </div>
+          <button class="btn btn-primary"><i class="bi bi-cloud-upload"></i> Import</button>
+        </form>
+      </div>
     </div>
-
-    <div class="col-lg-7">
-        {% if results %}
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white"><h6 class="fw-bold mb-0">What happened</h6></div>
-            <div class="card-body p-0">
-                <table class="table table-sm align-middle mb-0" data-export="Upload result">
-                    <thead class="table-light">
-                        <tr><th>Row</th><th>Ledger</th><th>Result</th></tr>
-                    </thead>
-                    <tbody>
-                    {% for result in results %}
-                        <tr class="{% if not result.ok %}table-danger{% endif %}">
-                            <td class="small">{{ result.row }}</td>
-                            <td class="small">
-                                {% if result.account %}
-                                    <a href="{% url 'finance:account_detail' result.account.pk %}"
-                                       class="text-decoration-none">{{ result.account }}</a>
-                                {% else %}—{% endif %}
-                            </td>
-                            <td class="small">
-                                {% if result.ok %}
-                                    <span class="badge text-bg-{% if result.created %}success{% else %}info{% endif %}">
-                                        {% if result.created %}Created{% else %}Updated{% endif %}
-                                    </span>
-                                {% else %}
-                                    {% for error in result.errors %}
-                                        <div class="text-danger">{{ error }}</div>
-                                    {% endfor %}
-                                {% endif %}
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% else %}
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <h6 class="fw-bold">Columns</h6>
-                <table class="table table-sm" data-no-paginate>
-                    <tbody>
-                        <tr><td class="fw-semibold">Code</td><td class="small">Unique ledger code, e.g. 1050. Required.</td></tr>
-                        <tr><td class="fw-semibold">Name</td><td class="small">What the ledger is called. Required.</td></tr>
-                        <tr><td class="fw-semibold">Type</td><td class="small">Asset, Liability, Equity, Income or Expense. Required.</td></tr>
-                        <tr><td class="fw-semibold">Parent Code</td><td class="small">The group or control account it sits under. List a group above its children.</td></tr>
-                        <tr><td class="fw-semibold">Kind</td><td class="small">Blank, Group, Bank, Cash, Customer, Supplier, Income, Expense, Asset, Liability, Tax, Equity, Output VAT, Input VAT, Customer Control, Supplier Control.</td></tr>
-                        <tr><td class="fw-semibold">Currency</td><td class="small">A currency code; blank means the base currency.</td></tr>
-                        <tr><td class="fw-semibold">Opening Balance</td><td class="small">Positive figure; the Dr/Cr column says which side.</td></tr>
-                        <tr><td class="fw-semibold">Dr/Cr</td><td class="small">Dr or Cr. Blank follows the account type.</td></tr>
-                        <tr><td class="fw-semibold">Description</td><td class="small">Free text, kept as the ledger's notes.</td></tr>
-                    </tbody>
-                </table>
-                <p class="text-muted small mb-0">
-                    A ledger that already has General Ledger entries keeps its Type — changing it
-                    would rewrite the statements behind everyone's back.
-                </p>
-            </div>
-        </div>
-        {% endif %}
+    <div class="card">
+      <div class="card-header"><i class="bi bi-info-circle me-1"></i>File layout</div>
+      <div class="card-body text-muted-sm">
+        <p class="mb-2">One row per ledger. Existing codes are updated; new codes are created. List a group before the ledgers under it.</p>
+        <ol class="mb-2">
+          <li><strong>Code</strong> - unique account code</li>
+          <li><strong>Name</strong> - ledger name</li>
+          <li><strong>Type</strong> - Asset, Liability, Equity, Income or Expense</li>
+          <li><strong>Parent Code</strong> - group / control account it sits under (optional)</li>
+          <li><strong>Kind</strong> - blank (ordinary ledger), Group, Bank, Cash, Output VAT, Input VAT, Customer Control, Supplier Control</li>
+          <li><strong>Opening Balance</strong> and <strong>Dr/Cr</strong> (optional)</li>
+          <li><strong>Description</strong> (optional)</li>
+        </ol>
+        <p class="mb-0">The template's <em>Existing accounts</em> sheet lists what is already in the chart.</p>
+      </div>
     </div>
+  </div>
+  <div class="col-lg-7">
+    {% if results is not None %}
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-check me-1"></i>Import results</span>
+        <span class="text-muted-sm">{{ results|length }} row(s)</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Row</th><th>Account</th><th>Status</th><th>Details</th></tr></thead>
+          <tbody>
+          {% for r in results %}
+          <tr class="{% if not r.account %}table-danger{% endif %}">
+            <td>{{ r.row }}</td>
+            <td>{% if r.account %}<a class="table-link fw-semibold" href="{% url 'finance:account_detail' r.account.pk %}">{{ r.account }}</a><div class="text-muted-sm">{{ r.account.get_account_type_display }} &middot; {{ r.account.ledger_kind }}{% if r.account.parent %} &middot; under {{ r.account.parent.code }}{% endif %}</div>{% else %}-{% endif %}</td>
+            <td>{% if r.created %}<span class="badge text-bg-success">Created</span>{% elif r.account %}<span class="badge text-bg-info">Updated</span>{% else %}<span class="badge text-bg-danger">Failed</span>{% endif %}</td>
+            <td class="text-muted-sm">{% for e in r.errors %}<div>{{ e }}</div>{% empty %}OK{% endfor %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card"><div class="card-body text-muted text-center py-5">
+      <i class="bi bi-file-earmark-spreadsheet display-6 d-block mb-2"></i>
+      Download the template, fill in one row per ledger, then upload it here.
+    </div></div>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

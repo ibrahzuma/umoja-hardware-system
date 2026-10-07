@@ -1,160 +1,87 @@
-{% extends 'base.html' %}
+{% extends "finance/accounting_base.html" %}
 {% load accounting %}
+{% comment %}
+The Pradeep system's `templates/vouchers/voucher_list.html`, markup for markup.
+Only the names differ, and only where this system's models differ from that
+one's:
 
-{% block title %}Voucher register{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">Voucher register</h2>
-        <p class="text-muted mb-0 small">
-            Every document in the books. A <strong>draft</strong> may be unbalanced and edited at
-            will; <strong>posting</strong> never is. A posted voucher is corrected by
-            <strong>reversal</strong>, which leaves both documents standing.
-        </p>
-    </div>
-    <div class="btn-group">
-        <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
-            <i class="bi bi-plus-lg"></i> New voucher
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end">
-        {% for code, label in kinds %}
-            <li><a class="dropdown-item"
-                   href="{% url 'finance:voucher_entry' voucher_type=code %}">{{ label }}</a></li>
-        {% endfor %}
-        </ul>
-        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
-    </div>
+    voucher_number -> number        transaction_date -> date
+    efd_rct_number -> efd_number    narration        -> description
+    vouchers:*     -> finance:*     perms.vouchers.* -> perms.finance.*
+{% endcomment %}
+{% block page_actions %}
+{% if perms.finance.add_voucher %}
+<div class="dropdown d-inline-block">
+  <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-upload"></i> Bulk upload</button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><a class="dropdown-item" href="{% url 'finance:voucher_list' %}">Vouchers from a spreadsheet</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><a class="dropdown-item" href="{% url 'finance:account_import' %}"><i class="bi bi-diagram-3 me-1"></i>Chart of accounts</a></li>
+  </ul>
 </div>
-
-<ul class="nav nav-pills mb-3 small">
-    <li class="nav-item">
-        <a class="nav-link {% if not current_kind %}active{% endif %}"
-           href="{% url 'finance:voucher_register' %}">All</a>
-    </li>
-    {% for code, label in kinds %}
-    <li class="nav-item">
-        <a class="nav-link {% if current_kind == code %}active{% endif %}"
-           href="{% url 'finance:voucher_register' %}?kind={{ code }}">{{ label }}</a>
-    </li>
-    {% endfor %}
-</ul>
-
-<div class="card shadow-sm border-0 mb-3">
-    <div class="card-body">
-        <form method="get" class="row g-2 align-items-end">
-            {% if current_kind %}<input type="hidden" name="kind" value="{{ current_kind }}">{% endif %}
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold">Search</label>{{ filter_form.q }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Type</label>{{ filter_form.voucher_type }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Status</label>{{ filter_form.status }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">From</label>{{ filter_form.date_from }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">To</label>{{ filter_form.date_to }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Invoice no</label>{{ filter_form.invoice_number }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">EFD no</label>{{ filter_form.efd_number }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Customer</label>{{ filter_form.customer }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Supplier</label>{{ filter_form.supplier }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Ledger</label>{{ filter_form.account }}
-            </div>
-            <div class="col-md-2">
-                <label class="form-label small fw-semibold">Year</label>{{ filter_form.financial_year }}
-            </div>
-            <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
-                <a href="{% url 'finance:voucher_register' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="card shadow-sm border-0">
-    <div class="card-body p-0">
-        <table class="table table-hover align-middle mb-0" data-export="Voucher register" data-no-paginate>
-            <thead class="table-light">
-                <tr>
-                    <th>Voucher</th><th>Date</th><th>Type</th><th>Party</th>
-                    <th>Invoice / EFD</th><th class="text-end">Amount</th>
-                    <th>Status</th><th></th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for voucher in object_list %}
-                <tr>
-                    <td>
-                        <a href="{% url 'finance:voucher_detail' voucher.pk %}"
-                           class="text-decoration-none fw-semibold">{{ voucher.number }}</a>
-                        {% if voucher.is_reversal %}
-                            <span class="badge text-bg-light border ms-1">reversal</span>{% endif %}
-                    </td>
-                    <td class="small text-nowrap">{{ voucher.date|date:"d/m/Y" }}</td>
-                    <td class="small">{{ voucher.get_voucher_type_display }}</td>
-                    <td class="small">{{ voucher.party.name|default:"—" }}</td>
-                    <td class="small">
-                        {{ voucher.invoice_number|default:"—" }}
-                        {% if voucher.efd_number %}
-                            <div class="text-muted">EFD {{ voucher.efd_number }}</div>{% endif %}
-                    </td>
-                    <td class="text-end">{{ voucher.total|money }}
-                        {% if voucher.is_foreign_currency %}
-                            <div class="text-muted small">{{ voucher.currency.code }}
-                                @ {{ voucher.exchange_rate }}</div>
-                        {% endif %}
-                    </td>
-                    <td>{{ voucher.status|status_badge }}</td>
-                    <td class="text-end text-nowrap">
-                        {% if voucher.is_draft %}
-                            <a href="{% url 'finance:voucher_edit' voucher.pk %}"
-                               class="btn btn-sm btn-outline-primary">Edit</a>
-                        {% endif %}
-                        <a href="{% url 'finance:voucher_print' voucher.pk %}"
-                           class="btn btn-sm btn-outline-secondary" target="_blank">
-                            <i class="bi bi-printer"></i>
-                        </a>
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="8" class="text-center text-muted py-4">No voucher matches.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-{% if is_paginated %}
-<nav class="mt-3">
-    <ul class="pagination pagination-sm justify-content-center mb-0">
-        {% if page_obj.has_previous %}
-        <li class="page-item">
-            <a class="page-link" href="?{% query_replace page=page_obj.previous_page_number %}">Previous</a>
-        </li>
-        {% endif %}
-        <li class="page-item disabled">
-            <span class="page-link">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
-        </li>
-        {% if page_obj.has_next %}
-        <li class="page-item">
-            <a class="page-link" href="?{% query_replace page=page_obj.next_page_number %}">Next</a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
 {% endif %}
+<div class="dropdown d-inline-block">
+  <button class="btn btn-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-plus-lg"></i> New voucher</button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    {% for slug, label in kinds %}<li><a class="dropdown-item" href="{% url 'finance:voucher_entry' slug %}">{{ label }}</a></li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}
+{% block content %}
+<ul class="nav nav-pills mb-3 flex-wrap">
+  <li class="nav-item"><a class="nav-link {% if not current_kind %}active{% endif %}" href="{% url 'finance:voucher_register' %}">All</a></li>
+  {% for slug, label in kinds %}<li class="nav-item"><a class="nav-link {% if current_kind == slug %}active{% endif %}" href="?kind={{ slug }}">{{ label|cut:" Voucher" }}</a></li>{% endfor %}
+</ul>
+<form method="get" class="card mb-3 filter-bar">
+  {% if current_kind %}<input type="hidden" name="kind" value="{{ current_kind }}">{% endif %}
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3"><label class="form-label">Search</label>{{ filter_form.q }}</div>
+      <div class="col-md-2"><label class="form-label">Status</label>{{ filter_form.status }}</div>
+      <div class="col-md-2"><label class="form-label">Date from</label>{{ filter_form.date_from }}</div>
+      <div class="col-md-2"><label class="form-label">Date to</label>{{ filter_form.date_to }}</div>
+      <div class="col-md-2"><label class="form-label">Financial year</label>{{ filter_form.financial_year }}</div>
+      <div class="col-md-1 d-grid"><button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i></button></div>
+    </div>
+    <a class="small" data-bs-toggle="collapse" href="#moreFilters">More filters</a>
+    <div class="collapse {% if request.GET.invoice_number or request.GET.efd_number or request.GET.customer or request.GET.supplier or request.GET.account or request.GET.voucher_type %}show{% endif %}" id="moreFilters">
+      <div class="row g-2 align-items-end mt-1">
+        {% if not current_kind %}<div class="col-md-2"><label class="form-label">Type</label>{{ filter_form.voucher_type }}</div>{% endif %}
+        <div class="col-md-2"><label class="form-label">Invoice no</label>{{ filter_form.invoice_number }}</div>
+        <div class="col-md-2"><label class="form-label">EFD RCT no</label>{{ filter_form.efd_number }}</div>
+        <div class="col-md-2"><label class="form-label">Customer</label>{{ filter_form.customer }}</div>
+        <div class="col-md-2"><label class="form-label">Supplier</label>{{ filter_form.supplier }}</div>
+        <div class="col-md-2"><label class="form-label">Account</label>{{ filter_form.account }}</div>
+        <div class="col-md-2"><a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:voucher_register' %}{% if current_kind %}?kind={{ current_kind }}{% endif %}">Clear</a></div>
+      </div>
+    </div>
+  </div>
+</form>
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0">
+  <thead><tr><th>Voucher no</th><th>Type</th><th>Date</th><th>Customer / Supplier</th><th>Invoice / EFD</th><th>Narration</th><th>Currency</th><th class="num">Debit</th><th class="num">Credit</th><th>Status</th><th>Created</th><th></th></tr></thead>
+  <tbody>
+  {% for v in object_list %}
+  <tr>
+    <td><a class="table-link fw-semibold" href="{% url 'finance:voucher_detail' v.pk %}">{{ v.number }}</a></td>
+    <td>{{ v.get_voucher_type_display|cut:" Voucher" }}</td>
+    <td class="text-nowrap">{{ v.date|date:"d/m/Y" }}</td>
+    <td>{{ v.party.name|default:"" }}</td>
+    <td class="text-muted-sm">{{ v.invoice_number }}{% if v.efd_number %}<br>EFD {{ v.efd_number }}{% endif %}</td>
+    <td class="text-muted-sm">{{ v.description|truncatechars:40 }}</td>
+    <td class="text-muted-sm">{{ v.currency.code }}{% if v.is_foreign_currency %}<br><span class="text-muted-sm">@ {{ v.exchange_rate|floatformat:2 }}</span>{% endif %}</td>
+    <td class="num">{{ v.total_debit|money }}</td>
+    <td class="num">{{ v.total_credit|money }}</td>
+    <td>{{ v.status|status_badge }}{% if v.difference != 0 and v.is_draft %} <i class="bi bi-exclamation-circle text-danger" title="Unbalanced"></i>{% endif %}</td>
+    <td class="text-muted-sm text-nowrap">{{ v.created_by.username|default:"" }}<br>{{ v.created_at|date:"d/m/Y H:i" }}</td>
+    <td class="text-end text-nowrap">
+      {% if v.is_draft and perms.finance.change_voucher %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:voucher_edit' v.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>{% endif %}
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:voucher_print' v.pk %}" target="_blank" title="Print"><i class="bi bi-printer"></i></a>
+      {% if v.is_draft and perms.finance.delete_voucher %}<form method="post" action="{% url 'finance:voucher_delete' v.pk %}" class="d-inline" data-confirm="Delete draft {{ v.number }}? This cannot be undone.">{% csrf_token %}<button class="btn btn-outline-danger btn-sm" title="Delete"><i class="bi bi-trash"></i></button></form>{% endif %}
+    </td>
+  </tr>
+  {% empty %}<tr><td colspan="12" class="text-center text-muted py-4">No vouchers match the filter.</td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
+{% include "finance/includes/pagination.html" %}
 {% endblock %}

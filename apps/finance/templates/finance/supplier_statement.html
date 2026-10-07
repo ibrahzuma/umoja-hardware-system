@@ -1,0 +1,32 @@
+{% extends "finance/accounting_base.html" %}
+{% load accounting %}
+{% block body_class %}{% if print_mode %}auto-print{% endif %}{% endblock %}
+{% block page_actions %}{% include "finance/includes/report_toolbar.html" %}{% endblock %}
+{% block content %}
+<form method="get" class="card mb-3 filter-bar no-print"><div class="card-body row g-2 align-items-end">
+  <div class="col-md-3"><label class="form-label">From</label>{{ form.date_from }}</div>
+  <div class="col-md-3"><label class="form-label">To</label>{{ form.date_to }}</div>
+  <div class="col-md-2 d-grid"><button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Apply</button></div>
+</div></form>
+<div class="card">
+  <div class="card-body">
+    <div class="print-header d-flex justify-content-between">
+      <div><h2 class="h5 mb-0">{{ company_name }}</h2><div class="text-muted-sm">{{ company.address|linebreaksbr }}{% if company.tax_number %}<br>TIN/VRN: {{ company.tax_number }}{% endif %}</div></div>
+      <div class="text-end"><h3 class="h5 mb-0">Supplier Statement</h3>
+        <div class="text-muted-sm">{% if start %}{{ start|date:"d/m/Y" }}{% else %}Beginning{% endif %} to {% if end %}{{ end|date:"d/m/Y" }}{% else %}{{ today|date:"d/m/Y" }}{% endif %}</div></div>
+    </div>
+    <div class="mb-3"><strong>{{ supplier.code }} - {{ supplier.name }}</strong><br><span class="text-muted-sm">{{ supplier.address|linebreaksbr }} {{ supplier.phone }}</span></div>
+    <div class="table-responsive"><table class="table table-sm">
+      <thead><tr><th>Date</th><th>Reference</th><th>Voucher</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+      <tbody>
+        <tr class="table-light"><td colspan="6">Opening balance</td><td class="num">{{ opening|money }}</td></tr>
+        {% for r in rows %}{% with e=r.entry %}
+        <tr><td>{{ e.transaction_date|date:"d/m/Y" }}</td><td>{{ e.reference }}</td><td><a href="{% url 'finance:voucher_detail' e.voucher_id %}">{{ e.voucher_number }}</a></td><td>{{ e.description }}</td>
+          <td class="num">{{ e.debit|money_or_blank }}</td><td class="num">{{ e.credit|money_or_blank }}</td><td class="num">{{ r.balance|money }}</td></tr>
+        {% endwith %}{% empty %}<tr><td colspan="7" class="text-center text-muted">No transactions in this period.</td></tr>{% endfor %}
+        <tr class="table-light fw-semibold"><td colspan="6">Closing balance (amount owed to supplier)</td><td class="num">{{ closing|money }}</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}

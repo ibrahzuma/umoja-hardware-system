@@ -1,150 +1,59 @@
-{% extends 'base.html' %}
+{% extends "finance/accounting_base.html" %}
 {% load accounting %}
-
-{% block title %}{{ account.code }} {{ account.name }}{% endblock %}
-
+{% block page_actions %}
+{% if perms.finance.change_account %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:account_edit' object.pk %}"><i class="bi bi-pencil"></i> Edit</a>{% endif %}
+<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:report_general_ledger' %}?account={{ object.pk }}"><i class="bi bi-journal-text"></i> Ledger report</a>
+{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">{{ account.code }} — {{ account.name }}</h2>
-        <p class="text-muted mb-0 small">
-            {{ account.ledger_kind }} · {{ account.get_account_type_display }}
-            {% if account.category %}· {{ account.get_category_display }}{% endif %}
-            {% if account.parent_id %}· under
-                <a href="{% url 'finance:account_detail' account.parent_id %}">{{ account.parent.code }}
-                    {{ account.parent.name }}</a>{% endif %}
-            {% if account.currency_id %}· held in {{ account.currency.code }}{% endif %}
-        </p>
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card mb-3"><div class="card-header">Account</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-5">Code</dt><dd class="col-7">{{ object.code }}</dd>
+        <dt class="col-5">Name</dt><dd class="col-7">{{ object.name }}</dd>
+        <dt class="col-5">Type</dt><dd class="col-7">{{ object.get_account_type_display }}{% if object.category %} / {{ object.get_category_display }}{% endif %}</dd>
+        <dt class="col-5">Kind</dt><dd class="col-7"><span class="badge text-bg-light text-dark">{{ object.ledger_kind }}</span></dd>
+        <dt class="col-5">Parent</dt><dd class="col-7">{% if object.parent %}<a href="{% url 'finance:account_detail' object.parent.pk %}">{{ object.parent }}</a>{% else %}-{% endif %}</dd>
+        {% if object.is_customer_account %}<dt class="col-5">Customer</dt><dd class="col-7"><a href="{% url 'finance:customer_detail' object.customer.pk %}">{{ object.customer }}</a></dd>{% endif %}
+        {% if object.is_supplier_account %}<dt class="col-5">Supplier</dt><dd class="col-7"><a href="{% url 'finance:supplier_detail' object.supplier.pk %}">{{ object.supplier }}</a></dd>{% endif %}
+        <dt class="col-5">Opening balance</dt><dd class="col-7">{{ object.ledger.opening_balance|money }} {{ object.ledger.opening_balance_type }}</dd>
+        <dt class="col-5">Current balance</dt><dd class="col-7 fw-semibold">{{ closing|abs_value|money }} {% if closing >= 0 %}DR{% else %}CR{% endif %}</dd>
+        <dt class="col-5">Status</dt><dd class="col-7">{% if object.ledger.is_active %}Active{% else %}Inactive{% endif %}</dd>
+        {% if object.currency %}<dt class="col-5">Currency</dt><dd class="col-7">{{ object.currency.code }}
+          <div class="text-muted-sm">Balance in {{ object.currency.code }}: {{ object.foreign_balance|money }}</div></dd>{% endif %}
+      </dl>
+      {% if object.description %}<p class="text-muted-sm mt-2 mb-0">{{ object.description }}</p>{% endif %}
+    </div></div>
+    {% if children %}
+    <div class="card"><div class="card-header">Child accounts</div>
+      <ul class="list-group list-group-flush">{% for c in children %}<li class="list-group-item"><a href="{% url 'finance:account_detail' c.pk %}">{{ c }}</a></li>{% endfor %}</ul>
     </div>
-    <div class="btn-group">
-        <a href="{% url 'finance:report_general_ledger' %}?account={{ account.pk }}"
-           class="btn btn-outline-primary">
-            <i class="bi bi-journal-text"></i> Full statement
-        </a>
-        {% if account.customer_id %}
-        <a href="{% url 'finance:report_customer_statement' %}?customer={{ account.customer_id }}"
-           class="btn btn-outline-primary">
-            <i class="bi bi-person-lines-fill"></i> Customer statement
-        </a>
-        <a href="{% url 'finance:report_customer_outstanding' %}" class="btn btn-outline-primary">
-            <i class="bi bi-receipt"></i> What they owe
-        </a>
-        {% elif account.supplier_id %}
-        <a href="{% url 'finance:report_supplier_statement' %}?supplier={{ account.supplier_id }}"
-           class="btn btn-outline-primary">
-            <i class="bi bi-truck"></i> Supplier statement
-        </a>
-        <a href="{% url 'finance:report_supplier_outstanding' %}" class="btn btn-outline-primary">
-            <i class="bi bi-receipt-cutoff"></i> What we owe
-        </a>
-        {% endif %}
-        <a href="{% url 'finance:voucher_register' %}?account={{ account.pk }}"
-           class="btn btn-outline-secondary">
-            <i class="bi bi-list-ul"></i> Vouchers
-        </a>
-        <a href="{% url 'finance:account_edit' account.pk %}" class="btn btn-outline-primary">Edit</a>
-        <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary">Back</a>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-sm-4">
-        <div class="card shadow-sm border-0 border-start border-secondary border-4">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Opening</h6>
-                <h4 class="fw-bold mb-0">{{ opening|abs_money }}
-                    <small class="text-muted">{{ opening|dr_cr }}</small></h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-4">
-        <div class="card shadow-sm border-0 border-start border-primary border-4">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Closing</h6>
-                <h4 class="fw-bold mb-0">{{ closing|abs_money }}
-                    <small class="text-muted">{{ closing|dr_cr }}</small></h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-4">
-        <div class="card shadow-sm border-0 border-start border-info border-4">
-            <div class="card-body">
-                <h6 class="text-muted text-uppercase mb-2 small fw-bold">Entries</h6>
-                <h4 class="fw-bold mb-0">{{ entry_count }}</h4>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% if children %}
-<div class="card shadow-sm border-0 mb-4">
-    <div class="card-header bg-white"><h6 class="fw-bold mb-0">Ledgers under this one</h6></div>
-    <div class="card-body p-0">
-        <table class="table table-sm table-hover mb-0" data-export="Child ledgers">
-            <thead class="table-light"><tr><th>Code</th><th>Ledger</th><th>Kind</th></tr></thead>
-            <tbody>
-            {% for child in children %}
-                <tr>
-                    <td class="fw-semibold">{{ child.code }}</td>
-                    <td><a href="{% url 'finance:account_detail' child.pk %}"
-                           class="text-decoration-none">{{ child.name }}</a></td>
-                    <td class="small">{{ child.ledger_kind }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
+    {% endif %}
+  </div>
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header">Ledger entries {% if entry_count > 100 %}<span class="text-muted-sm">(last 100 of {{ entry_count }})</span>{% endif %}</div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Date</th><th>Voucher</th><th>Related Ledger Name</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+          <tbody>
+            <tr class="table-light"><td colspan="6">Opening balance</td><td class="num">{{ opening|money }}</td></tr>
+            {% for r in rows %}{% with e=r.entry %}
+            <tr>
+              <td>{{ e.transaction_date|date:"d/m/Y" }}</td>
+              <td><a href="{% url 'finance:voucher_detail' e.voucher_id %}">{{ e.voucher_number }}</a></td>
+              <td>{% for a in r.related %}<a href="{% url 'finance:account_detail' a.pk %}">{{ a }}</a>{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+              <td>{{ e.description }}</td>
+              <td class="num">{{ e.debit|money_or_blank }}</td>
+              <td class="num">{{ e.credit|money_or_blank }}</td>
+              <td class="num">{{ r.balance|money }}</td>
+            </tr>
+            {% endwith %}{% empty %}<tr><td colspan="7" class="text-center text-muted py-3">No ledger entries.</td></tr>{% endfor %}
+            <tr class="table-light fw-semibold"><td colspan="6">Closing balance</td><td class="num">{{ closing|money }}</td></tr>
+          </tbody>
         </table>
+      </div>
     </div>
-</div>
-{% endif %}
-
-<div class="card shadow-sm border-0">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="fw-bold mb-0">Statement</h6>
-        {% if entry_count > 200 %}
-        <span class="text-muted small">Showing the last 200 of {{ entry_count }} entries</span>
-        {% endif %}
-    </div>
-    <div class="card-body p-0">
-        <table class="table table-sm table-hover align-middle mb-0" data-export="Ledger statement">
-            <thead class="table-light">
-                <tr>
-                    <th>Date</th><th>Voucher</th><th>Related ledger</th><th>Description</th>
-                    <th class="text-end">Debit</th><th class="text-end">Credit</th>
-                    <th class="text-end">Balance</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr class="table-light">
-                    <td colspan="6" class="fw-semibold">Opening balance</td>
-                    <td class="text-end fw-semibold">{{ opening|abs_money }} {{ opening|dr_cr }}</td>
-                </tr>
-            {% for row in rows %}
-                <tr>
-                    <td class="small text-nowrap">{{ row.entry.date|date:"d/m/Y" }}</td>
-                    <td class="small">
-                        <a href="{% url 'finance:voucher_detail' row.entry.voucher_id %}"
-                           class="text-decoration-none">{{ row.entry.voucher_number }}</a>
-                    </td>
-                    <td class="small text-muted">
-                        {% for other in row.related %}{{ other.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
-                    </td>
-                    <td class="small">{{ row.entry.description|default:"—" }}</td>
-                    <td class="text-end">{{ row.entry.debit|money_or_blank }}</td>
-                    <td class="text-end">{{ row.entry.credit|money_or_blank }}</td>
-                    <td class="text-end">{{ row.balance|abs_money }}
-                        <span class="text-muted small">{{ row.balance|dr_cr }}</span></td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="7" class="text-center text-muted py-4">
-                    Nothing has been posted to this ledger yet.
-                </td></tr>
-            {% endfor %}
-                <tr class="table-light">
-                    <td colspan="6" class="fw-semibold">Closing balance</td>
-                    <td class="text-end fw-semibold">{{ closing|abs_money }} {{ closing|dr_cr }}</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+  </div>
 </div>
 {% endblock %}

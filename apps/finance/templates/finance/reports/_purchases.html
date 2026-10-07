@@ -1,3 +1,12 @@
-{# The purchases report uses the invoice register layout — the
-   layout is identical and the figures come from the same builder. #}
-{% include 'finance/reports/_invoice_register.html' %}
+{% load accounting %}
+<div class="table-responsive"><table class="table table-sm table-bordered mb-0">
+  <thead><tr><th>Date</th><th>Voucher</th><th>Invoice no</th><th>EFD RCT no</th><th>{{ party_label }}</th><th>Payment</th><th class="num">VAT excl.</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for r in rows %}{% with v=r.voucher %}
+  <tr><td>{{ v.transaction_date|date:"d/m/Y" }}</td><td><a href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td><td>{{ v.invoice_number }}</td><td>{{ v.efd_rct_number }}</td>
+    <td>{{ v.customer|default:v.supplier|default:"" }}</td><td>{{ v.get_payment_status_display }}</td>
+    <td class="num">{{ r.excl|money }}</td><td class="num">{{ v.vat_amount|money }}</td><td class="num">{{ v.total_amount|money }}</td><td>{{ v.status|status_badge }}</td></tr>
+  {% endwith %}{% empty %}<tr><td colspan="10" class="text-center text-muted py-4">No vouchers in this period.</td></tr>{% endfor %}
+  </tbody>
+  <tfoot><tr class="table-light fw-bold"><td colspan="6" class="text-end">TOTAL</td><td class="num">{{ totals.excl|money }}</td><td class="num">{{ totals.vat|money }}</td><td class="num">{{ totals.total|money }}</td><td></td></tr></tfoot>
+</table></div>

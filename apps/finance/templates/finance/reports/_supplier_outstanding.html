@@ -1,3 +1,21 @@
-{# The supplier outstanding report uses the outstanding / ageing layout — the
-   layout is identical and the figures come from the same builder. #}
-{% include 'finance/reports/_outstanding.html' %}
+{% load accounting %}
+<div class="row g-2 mb-3">
+  {% for label, amount in buckets.items %}
+  <div class="col-6 col-md-3"><div class="border rounded p-2 text-center"><div class="text-muted-sm">{{ label }} days</div><div class="fw-semibold">{{ amount|money }}</div></div></div>
+  {% endfor %}
+</div>
+{% for g in groups %}
+<h6 class="mt-3 mb-1">{{ g.party.code }} - {{ g.party.name }} <span class="text-muted-sm">total outstanding {{ g.total|money }}</span></h6>
+<div class="table-responsive"><table class="table table-sm table-bordered mb-2">
+  <thead><tr><th>Invoice / bill</th><th>Type</th><th>Date</th><th>EFD RCT</th><th class="num">Original</th><th class="num">Paid</th><th class="num">Outstanding</th><th class="num">Days</th><th>Ageing</th></tr></thead>
+  <tbody>
+  {% for r in g.rows %}
+  <tr><td>{% if r.invoice.voucher %}<a href="{% url 'finance:voucher_detail' r.invoice.voucher.pk %}">{{ r.invoice.invoice_number }}</a>{% else %}{{ r.invoice.invoice_number }}{% endif %}</td>
+    <td class="text-muted-sm">{{ r.invoice.get_kind_display }}</td><td>{{ r.invoice.invoice_date|date:"d/m/Y" }}</td><td class="text-muted-sm">{{ r.invoice.efd_rct_number }}</td>
+    <td class="num">{{ r.invoice.original_amount|money }}</td><td class="num">{{ r.invoice.allocated_amount|money }}</td><td class="num fw-semibold">{{ r.outstanding|money }}</td>
+    <td class="num">{{ r.days }}</td><td><span class="badge {% if r.bucket == '90+' %}text-bg-danger{% elif r.bucket == '61-90' %}text-bg-warning{% else %}text-bg-light text-dark{% endif %}">{{ r.bucket }}</span></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% empty %}<p class="text-muted text-center py-4">Nothing outstanding.</p>{% endfor %}
+{% if groups %}<div class="text-end fw-bold fs-6">Grand total outstanding: {{ grand_total|money }}</div>{% endif %}

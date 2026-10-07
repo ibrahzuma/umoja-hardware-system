@@ -399,14 +399,16 @@ VoucherLineFormSet = formset_factory(VoucherLineForm, formset=BaseVoucherLineFor
 
 
 class AllocationForm(forms.Form):
-    """One allocation of this voucher's money against one open item. The
-    four target fields mirror `VoucherAllocation` — an open item is a till
-    sale, a purchase order, an invoice voucher or a register invoice."""
+    """One allocation of this voucher's money against one open item.
 
-    invoice = forms.IntegerField(required=False)
-    sale = forms.IntegerField(required=False)
-    purchase_order = forms.IntegerField(required=False)
-    voucher = forms.IntegerField(required=False)
+    The entry screen posts the open item as a single `invoice` field, the way
+    the Pradeep system's did. Here an open item may be a till sale or a
+    purchase order as well as an invoice, so that field carries a
+    `"<target>:<pk>"` token — `voucher:12`, `sale:5` — and this is where it is
+    taken apart again into the FK `VoucherAllocation` actually sets.
+    """
+
+    invoice = forms.CharField(required=False, max_length=40)
     reference = forms.CharField(required=False, max_length=60)
     amount = forms.DecimalField(required=False, min_value=0, max_digits=18, decimal_places=2)
 
@@ -417,10 +419,16 @@ class AllocationForm(forms.Form):
         cleaned['amount'] = quantize(cleaned.get('amount'))
         if cleaned['amount'] <= 0:
             return cleaned
-        if not any(cleaned.get(name) for name in self.TARGETS):
+
+        target, target_id = self._split(cleaned.get('invoice'))
+        if target is None:
             raise forms.ValidationError("An allocation has to say which invoice it clears.")
-        if cleaned.get('invoice'):
-            invoice = Invoice.objects.filter(pk=cleaned['invoice']).first()
+        cleaned['target'], cleaned['target_id'] = target, target_id
+
+        # A register invoice can be checked here and now; the other three are
+        # checked against what is outstanding when the voucher is posted.
+        if target == 'invoice':
+            invoice = Invoice.objects.filter(pk=target_id).first()
             if invoice is None:
                 raise forms.ValidationError("That invoice no longer exists.")
             if cleaned['amount'] > invoice.outstanding_amount:
@@ -429,21 +437,33 @@ class AllocationForm(forms.Form):
                     f"{invoice.outstanding_amount:,.2f} outstanding on it.")
         return cleaned
 
+    @staticmethod
+    def _split(token):
+        """`"voucher:12"` -> `('voucher', 12)`. A bare number is an invoice,
+        so a caller that predates the token still works."""
+        raw = (token or '').strip()
+        if not raw:
+            return None, None
+        target, _, pk = raw.partition(':')
+        if not pk:
+            target, pk = 'invoice', target
+        if target not in AllocationForm.TARGETS or not pk.isdigit():
+            return None, None
+        return target, int(pk)
+
 
 class BaseAllocationFormSet(BaseFormSet):
     def allocations(self):
         out = []
         for form in self.forms:
             data = getattr(form, 'cleaned_data', None) or {}
-            if data.get('amount', ZERO) <= 0:
+            if data.get('amount', ZERO) <= 0 or not data.get('target'):
                 continue
-            row = {'amount': data['amount'], 'reference': data.get('reference') or ''}
-            for name in AllocationForm.TARGETS:
-                if data.get(name):
-                    row[name] = data[name]
-                    break
-            if len(row) > 2:
-                out.append(row)
+            out.append({
+                data['target']: data['target_id'],
+                'amount': data['amount'],
+                'reference': data.get('reference') or '',
+            })
         return out
 
 
@@ -533,3 +553,40 @@ class AsOfForm(forms.Form):
         help_text="Limit the movements to one financial year")
     include_zero = forms.BooleanField(required=False, widget=forms.CheckboxInput(
         attrs={'class': 'form-check-input'}))
+
+
+class GeneralLedgerFilterForm(forms.Form):
+    """The filter bar on the General Ledger browser — the same five boxes the
+    Pradeep system's `ledger/gl_list.html` has, in the same order."""
+
+    q = forms.CharField(required=False, widget=forms.TextInput(attrs={
+        'class': 'form-control form-control-sm',
+        'placeholder': 'Voucher no, description, reference'}))
+    account = forms.ModelChoiceField(
+        required=False, queryset=LedgerAccount.objects.filter(is_group=False).order_by('code'),
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    voucher_type = forms.ChoiceField(
+        required=False, choices=[('', 'All types')] + list(Voucher.TYPES),
+        widget=forms.Select(attrs={'class': 'form-select form-select-sm'}))
+    date_from = forms.DateField(required=False, widget=forms.DateInput(
+        attrs={'type': 'date', 'class': 'form-control form-control-sm'}))
+    date_to = forms.DateField(required=False, widget=forms.DateInput(
+        attrs={'type': 'date', 'class': 'form-control form-control-sm'}))
+
+
+class PartyFilterForm(forms.Form):
+    """Search and the show-inactive switch on the customer and supplier
+    registers. A party is "inactive" here when its sub-ledger is closed —
+    these models carry no active flag of their own."""
+
+    q = forms.CharField(required=False, widget=forms.TextInput(attrs={
+        'class': 'form-control form-control-sm', 'placeholder': 'Name, phone or email'}))
+    show_inactive = forms.BooleanField(required=False, widget=forms.CheckboxInput(
+        attrs={'class': 'form-check-input'}))
+
+
+class StatementFilterForm(forms.Form):
+    date_from = forms.DateField(required=False, widget=forms.DateInput(
+        attrs={'type': 'date', 'class': 'form-control form-control-sm'}))
+    date_to = forms.DateField(required=False, widget=forms.DateInput(
+        attrs={'type': 'date', 'class': 'form-control form-control-sm'}))

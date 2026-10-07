@@ -1,114 +1,37 @@
-{% extends 'base.html' %}
+{% extends "finance/accounting_base.html" %}
 {% load accounting %}
-
-{% block title %}Chart of Accounts{% endblock %}
-
+{% block page_actions %}{% if perms.finance.add_account %}<a class="btn btn-outline-primary btn-sm" href="{% url 'finance:account_import' %}"><i class="bi bi-upload"></i> Bulk upload ledgers</a> <a class="btn btn-primary btn-sm" href="{% url 'finance:account_create' %}"><i class="bi bi-plus-lg"></i> New account</a>{% endif %}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
-    <div>
-        <h2 class="text-primary fw-bold mb-1">Chart of Accounts</h2>
-        <p class="text-muted mb-0 small">
-            Every ledger the books can post to. A <strong>group</strong> only organises the chart
-            and is never posted to; a <strong>control account</strong> holds the sub-ledgers
-            beneath it, so it always equals the sum of its customers or suppliers. Bank accounts,
-            customers and suppliers are never typed in twice — each grows a ledger when it is
-            created.
-        </p>
-    </div>
-    <div class="btn-group">
-        <a href="{% url 'finance:account_create' %}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> New ledger
-        </a>
-        <a href="{% url 'finance:account_import' %}" class="btn btn-outline-primary">
-            <i class="bi bi-upload"></i> Bulk upload
-        </a>
-        <a href="{% url 'finance:accounting_dashboard' %}" class="btn btn-outline-secondary">Back</a>
-    </div>
-</div>
-
-{% if opening_difference %}
-<div class="alert alert-warning">
-    <i class="bi bi-exclamation-triangle"></i>
-    The opening balances do not net to zero — they are out by
-    <strong>{{ opening_difference|abs_money }}</strong>
-    ({{ opening_difference|dr_cr }}). Until that is fixed, the trial balance will not balance
-    either. Post the difference to an opening-balance equity ledger.
-</div>
+<form method="get" class="card mb-3 filter-bar"><div class="card-body row g-2 align-items-end">
+  <div class="col-md-4"><label class="form-label">Search</label>{{ filter_form.q }}</div>
+  <div class="col-md-2"><label class="form-label">Type</label>{{ filter_form.account_type }}</div>
+  <div class="col-md-3"><label class="form-label">Ledger kind</label>{{ filter_form.kind }}</div>
+  <div class="col-md-2"><div class="form-check mt-4">{{ filter_form.show_inactive }}<label class="form-check-label" for="{{ filter_form.show_inactive.id_for_label }}">Show inactive</label></div></div>
+  <div class="col-md-1 d-grid"><button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i></button></div>
+</div></form>
+{% if opening_difference != 0 %}
+<div class="alert alert-warning py-2"><i class="bi bi-exclamation-triangle me-1"></i>Opening balances do not balance: difference {{ opening_difference|money }} (debits minus credits). Post the difference to an opening balance equity account so the trial balance balances.</div>
 {% endif %}
-
-<div class="card shadow-sm border-0 mb-3">
-    <div class="card-body">
-        <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold">Search</label>
-                {{ filter_form.q }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Type</label>
-                {{ filter_form.account_type }}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Kind</label>
-                {{ filter_form.kind }}
-            </div>
-            <div class="col-md-2">
-                <div class="form-check mb-2">
-                    {{ filter_form.show_inactive }}
-                    <label class="form-check-label small" for="{{ filter_form.show_inactive.id_for_label }}">
-                        Show closed
-                    </label>
-                </div>
-            </div>
-            <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> Filter</button>
-                <a href="{% url 'finance:account_list' %}" class="btn btn-outline-secondary btn-sm">Clear</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="card shadow-sm border-0">
-    <div class="card-body p-0">
-        <table class="table table-hover align-middle mb-0" data-export="Chart of Accounts">
-            <thead class="table-light">
-                <tr>
-                    <th>Code</th><th>Ledger</th><th>Kind</th><th>Type</th>
-                    <th>Under</th><th class="text-end">Balance</th><th></th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for row in rows %}
-                <tr {% if not row.account.is_active %}class="text-muted"{% endif %}>
-                    <td class="fw-semibold">{{ row.account.code }}</td>
-                    <td>
-                        <span style="padding-left:{{ row.account.level }}rem">
-                            {% if row.account.is_group %}<i class="bi bi-folder2 text-muted me-1"></i>{% endif %}
-                            <a href="{% url 'finance:account_detail' row.account.pk %}"
-                               class="text-decoration-none">{{ row.account.name }}</a>
-                        </span>
-                        {% if row.account.currency_id %}
-                            <span class="badge text-bg-light border ms-1">{{ row.account.currency.code }}</span>
-                        {% endif %}
-                        {% if not row.account.is_active %}
-                            <span class="badge text-bg-secondary ms-1">Closed</span>{% endif %}
-                    </td>
-                    <td class="small">{{ row.account.ledger_kind }}</td>
-                    <td class="small text-muted">{{ row.account.get_account_type_display }}</td>
-                    <td class="small text-muted">{{ row.account.parent.code|default:"—" }}</td>
-                    <td class="text-end">
-                        {{ row.balance|abs_money }}
-                        <span class="text-muted small">{{ row.balance|dr_cr }}</span>
-                    </td>
-                    <td class="text-end">
-                        <a href="{% url 'finance:account_edit' row.account.pk %}"
-                           class="btn btn-sm btn-outline-primary">Edit</a>
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="7" class="text-center text-muted py-4">No ledger matches.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
+<div class="card"><div class="table-responsive">
+<table class="table table-sm table-hover mb-0">
+  <thead><tr><th>Code</th><th>Account name</th><th>Type</th><th>Kind</th><th>Parent</th><th class="num">Opening</th><th class="num">Balance</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% with a=row.account %}
+  <tr class="{% if a.is_group %}table-light fw-semibold{% endif %}{% if not a.is_active %} text-muted{% endif %}">
+    <td><a class="table-link" href="{% url 'finance:account_detail' a.pk %}">{{ a.code }}</a></td>
+    <td style="padding-left: calc(.5rem + {{ a.level }} * 1.1rem)">{% if a.is_group %}<i class="bi bi-folder2 me-1 text-secondary"></i>{% endif %}{{ a.name }}</td>
+    <td>{{ a.get_account_type_display }}</td>
+    <td><span class="badge text-bg-light text-dark">{{ a.ledger_kind }}</span></td>
+    <td class="text-muted-sm">{{ a.parent.code|default:"" }}</td>
+    <td class="num">{% if a.opening_balance %}{{ a.opening_balance|money }} {{ a.opening_balance_type }}{% endif %}</td>
+    <td class="num">{{ row.balance|abs_value|money }} {% if row.balance >= 0 %}DR{% else %}CR{% endif %}</td>
+    <td>{% if a.is_active %}<i class="bi bi-check-circle text-success"></i>{% else %}<i class="bi bi-x-circle text-danger"></i>{% endif %}</td>
+    <td class="text-end text-nowrap">
+      {% if perms.finance.change_account %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:account_edit' a.pk %}" title="Edit"><i class="bi bi-pencil"></i></a>{% endif %}
+      {% if a.is_group and perms.finance.add_account %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'finance:account_create' %}?parent={{ a.pk }}" title="Add child account"><i class="bi bi-plus"></i></a>{% endif %}
+    </td>
+  </tr>
+  {% endwith %}{% empty %}<tr><td colspan="9" class="text-center text-muted py-3">No accounts found.</td></tr>{% endfor %}
+  </tbody>
+</table></div></div>
 {% endblock %}

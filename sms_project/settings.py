@@ -119,6 +119,9 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # The accounting shell's company name, financial year and
+                # currency. Returns {} for any request outside /finance/.
+                'apps.finance.context_processors.accounting',
             ],
         },
     },
