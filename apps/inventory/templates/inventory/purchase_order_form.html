@@ -43,6 +43,7 @@
                         <label class="form-label">Unit</label>
                         <select class="form-select" id="poUnit">
                             <option value="pcs">Pcs</option>
+                            <option value="nos">Nos</option>
                             <option value="item">Item</option>
                             <option value="bundle">Bundle</option>
                             <option value="box">Box</option>
@@ -128,7 +129,7 @@
             const prodSelect = document.getElementById('poProduct');
             prodSelect.innerHTML = '<option value="">Select Product...</option>';
             products.forEach(p => {
-                prodSelect.innerHTML += `<option value="${p.id}" data-cost="${p.cost}">${p.name}</option>`;
+                prodSelect.innerHTML += `<option value="${p.id}" data-cost="${p.cost}" data-unit="${p.unit || ''}">${p.name}</option>`;
             });
         } catch (e) { console.error(e); }
     }
@@ -182,10 +183,17 @@
         items.forEach(i => { select.innerHTML += `<option value="${i.id}">${i.name}</option>`; });
     }
 
+    // A product's measuring unit -> the same unit in this form's list.
+    const PRODUCT_UNIT_TO_LINE = { nos: 'nos', kgs: 'kg', pcs: 'pcs', boxes: 'box', tons: 'ton', bags: 'bag' };
+
     function updateUnitCost() {
         const select = document.getElementById('poProduct');
-        const cost = select.options[select.selectedIndex].dataset.cost;
+        const opt = select.options[select.selectedIndex];
+        const cost = opt.dataset.cost;
         if (cost) document.getElementById('poCost').value = cost;
+        // Start the line in the product's own unit; it can still be changed.
+        const unit = PRODUCT_UNIT_TO_LINE[opt.dataset.unit];
+        if (unit) document.getElementById('poUnit').value = unit;
     }
 
     function addItem(e) {

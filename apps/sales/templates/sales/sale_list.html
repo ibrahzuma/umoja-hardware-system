@@ -159,7 +159,7 @@
                     ${sale.items_response ? sale.items_response.map(item => `
                         <tr>
                             <td>${item.product_name}</td>
-                            <td class="text-center">${item.quantity}</td>
+                            <td class="text-center">${item.quantity} ${item.product_unit || ''}</td>
                             <td class="text-end">TZS ${Math.round(Number(item.subtotal)).toLocaleString()}</td>
                         </tr>
                     `).join('') : '<tr><td colspan="3" class="text-center">Items info not populated</td></tr>'}

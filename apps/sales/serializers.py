@@ -16,6 +16,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     product_weight = serializers.DecimalField(source='product.weight', max_digits=10, decimal_places=2, read_only=True)
+    product_unit = serializers.CharField(source='product.get_unit_display', read_only=True)
     
     class Meta:
         model = SaleItem
@@ -144,6 +145,7 @@ class TransactionSerializer(serializers.ModelSerializer):
 
 class QuotationItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
+    product_unit = serializers.CharField(source='product.get_unit_display', read_only=True)
     
     class Meta:
         model = QuotationItem

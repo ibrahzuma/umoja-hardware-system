@@ -15,6 +15,12 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from .views_report import CommissionReportView
 
 
+def _uom(product):
+    """The unit a document prints beside a quantity: the product's own
+    measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags), in capitals."""
+    return (product.get_unit_display() if getattr(product, 'unit', '') else 'Pcs').upper()
+
+
 def _company_ctx():
     """Company header data + currency + tax rate for PDF documents."""
     from apps.core.models import SystemSettings
@@ -260,7 +266,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             'code': getattr(it.product, 'sku', '') or '',
             'description': it.product.name,
             'qty': it.quantity,
-            'uom': 'PCS',
+            'uom': _uom(it.product),
             'price': it.price_at_sale,
             'total': it.subtotal,
         } for it in sale.items.all()]
@@ -304,7 +310,7 @@ class SaleViewSet(viewsets.ModelViewSet):
             'code': getattr(it.product, 'sku', '') or '',
             'description': it.product.name,
             'qty': it.quantity,
-            'uom': 'PCS',
+            'uom': _uom(it.product),
         } for it in sale.items.all()]
         total_weight = sum(
             (Decimal(str(getattr(it.product, 'weight', 0) or 0)) * it.quantity)
@@ -508,7 +514,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
             'code': getattr(it.product, 'sku', '') or '',
             'description': it.product.name,
             'qty': it.quantity,
-            'uom': 'PCS',
+            'uom': _uom(it.product),
             'price': it.unit_price,
             'total': it.total_price,
         } for it in quote.items.all()]

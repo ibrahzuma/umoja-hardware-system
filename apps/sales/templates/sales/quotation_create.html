@@ -117,7 +117,7 @@
             const prodSelect = document.getElementById('productSelect');
             prodSelect.innerHTML = '<option value="">Select Product...</option>';
             products.forEach(p => {
-                prodSelect.innerHTML += `<option value="${p.id}" data-price="${p.price}">${p.name} (Stock: ${p.stock_quantity || '-'})</option>`;
+                prodSelect.innerHTML += `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit_display || 'Pcs'}">${p.name} (Stock: ${p.stock_quantity || '-'})</option>`;
             });
 
             prodSelect.addEventListener('change', function () {
@@ -134,6 +134,7 @@
         const prodSelect = document.getElementById('productSelect');
         const productId = prodSelect.value;
         const productName = prodSelect.options[prodSelect.selectedIndex].text;
+        const unit = prodSelect.options[prodSelect.selectedIndex].dataset.unit || 'Pcs';
         const quantity = parseFloat(document.getElementById('quantity').value);
         const price = parseFloat(document.getElementById('price').value);
 
@@ -143,7 +144,7 @@
         }
 
         const total = quantity * price;
-        cart.push({ product: productId, product_name: productName, quantity, unit_price: price, total_price: total });
+        cart.push({ product: productId, product_name: productName, unit, quantity, unit_price: price, total_price: total });
         renderCart();
 
         // Reset inputs
@@ -160,7 +161,7 @@
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${item.product_name}</td>
-                <td>${item.quantity}</td>
+                <td>${item.quantity} ${item.unit || ''}</td>
                 <td>${Math.round(Number(item.unit_price)).toLocaleString()}</td>
                 <td class="fw-bold">${Math.round(Number(item.total_price)).toLocaleString()}</td>
                 <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${index})"><i class="bi bi-trash"></i></button></td>

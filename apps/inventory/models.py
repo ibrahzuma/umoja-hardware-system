@@ -202,7 +202,7 @@ class PurchaseOrder(models.Model):
 
 class PurchaseOrderItem(models.Model):
     UNIT_CHOICES = [
-        ('pcs', 'Pcs'), ('item', 'Item'), ('bundle', 'Bundle'), ('box', 'Box'),
+        ('pcs', 'Pcs'), ('nos', 'Nos'), ('item', 'Item'), ('bundle', 'Bundle'), ('box', 'Box'),
         ('carton', 'Carton'), ('dozen', 'Dozen'), ('bag', 'Bag'), ('roll', 'Roll'),
         ('kg', 'Kg'), ('ton', 'Ton'), ('meter', 'Meter'), ('litre', 'Litre'),
         ('set', 'Set'), ('pair', 'Pair'), ('other', 'Other'),

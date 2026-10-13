@@ -42,6 +42,7 @@
                                 <label class="form-label">Unit</label>
                                 <select class="form-select" id="unitSelect">
                                     <option value="pcs">Pcs</option>
+                                    <option value="nos">Nos</option>
                                     <option value="item">Item</option>
                                     <option value="bundle">Bundle</option>
                                     <option value="box">Box</option>
@@ -130,13 +131,25 @@
             suppliers = await suppRes.json();
             branches = await branchRes.json();
             const pSelect = document.getElementById('productSelect');
-            products.forEach(p => pSelect.add(new Option(`${p.name} (${p.sku})`, p.id)));
+            products.forEach(p => {
+                const opt = new Option(`${p.name} (${p.sku})`, p.id);
+                opt.dataset.unit = p.unit || '';
+                pSelect.add(opt);
+            });
+            // Start each line in the product's own unit; it can still be changed.
+            pSelect.addEventListener('change', () => {
+                const unit = PRODUCT_UNIT_TO_LINE[pSelect.options[pSelect.selectedIndex].dataset.unit];
+                if (unit) document.getElementById('unitSelect').value = unit;
+            });
             const sSelect = document.getElementById('supplierSelect');
             suppliers.forEach(s => sSelect.add(new Option(s.name, s.id)));
             const bSelect = document.getElementById('branchSelect');
             branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
         } catch (e) { console.error(e); }
     }
+
+    // A product's measuring unit -> the same unit in this form's list.
+    const PRODUCT_UNIT_TO_LINE = { nos: 'nos', kgs: 'kg', pcs: 'pcs', boxes: 'box', tons: 'ton', bags: 'bag' };
 
     function fmt(n) { return Math.round(Number(n)).toLocaleString(); }
 

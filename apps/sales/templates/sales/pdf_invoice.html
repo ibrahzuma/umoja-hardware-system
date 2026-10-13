@@ -239,7 +239,8 @@
         <thead>
             <tr>
                 <th width="10%">Qty</th>
-                <th width="50%">Description</th>
+                <th width="10%">Unit</th>
+                <th width="40%">Description</th>
                 <th width="20%" style="text-align: right;">Unit Price</th>
                 <th width="20%" style="text-align: right;">Amount</th>
             </tr>
@@ -248,6 +249,7 @@
             {% for item in sale.items.all %}
             <tr>
                 <td>{{ item.quantity|floatformat:2 }}</td>
+                <td>{{ item.product.get_unit_display }}</td>
                 <td>{{ item.product.name }}</td>
                 <td style="text-align: right;">{{ item.price_at_sale|floatformat:0|intcomma }}</td>
                 <td style="text-align: right;">{{ item.subtotal|floatformat:0|intcomma }}</td>

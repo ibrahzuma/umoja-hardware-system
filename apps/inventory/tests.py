@@ -512,3 +512,38 @@ class ProductImportUnitTest(TestCase):
             'cost': '100', 'price': '200', 'weight': '0'}, content_type='application/json')
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(res.json()['unit_display'], 'Bags')
+
+
+class ProductUnitOnDocumentsTest(TestCase):
+    """Invoices, delivery notes and quotations print each product's own unit —
+    they used to print PCS for everything."""
+
+    def setUp(self):
+        from apps.sales.models import Sale, SaleItem
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.client.force_login(self.admin)
+        branch = Branch.objects.create(name='Main')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, unit='bags', cost=1, price=2)
+        Stock.objects.create(product=self.cement, branch=branch, quantity=100)
+        self.sale = Sale.objects.create(invoice_number='U-1', branch=branch, total_amount=10,
+                                        status='approved')
+        SaleItem.objects.create(sale=self.sale, product=self.cement, quantity=5,
+                                price_at_sale=2, subtotal=10)
+
+    def test_the_document_unit_is_the_products(self):
+        from apps.sales.views import _uom
+        self.assertEqual(_uom(self.cement), 'BAGS')
+
+    def test_the_sale_api_carries_the_unit(self):
+        res = self.client.get(f'/api/sales/{self.sale.id}/')
+        self.assertEqual(res.json()['items_response'][0]['product_unit'], 'Bags')
+
+    def test_the_invoice_and_delivery_note_render(self):
+        for action in ('receipt', 'delivery_note'):
+            res = self.client.get(f'/api/sales/{self.sale.id}/{action}/')
+            self.assertEqual(res.status_code, 200, action)
+            self.assertEqual(res['Content-Type'], 'application/pdf', action)
+
+    def test_a_purchase_order_line_can_be_in_nos(self):
+        self.assertIn('nos', dict(PurchaseOrderItem.UNIT_CHOICES))
