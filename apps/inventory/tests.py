@@ -453,3 +453,62 @@ class ProductImportTypeTest(TestCase):
         p = Product.objects.get(name='ANDIKA POWDER')
         self.assertEqual(p.product_type, 'product')
         self.assertEqual(Stock.objects.get(product=p).quantity, 751)
+
+
+class ProductImportUnitTest(TestCase):
+    """The Unit (measuring unit) column: Nos, Kgs, Pcs, Boxes, Tons, Bags."""
+
+    HEADER = 'Name,SKU,Category,Type,Unit,Cost,Price,Weight (kg),Description,Opening Stock,Low Stock Alert\r\n'
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.client.force_login(self.admin)
+
+    def upload(self, body):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post('/api/products/import/', {
+            'file': SimpleUploadedFile('p.csv', (self.HEADER + body).encode('utf-8'), 'text/csv')})
+
+    def unit(self, name):
+        return Product.objects.get(name=name).unit
+
+    def test_each_unit_and_its_common_spellings(self):
+        res = self.upload(
+            'CEMENT,,POWDER,,Bags,1,2,,,1,\r\n'
+            'NAILS,,NAILS,,kg,1,2,,,1,\r\n'
+            'PIPE,,PIPES,,PCS,1,2,,,1,\r\n'
+            'BOLT,,BOLTS,,No,1,2,,,1,\r\n'
+            'TILES,,TILES,,box,1,2,,,1,\r\n'
+            'STEEL,,STEEL,,Tonnes,1,2,,,1,\r\n')
+        self.assertEqual(res.json()['errors'], [])
+        self.assertEqual([self.unit(n) for n in ('CEMENT', 'NAILS', 'PIPE', 'BOLT', 'TILES', 'STEEL')],
+                         ['bags', 'kgs', 'pcs', 'nos', 'boxes', 'tons'])
+
+    def test_a_blank_unit_comes_from_the_description_then_defaults_to_pcs(self):
+        self.upload('ANDIKA POWDER,,POWDER,,,1,2,,BAGS ,1,\r\n'
+                    'HAMMER,,TOOLS,,,1,2,,Heavy duty,1,\r\n')
+        self.assertEqual(self.unit('ANDIKA POWDER'), 'bags')
+        self.assertEqual(self.unit('HAMMER'), 'pcs')
+
+    def test_an_unknown_unit_is_reported_not_guessed(self):
+        res = self.upload('ROPE,,ROPES,,Metres,1,2,,,1,\r\n')
+        self.assertIn("Unit 'Metres' is not one of", res.json()['errors'][0])
+        self.assertFalse(Product.objects.filter(name='ROPE').exists())
+
+    def test_re_uploading_with_a_unit_updates_the_product(self):
+        self.upload('CEMENT,,POWDER,,,1,2,,,1,\r\n')
+        self.assertEqual(self.unit('CEMENT'), 'pcs')
+        self.upload('CEMENT,,POWDER,,Bags,1,2,,,0,\r\n')
+        self.assertEqual(self.unit('CEMENT'), 'bags')
+
+    def test_the_template_has_the_unit_column(self):
+        res = self.client.get('/inventory/import/template/')
+        self.assertIn('Unit', res.content.decode().splitlines()[0].split(','))
+
+    def test_the_unit_is_saved_from_the_product_form(self):
+        cat = Category.objects.create(name='POWDER')
+        res = self.client.post('/api/products/', {
+            'name': 'GYPSUM', 'category': cat.id, 'product_type': 'product', 'unit': 'bags',
+            'cost': '100', 'price': '200', 'weight': '0'}, content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()['unit_display'], 'Bags')

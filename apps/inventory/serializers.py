@@ -13,12 +13,13 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
+    unit_display = serializers.CharField(source='get_unit_display', read_only=True)
     opening_stock = serializers.IntegerField(write_only=True, required=False, default=0)
     low_stock_threshold = serializers.IntegerField(write_only=True, required=False, default=10)
     
     class Meta:
         model = Product
-        fields = ['id', 'name', 'sku', 'product_type', 'category', 'category_name', 'price', 'cost', 'weight', 'description', 'created_at', 'opening_stock', 'low_stock_threshold']
+        fields = ['id', 'name', 'sku', 'product_type', 'unit', 'unit_display', 'category', 'category_name', 'price', 'cost', 'weight', 'description', 'created_at', 'opening_stock', 'low_stock_threshold']
 
     def create(self, validated_data):
         opening_stock = validated_data.pop('opening_stock', 0)

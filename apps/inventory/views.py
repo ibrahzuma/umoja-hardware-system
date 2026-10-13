@@ -52,6 +52,23 @@ def import_product_type(raw):
     return 'service' if value in ('service', 'services', 'serv', 'svc') else 'product'
 
 
+# What people write in the Unit column -> the unit it means.
+UNIT_ALIASES = {
+    'nos': 'nos', 'no': 'nos', 'no.': 'nos', 'nos.': 'nos', 'number': 'nos', 'numbers': 'nos',
+    'kgs': 'kgs', 'kg': 'kgs', 'kgs.': 'kgs', 'kilo': 'kgs', 'kilos': 'kgs',
+    'kilogram': 'kgs', 'kilograms': 'kgs',
+    'pcs': 'pcs', 'pc': 'pcs', 'pcs.': 'pcs', 'pce': 'pcs', 'piece': 'pcs', 'pieces': 'pcs',
+    'boxes': 'boxes', 'box': 'boxes', 'bx': 'boxes',
+    'tons': 'tons', 'ton': 'tons', 'tonne': 'tons', 'tonnes': 'tons', 't': 'tons',
+    'bags': 'bags', 'bag': 'bags',
+}
+
+
+def import_unit(raw):
+    """The measuring unit a cell names, or None when it names none."""
+    return UNIT_ALIASES.get(str(raw or '').strip().lower())
+
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -131,6 +148,20 @@ class ProductViewSet(viewsets.ModelViewSet):
 
                         product_type = import_product_type(get_val('Type', ''))
 
+                        # Unit: Nos, Kgs, Pcs, Boxes, Tons or Bags. A blank cell
+                        # falls back to a unit written in the Description
+                        # ("BAGS", "PCS"), then to Pcs; anything else is an error
+                        # rather than a guess.
+                        raw_unit = str(get_val('Unit', '') or '').strip()
+                        unit = import_unit(raw_unit)
+                        if raw_unit and unit is None:
+                            errors.append(f"Row {i+2}: Unit '{raw_unit}' is not one of "
+                                          "Nos, Kgs, Pcs, Boxes, Tons, Bags")
+                            continue
+                        unit_given = unit is not None
+                        if unit is None:
+                            unit = import_unit(get_val('Description', '')) or 'pcs'
+
                         # If SKU exists, try to find by SKU. If not, try to find by Name + Category to prevent duplicates
                         product = None
                         created = False
@@ -142,6 +173,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                     'name': str(product_name).strip(),
                                     'category': category,
                                     'product_type': product_type,
+                                    'unit': unit,
                                     'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                     'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
                                     'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
@@ -155,6 +187,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                 category=category,
                                 defaults={
                                     'product_type': product_type,
+                                    'unit': unit,
                                     'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                     'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
                                     'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
@@ -177,6 +210,10 @@ class ProductViewSet(viewsets.ModelViewSet):
                         if product.product_type not in ('product', 'service'):
                             product.product_type = product_type
                             product.save(update_fields=['product_type'])
+                        # A unit given in the file updates a product that already exists.
+                        if not created and unit_given and product.unit != unit:
+                            product.unit = unit
+                            product.save(update_fields=['unit'])
 
                         # Ensure Stock record exists in the Main Branch for 'product' types
                         if product.product_type == 'product':
@@ -924,9 +961,9 @@ def download_product_template(request):
 
     writer = csv.writer(response)
     # Headers
-    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Cost', 'Price', 'Weight (kg)', 'Description', 'Opening Stock', 'Low Stock Alert'])
+    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Unit', 'Cost', 'Price', 'Weight (kg)', 'Description', 'Opening Stock', 'Low Stock Alert'])
     # Sample Row
-    writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', '15000', '25000', '1.5', 'Heavy duty steel hammer', '50', '5'])
+    writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', 'Pcs', '15000', '25000', '1.5', 'Heavy duty steel hammer', '50', '5'])
 
     return response
 

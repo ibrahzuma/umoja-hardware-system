@@ -37,6 +37,17 @@ class Product(models.Model):
         ('service', 'Service'),
     )
     product_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='product')
+    # The measuring unit the product is counted and sold in.
+    UNIT_CHOICES = (
+        ('nos', 'Nos'),
+        ('kgs', 'Kgs'),
+        ('pcs', 'Pcs'),
+        ('boxes', 'Boxes'),
+        ('tons', 'Tons'),
+        ('bags', 'Bags'),
+    )
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='pcs',
+                            help_text="Measuring unit: Nos, Kgs, Pcs, Boxes, Tons or Bags")
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
