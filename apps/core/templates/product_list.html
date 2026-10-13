@@ -285,8 +285,7 @@
                     const parts = Object.entries(body).map(([field, errs]) =>
                         (field === 'detail' || field === 'non_field_errors' ? '' : field.replace(/_/g, ' ') + ': ')
                         + (Array.isArray(errs) ? errs.join(' ') : errs));
-                    if (parts.length) message = parts.join('
-');
+                    if (parts.length) message = parts.join(' | ');
                 } catch (_) { /* not JSON — keep the generic message */ }
                 Swal.fire('Error', message, 'error');
             }
