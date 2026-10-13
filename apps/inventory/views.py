@@ -38,6 +38,20 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+def import_product_type(raw):
+    """What the import's Type column means.
+
+    Only `product` and `service` are types. People fill the column with all
+    sorts — a short name, a size, nothing at all — and anything that is not
+    clearly a service is a stocked product. Saving the raw text used to fail
+    on long values ("value too long for type character varying(10)") and,
+    worse, store short ones as a type the edit form cannot show, so the
+    product could never be saved again.
+    """
+    value = str(raw or '').strip().lower()
+    return 'service' if value in ('service', 'services', 'serv', 'svc') else 'product'
+
+
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -59,7 +73,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         try:
             print(f"Starting import for file: {file_name}")
             if file_name.endswith('.csv'):
-                decoded_file = file.read().decode('utf-8')
+                raw_bytes = file.read()
+                try:
+                    decoded_file = raw_bytes.decode('utf-8-sig')
+                except UnicodeDecodeError:
+                    decoded_file = raw_bytes.decode('cp1252', errors='replace')
                 io_string = io.StringIO(decoded_file)
                 reader = csv.DictReader(io_string)
                 rows = list(reader)
@@ -83,92 +101,100 @@ class ProductViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             for i, row in enumerate(rows):
                 try:
-                    # Case-insensitive row lookup helper
-                    def get_case_insensitive(d, key, default=None):
-                        low_key = key.lower()
-                        for k, v in d.items():
-                            if k and k.lower() == low_key:
-                                return v
-                        return default
+                    with transaction.atomic():   # a savepoint per row
+                        # Case-insensitive row lookup helper
+                        def get_case_insensitive(d, key, default=None):
+                            low_key = key.lower()
+                            for k, v in d.items():
+                                if k and k.lower() == low_key:
+                                    return v
+                            return default
 
-                    category_name = get_case_insensitive(row, 'Category')
-                    if not category_name:
-                        errors.append(f"Row {i+2}: Missing Category")
-                        continue
+                        category_name = get_case_insensitive(row, 'Category')
+                        if not category_name:
+                            errors.append(f"Row {i+2}: Missing Category")
+                            continue
                         
-                    category, _ = Category.objects.get_or_create(name=str(category_name).strip())
+                        category, _ = Category.objects.get_or_create(name=str(category_name).strip())
 
-                    sku = get_case_insensitive(row, 'SKU')
-                    sku = str(sku).strip() if sku else None
+                        sku = get_case_insensitive(row, 'SKU')
+                        sku = str(sku).strip() if sku else None
 
-                    product_name = get_case_insensitive(row, 'Name')
-                    if not product_name:
-                        errors.append(f"Row {i+2}: Missing Product Name")
-                        continue
+                        product_name = get_case_insensitive(row, 'Name')
+                        if not product_name:
+                            errors.append(f"Row {i+2}: Missing Product Name")
+                            continue
 
-                    def get_val(key, default=''):
-                        val = get_case_insensitive(row, key)
-                        return val if val is not None else default
+                        def get_val(key, default=''):
+                            val = get_case_insensitive(row, key)
+                            return val if val is not None else default
 
-                    # If SKU exists, try to find by SKU. If not, try to find by Name + Category to prevent duplicates
-                    product = None
-                    created = False
+                        product_type = import_product_type(get_val('Type', ''))
+
+                        # If SKU exists, try to find by SKU. If not, try to find by Name + Category to prevent duplicates
+                        product = None
+                        created = False
                     
-                    if sku:
-                        product, created = Product.objects.get_or_create(
-                            sku=sku,
-                            defaults={
-                                'name': str(product_name).strip(),
-                                'category': category,
-                                'product_type': str(get_val('Type', 'product')).lower().strip(),
-                                'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
-                                'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
-                                'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
-                                'description': str(get_val('Description', '')).strip(),
-                            }
-                        )
-                    else:
-                        # No SKU provided, check by Name and Category
-                        product, created = Product.objects.get_or_create(
-                            name=str(product_name).strip(),
-                            category=category,
-                            defaults={
-                                'product_type': str(get_val('Type', 'product')).lower().strip(),
-                                'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
-                                'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
-                                'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
-                                'description': str(get_val('Description', '')).strip(),
-                            }
-                        )
+                        if sku:
+                            product, created = Product.objects.get_or_create(
+                                sku=sku,
+                                defaults={
+                                    'name': str(product_name).strip(),
+                                    'category': category,
+                                    'product_type': product_type,
+                                    'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
+                                    'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
+                                    'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
+                                    'description': str(get_val('Description', '')).strip(),
+                                }
+                            )
+                        else:
+                            # No SKU provided, check by Name and Category
+                            product, created = Product.objects.get_or_create(
+                                name=str(product_name).strip(),
+                                category=category,
+                                defaults={
+                                    'product_type': product_type,
+                                    'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
+                                    'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
+                                    'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
+                                    'description': str(get_val('Description', '')).strip(),
+                                }
+                            )
 
-                    # Handle Opening Stock (Additive)
-                    try:
-                        raw_opening = get_val('Opening Stock', 0)
-                        raw_low = get_val('Low Stock Alert', 10)
-                        opening_stock = int(float(str(raw_opening or 0).replace(',', '')))
-                        low_stock = int(float(str(raw_low or 10).replace(',', '')))
-                    except (ValueError, TypeError):
-                        opening_stock = 0
-                        low_stock = 10
+                        # Handle Opening Stock (Additive)
+                        try:
+                            raw_opening = get_val('Opening Stock', 0)
+                            raw_low = get_val('Low Stock Alert', 10)
+                            opening_stock = int(float(str(raw_opening or 0).replace(',', '')))
+                            low_stock = int(float(str(raw_low or 10).replace(',', '')))
+                        except (ValueError, TypeError):
+                            opening_stock = 0
+                            low_stock = 10
                     
-                    # Ensure Stock record exists in the Main Branch for 'product' types
-                    product_type = str(get_val('Type', 'product')).lower().strip()
-                    if product_type == 'product':
-                        branch, _ = Branch.objects.get_or_create(name="Main Branch")
-                        stock_obj, s_created = Stock.objects.get_or_create(
-                            product=product,
-                            branch=branch,
-                            defaults={
-                                'quantity': opening_stock,
-                                'low_stock_threshold': low_stock
-                            }
-                        )
-                        if not s_created:
-                            # If stock record already existed, ADD to it
-                            stock_obj.quantity += opening_stock
-                            stock_obj.save()
+                        # A product an earlier import saved with an invalid type is
+                        # repaired here, so re-uploading the file fixes it.
+                        if product.product_type not in ('product', 'service'):
+                            product.product_type = product_type
+                            product.save(update_fields=['product_type'])
 
-                    imported_count += 1
+                        # Ensure Stock record exists in the Main Branch for 'product' types
+                        if product.product_type == 'product':
+                            branch, _ = Branch.objects.get_or_create(name="Main Branch")
+                            stock_obj, s_created = Stock.objects.get_or_create(
+                                product=product,
+                                branch=branch,
+                                defaults={
+                                    'quantity': opening_stock,
+                                    'low_stock_threshold': low_stock
+                                }
+                            )
+                            if not s_created:
+                                # If stock record already existed, ADD to it
+                                stock_obj.quantity += opening_stock
+                                stock_obj.save()
+
+                        imported_count += 1
                 except Exception as e:
                     errors.append(f"Row {i+2}: {str(e)}")
 

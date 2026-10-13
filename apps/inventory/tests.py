@@ -403,3 +403,53 @@ class StockMovementReportTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('spreadsheetml', response['Content-Type'])
         self.assertIn('stock_in_vs_out', response['Content-Disposition'])
+
+
+class ProductImportTypeTest(TestCase):
+    """The import's Type column, filled the way people really fill it: blank,
+    a short name, or a long description. None of it may fail a row or leave a
+    product the edit form cannot save."""
+
+    CSV = (
+        '﻿Name,SKU,Category,Type,Cost,Price,Weight (kg),Description,Opening Stock,Low Stock Alert\r\n'
+        'A/GREY H/GLOSS,,PAINTS,,,,,,42,\r\n'
+        'ANDIKA POWDER,,POWDER ,ANDIKA ,28750,32000,25,BAGS ,751,\r\n'
+        '"ANGLE LINE 1.25"" X4MM",,ANGLE LINE ,"A/LINE 1.25""X4MM ",34500,40000,,PCS ,131,\r\n'
+        'DELIVERY,,TRANSPORT,Service,0,5000,,,,\r\n'
+    )
+
+    def setUp(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.client.force_login(self.admin)
+        self.upload = lambda: self.client.post('/api/products/import/', {
+            'file': SimpleUploadedFile('products.csv', self.CSV.encode('utf-8'), 'text/csv')})
+
+    def test_every_row_imports_with_a_valid_type(self):
+        res = self.upload()
+        self.assertEqual(res.status_code, 201, res.json())
+        self.assertEqual(res.json()['errors'], [])
+        types = dict(Product.objects.values_list('name', 'product_type'))
+        self.assertEqual(types, {
+            'A/GREY H/GLOSS': 'product', 'ANDIKA POWDER': 'product',
+            'ANGLE LINE 1.25" X4MM': 'product', 'DELIVERY': 'service'})
+        self.assertEqual(Stock.objects.get(product__name='ANDIKA POWDER').quantity, 751)
+        self.assertFalse(Stock.objects.filter(product__name='DELIVERY').exists())
+
+    def test_an_imported_product_can_be_edited(self):
+        self.upload()
+        p = Product.objects.get(name='ANDIKA POWDER')
+        res = self.client.put(f'/api/products/{p.id}/', {
+            'name': p.name, 'sku': p.sku, 'category': p.category_id, 'product_type': p.product_type,
+            'cost': '28750', 'price': '33000', 'weight': '25', 'description': 'BAGS',
+        }, content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_re_uploading_repairs_a_product_saved_with_a_bad_type(self):
+        cat = Category.objects.create(name='POWDER')
+        Product.objects.create(name='ANDIKA POWDER', category=cat, product_type='andika',
+                               cost=0, price=0)
+        self.upload()
+        p = Product.objects.get(name='ANDIKA POWDER')
+        self.assertEqual(p.product_type, 'product')
+        self.assertEqual(Stock.objects.get(product=p).quantity, 751)

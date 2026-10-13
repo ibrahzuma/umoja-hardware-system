@@ -245,7 +245,17 @@
                 // If we were on a specific 'create' page, maybe redirect back to list?
                 // For now, staying on page is fine, or simple reload.
             } else {
-                Swal.fire('Error', 'Failed to save. Check inputs.', 'error');
+                // Say which field is wrong instead of "check inputs".
+                let message = 'Failed to save. Check inputs.';
+                try {
+                    const body = await resp.json();
+                    const parts = Object.entries(body).map(([field, errs]) =>
+                        (field === 'detail' || field === 'non_field_errors' ? '' : field.replace(/_/g, ' ') + ': ')
+                        + (Array.isArray(errs) ? errs.join(' ') : errs));
+                    if (parts.length) message = parts.join('
+');
+                } catch (_) { /* not JSON — keep the generic message */ }
+                Swal.fire('Error', message, 'error');
             }
         } catch (e) {
             console.error(e);
@@ -312,7 +322,10 @@
             document.getElementById('productName').value = p.name;
             document.getElementById('productSku').value = p.sku;
             document.getElementById('productCategory').value = p.category;
-            document.getElementById('productType').value = p.product_type;
+            // Anything but a service is a stocked product — an old import could
+            // leave a type the dropdown has no option for, which blanked it and
+            // made the product impossible to save.
+            document.getElementById('productType').value = p.product_type === 'service' ? 'service' : 'product';
             document.getElementById('productCost').value = p.cost;
             document.getElementById('productPrice').value = p.price;
             document.getElementById('productWeight').value = p.weight;
