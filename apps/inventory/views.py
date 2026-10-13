@@ -159,6 +159,10 @@ class ProductViewSet(viewsets.ModelViewSet):
                                           "Nos, Kgs, Pcs, Boxes, Tons, Bags")
                             continue
                         unit_given = unit is not None
+                        # "Weight per unit (kg)" in the template; the old
+                        # "Weight (kg)" header is still read.
+                        weight = float(str(get_val('Weight per unit (kg)', '') or get_val('Weight (kg)', 0)
+                                           or 0).replace(',', ''))
                         if unit is None:
                             unit = import_unit(get_val('Description', '')) or 'pcs'
 
@@ -176,7 +180,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                     'unit': unit,
                                     'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                     'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
-                                    'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
+                                    'weight': weight,
                                     'description': str(get_val('Description', '')).strip(),
                                 }
                             )
@@ -190,7 +194,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                                     'unit': unit,
                                     'cost': float(str(get_val('Cost', 0) or 0).replace(',', '')),
                                     'price': float(str(get_val('Price', 0) or 0).replace(',', '')),
-                                    'weight': float(str(get_val('Weight (kg)', 0) or 0).replace(',', '')),
+                                    'weight': weight,
                                     'description': str(get_val('Description', '')).strip(),
                                 }
                             )
@@ -961,7 +965,7 @@ def download_product_template(request):
 
     writer = csv.writer(response)
     # Headers
-    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Unit', 'Cost', 'Price', 'Weight (kg)', 'Description', 'Opening Stock', 'Low Stock Alert'])
+    writer.writerow(['Name', 'SKU', 'Category', 'Type', 'Unit', 'Cost', 'Price', 'Weight per unit (kg)', 'Description', 'Opening Stock', 'Low Stock Alert'])
     # Sample Row
     writer.writerow(['Hammer', 'HMR-001', 'Tools', 'product', 'Pcs', '15000', '25000', '1.5', 'Heavy duty steel hammer', '50', '5'])
 

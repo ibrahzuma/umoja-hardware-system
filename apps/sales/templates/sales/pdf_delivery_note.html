@@ -133,7 +133,8 @@
             </td>
             <td width="24%">
                 <div class="log-label">Total Load Weight</div>
-                <div class="log-val">{{ doc.total_weight|floatformat:2 }} kg</div>
+                <div class="log-val">{% if doc.unweighed %}At least {% endif %}{{ doc.total_weight|floatformat:2 }} kg</div>
+                {% if doc.unweighed %}<div class="log-label">Not weighed: {{ doc.unweighed|join:", " }}</div>{% endif %}
             </td>
         </tr>
     </table>

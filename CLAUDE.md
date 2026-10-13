@@ -491,6 +491,14 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
 - **CRM balances are derived, never stored.** `amount_paid`/`balance`/`payment_status` come from the payments table;
   list views annotate `paid_total` so a page costs one query. Customer credit = credits in − `CrmPayment`s with
   `from_credit=True` (`crm/models.py::credit_balances`).
+- **Units and vehicle loads.** `Product.unit` is the measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags) and
+  every sales document prints it (`sales/views.py::_uom`) — never a hardcoded PCS. `Product.weight` is the weight
+  of **one unit** in kg; read it through `Product.unit_weight`, which returns 1 for Kgs, 1000 for Tons, the
+  Weight field otherwise, and **None when that is 0** — unknown, not weightless. `sales.models.load_of(items)`
+  is the one load calculation (dispatch screen, delivery note, `total_weight`/`unweighed_items` on the sale API):
+  it returns the known kg plus the products it could not weigh, services left out, so the dispatch screen says
+  "at least …" and never "Loads within capacity" on a partly weighed order. Vehicle capacity is kg
+  (`sales.Vehicle.capacity`); the inbound `inventory.Truck.capacity` is free text and not checked.
 - **`SaleItem` commission is frozen at save time.** `SaleItem.save()` only computes `commission_amount` when it's
   `0`, so historical sales keep their commission if `Category.commission_percentage` later changes. Preserve this.
 - **Stock is deducted at dispatch, not at sale creation** (`SaleViewSet.dispatch_order`), and restored in

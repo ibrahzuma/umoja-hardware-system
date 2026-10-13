@@ -45,7 +45,7 @@
                         <th>Unit</th>
                         <th class="text-end">Cost</th>
                         <th class="text-end">Price</th>
-                        <th class="text-end">Weight (kg)</th>
+                        <th class="text-end">Weight / unit</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
@@ -109,8 +109,9 @@
                             <input type="number" class="form-control" id="lowStock" value="10">
                         </div>
                         <div class="col-md-6">
-                            <label for="productWeight" class="form-label">Weight (kg)</label>
-                            <input type="number" step="0.01" class="form-control" id="productWeight" value="0.00">
+                            <label for="productWeight" class="form-label">Weight per unit (kg)</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="productWeight" value="0.00">
+                            <div class="form-text" id="productWeightHelp">What one unit weighs — e.g. 50 for a bag of cement. Used to check loads against vehicle capacity.</div>
                         </div>
                         <div class="col-md-6">
                             <label for="productUnit" class="form-label">Unit (Measuring Unit)</label>
@@ -221,6 +222,25 @@
         }
     }
 
+    // A product sold in Kgs or Tons weighs what its unit says.
+    function syncWeightToUnit() {
+        const unit = document.getElementById('productUnit').value;
+        const box = document.getElementById('productWeight');
+        const help = document.getElementById('productWeightHelp');
+        const fixed = { kgs: 1, tons: 1000 }[unit];
+        box.disabled = fixed !== undefined;
+        if (fixed !== undefined) {
+            box.value = fixed;
+            help.innerText = `Sold by weight: one unit is ${fixed.toLocaleString()} kg.`;
+        } else {
+            help.innerText = 'What one unit weighs — e.g. 50 for a bag of cement. Used to check loads against vehicle capacity.';
+        }
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        const unitBox = document.getElementById('productUnit');
+        if (unitBox) unitBox.addEventListener('change', syncWeightToUnit);
+    });
+
     async function handleFormSubmit(e) {
         e.preventDefault();
         const id = document.getElementById('productId').value;
@@ -315,7 +335,7 @@
                 <td>${p.unit_display || ''}</td>
                 <td class="text-end">TZS ${parseFloat(p.cost).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
                 <td class="text-end fw-bold text-primary">TZS ${parseFloat(p.price).toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-                <td class="text-end">${p.weight} kg</td>
+                <td class="text-end">${p.unit_weight != null ? Number(p.unit_weight).toLocaleString() + ' kg' : '<span class="text-warning" title="No weight set — loads with this product cannot be fully checked">not set</span>'}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary me-2" onclick="editProduct(${p.id})">
                         <i class="bi bi-pencil"></i>
@@ -344,6 +364,7 @@
             document.getElementById('productPrice').value = p.price;
             document.getElementById('productWeight').value = p.weight;
             document.getElementById('productUnit').value = p.unit || 'pcs';
+            syncWeightToUnit();
             document.getElementById('productDesc').value = p.description;
             document.getElementById('modalTitle').innerText = IS_SERVICE_MODE ? 'Edit Service' : 'Edit Product';
             modal.show();
@@ -352,6 +373,7 @@
 
     function openModal() {
         document.getElementById('productForm').reset();
+        syncWeightToUnit();
         document.getElementById('productId').value = '';
         document.getElementById('modalTitle').innerText = IS_SERVICE_MODE ? 'Add Service' : 'Add Product';
 

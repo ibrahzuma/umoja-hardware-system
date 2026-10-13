@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
+from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem, load_of
 from apps.inventory.models import Product
 from .stock_guard import check_lines
 
@@ -15,7 +15,8 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class SaleItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
-    product_weight = serializers.DecimalField(source='product.weight', max_digits=10, decimal_places=2, read_only=True)
+    product_weight = serializers.DecimalField(source='product.unit_weight', max_digits=10, decimal_places=2,
+                                              read_only=True, allow_null=True)
     product_unit = serializers.CharField(source='product.get_unit_display', read_only=True)
     
     class Meta:
@@ -32,6 +33,7 @@ class SaleSerializer(serializers.ModelSerializer):
     balance = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
     total_weight = serializers.SerializerMethodField()
+    unweighed_items = serializers.SerializerMethodField()
     
     store_keeper_name = serializers.CharField(source='store_keeper.username', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.username', read_only=True)
@@ -47,7 +49,7 @@ class SaleSerializer(serializers.ModelSerializer):
         model = Sale
         fields = [
             'id', 'invoice_number', 'status', 'branch', 'user', 'created_by_name', 'customer_name',
-            'total_amount', 'discount', 'total_weight', 'created_at', 'items', 'items_response', 'payment_details',
+            'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
             'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name',
             'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper',
             'store_keeper_name', 'lorry_info', 'vehicle', 'vehicle_details'
@@ -69,7 +71,13 @@ class SaleSerializer(serializers.ModelSerializer):
         return 'Credit'
 
     def get_total_weight(self, obj):
-        return sum(item.quantity * item.product.weight for item in obj.items.all())
+        """kg of every line whose weight is known (see `load_of`)."""
+        return load_of(obj.items.all())[0]
+
+    def get_unweighed_items(self, obj):
+        """Products on the sale with no weight set — the load is at least
+        `total_weight`, not exactly it."""
+        return load_of(obj.items.all())[1]
 
     def validate(self, attrs):
         """Nothing is sold that is not there to sell.

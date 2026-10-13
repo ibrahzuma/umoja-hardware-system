@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -51,10 +52,28 @@ class Product(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
-    weight = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Weight in kg")
+    weight = models.DecimalField(max_digits=10, decimal_places=2, default=0.00,
+                                 help_text="Weight of ONE unit, in kg. Not needed for Kgs or Tons.")
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     history = HistoricalRecords()
+
+    # Units that are themselves a weight, in kg per unit.
+    WEIGHT_UNITS = {'kgs': Decimal('1'), 'tons': Decimal('1000')}
+
+    @property
+    def unit_weight(self):
+        """What one unit weighs, in kg — or None when nobody has said.
+
+        A product sold in Kgs or Tons weighs what its unit says, so its Weight
+        field is ignored. Anything counted (Nos, Pcs, Boxes, Bags) weighs what
+        its Weight field says, and a zero there means *unknown*, not weightless:
+        a load check must not call a truck safe on goods it cannot weigh.
+        """
+        if self.unit in self.WEIGHT_UNITS:
+            return self.WEIGHT_UNITS[self.unit]
+        weight = Decimal(str(self.weight or 0))
+        return weight if weight > 0 else None
 
     def save(self, *args, **kwargs):
         if not self.sku:

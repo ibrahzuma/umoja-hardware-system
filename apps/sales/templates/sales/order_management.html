@@ -125,6 +125,12 @@
                             <div id="capacityOk" class="text-success small d-none">
                                 <i class="bi bi-check-circle-fill me-1"></i> Loads within capacity.
                             </div>
+                            <div id="capacityUnknown" class="text-warning small d-none">
+                                <i class="bi bi-question-circle-fill me-1"></i>
+                                <span id="unweighedCount">0</span> item(s) have no weight set:
+                                <span id="unweighedNames"></span>. Set a weight per unit on the
+                                product to check this load properly.
+                            </div>
                         </div>
                     </div>
                     <div class="alert alert-info small mb-0">
@@ -246,6 +252,7 @@
     }
 
     let currentOrderWeight = 0;
+    let currentUnweighed = [];
     function checkVehicleCapacity() {
         const vehicleId = document.getElementById('vehicleSelect').value;
         const vehicle = vehicles.find(v => v.id == vehicleId);
@@ -253,6 +260,12 @@
         const capacityDisplay = document.getElementById('vehicleCapacityDisplay');
         const warning = document.getElementById('capacityWarning');
         const ok = document.getElementById('capacityOk');
+        const unknown = document.getElementById('capacityUnknown');
+
+        // Goods with no weight are unknown, not weightless.
+        unknown.classList.toggle('d-none', currentUnweighed.length === 0);
+        document.getElementById('unweighedCount').innerText = currentUnweighed.length;
+        document.getElementById('unweighedNames').innerText = currentUnweighed.join(', ');
 
         if (!vehicle) {
             capacityDisplay.innerText = '-';
@@ -261,15 +274,19 @@
             return;
         }
 
-        capacityDisplay.innerText = `${vehicle.capacity} kg`;
+        const capacity = Number(vehicle.capacity) || 0;
+        capacityDisplay.innerText = `${capacity.toLocaleString()} kg`;
 
-        if (currentOrderWeight > vehicle.capacity) {
+        if (currentOrderWeight > capacity) {
+            // Over even on what is known — the unknown items only add to it.
             warning.classList.remove('d-none');
             ok.classList.add('d-none');
-            document.getElementById('excessWeight').innerText = (currentOrderWeight - vehicle.capacity).toFixed(2);
+            document.getElementById('excessWeight').innerText =
+                (currentOrderWeight - capacity).toLocaleString(undefined, {maximumFractionDigits: 2});
         } else {
             warning.classList.add('d-none');
-            ok.classList.remove('d-none');
+            // "Within capacity" only when every line could be weighed.
+            ok.classList.toggle('d-none', currentUnweighed.length > 0);
         }
     }
 
@@ -403,8 +420,11 @@
         document.getElementById('dispatchSaleId').value = id;
         const o = allOrders.find(order => order.id == id);
         if (o) {
-            currentOrderWeight = o.total_weight || 0;
-            document.getElementById('orderWeightDisplay').innerText = `${currentOrderWeight} kg`;
+            currentOrderWeight = Number(o.total_weight) || 0;
+            currentUnweighed = o.unweighed_items || [];
+            document.getElementById('orderWeightDisplay').innerText =
+                (currentUnweighed.length ? 'at least ' : '')
+                + `${currentOrderWeight.toLocaleString(undefined, {maximumFractionDigits: 2})} kg`;
             checkVehicleCapacity(); // Reset view
         }
         dispatchModal.show();

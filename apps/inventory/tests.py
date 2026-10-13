@@ -5,6 +5,8 @@ an Admin confirms it, and confirming takes in only what actually arrived while
 the balance stays owing on the same order.
 """
 
+from decimal import Decimal
+
 from django.test import TestCase
 from django.urls import reverse
 
@@ -547,3 +549,63 @@ class ProductUnitOnDocumentsTest(TestCase):
 
     def test_a_purchase_order_line_can_be_in_nos(self):
         self.assertIn('nos', dict(PurchaseOrderItem.UNIT_CHOICES))
+
+
+class VehicleLoadTest(TestCase):
+    """Goods against a vehicle: an order weighs Σ quantity × what one unit
+    weighs. Kgs and Tons weigh what their unit says; a counted product with
+    no weight set is unknown, never zero."""
+
+    def setUp(self):
+        from apps.sales.models import Sale, SaleItem
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.client.force_login(self.admin)
+        self.branch = Branch.objects.create(name='Main')
+        cat = Category.objects.create(name='GOODS')
+        make = lambda name, unit, weight=0, kind='product': Product.objects.create(
+            name=name, category=cat, unit=unit, weight=weight, cost=1, price=2, product_type=kind)
+        self.cement = make('CEMENT', 'bags', 50)
+        self.nails = make('NAILS', 'kgs', 7)          # a stray weight on a Kgs product is ignored
+        self.steel = make('STEEL', 'tons')
+        self.pipe = make('PIPE', 'pcs')               # no weight set
+        self.transport = make('TRANSPORT', 'nos', kind='service')
+        self.Sale, self.SaleItem = Sale, SaleItem
+
+    def sale(self, *lines):
+        sale = self.Sale.objects.create(invoice_number=f'L-{self.Sale.objects.count() + 1}',
+                                        branch=self.branch, total_amount=1, status='approved')
+        for product, qty in lines:
+            self.SaleItem.objects.create(sale=sale, product=product, quantity=qty,
+                                         price_at_sale=1, subtotal=qty)
+        return sale
+
+    def test_what_one_unit_weighs(self):
+        self.assertEqual(self.cement.unit_weight, Decimal('50'))
+        self.assertEqual(self.nails.unit_weight, Decimal('1'))
+        self.assertEqual(self.steel.unit_weight, Decimal('1000'))
+        self.assertIsNone(self.pipe.unit_weight)
+
+    def test_a_fully_weighed_order(self):
+        from apps.sales.models import load_of
+        sale = self.sale((self.cement, 40), (self.nails, 25), (self.steel, 2), (self.transport, 1))
+        kg, missing = load_of(sale.items.all())
+        self.assertEqual(kg, Decimal('4025'))       # 2000 + 25 + 2000; the service is not loaded
+        self.assertEqual(missing, [])
+
+    def test_an_unweighed_product_is_reported_not_counted_as_zero(self):
+        res = self.client.get(f'/api/sales/{self.sale((self.cement, 10), (self.pipe, 30)).id}/')
+        body = res.json()
+        self.assertEqual(Decimal(str(body['total_weight'])), Decimal('500'))
+        self.assertEqual(body['unweighed_items'], ['PIPE'])
+
+    def test_the_delivery_note_renders_with_a_partial_load(self):
+        res = self.client.get(f'/api/sales/{self.sale((self.cement, 10), (self.pipe, 3)).id}/delivery_note/')
+        self.assertEqual(res.status_code, 200)
+
+    def test_the_import_reads_both_weight_headers(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        for header, name in (('Weight per unit (kg)', 'GYPSUM'), ('Weight (kg)', 'PUTTY')):
+            csv = f'Name,Category,Unit,Cost,Price,{header},Opening Stock\r\n{name},POWDER,Bags,1,2,25,1\r\n'
+            self.client.post('/api/products/import/', {
+                'file': SimpleUploadedFile('p.csv', csv.encode(), 'text/csv')})
+            self.assertEqual(Product.objects.get(name=name).unit_weight, Decimal('25'))

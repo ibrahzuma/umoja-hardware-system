@@ -79,6 +79,29 @@ class Sale(models.Model):
     def __str__(self):
         return f"Invoice #{self.invoice_number}"
 
+def load_of(items):
+    """The weight of a set of sale lines, for the vehicle check.
+
+    Returns (kg, missing): the kg of every line whose weight is known, and the
+    names of the products whose weight is not — so a screen can say "at least
+    2,840 kg" rather than pass a load it has only partly weighed. Services are
+    never loaded onto a truck and are left out of both.
+    """
+    from decimal import Decimal
+    total, missing = Decimal('0'), []
+    for item in items:
+        product = item.product
+        if getattr(product, 'product_type', 'product') == 'service':
+            continue
+        per_unit = product.unit_weight
+        if per_unit is None:
+            if product.name not in missing:
+                missing.append(product.name)
+            continue
+        total += per_unit * item.quantity
+    return total, missing
+
+
 class SaleItem(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('inventory.Product', on_delete=models.CASCADE)

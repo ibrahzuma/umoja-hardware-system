@@ -312,10 +312,8 @@ class SaleViewSet(viewsets.ModelViewSet):
             'qty': it.quantity,
             'uom': _uom(it.product),
         } for it in sale.items.all()]
-        total_weight = sum(
-            (Decimal(str(getattr(it.product, 'weight', 0) or 0)) * it.quantity)
-            for it in sale.items.all()
-        )
+        from .models import load_of
+        total_weight, unweighed = load_of(sale.items.all())
         ctx = {
             'doc': {
                 'type': 'DELIVERY NOTE', 'number_label': 'Delivery No.',
@@ -327,6 +325,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                 'lorry_info': sale.lorry_info,
                 'store_keeper': _person(sale.store_keeper),
                 'total_weight': total_weight,
+                'unweighed': unweighed,
             },
             'company': company,
             'customer': {
