@@ -3,6 +3,23 @@ from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, Q
 from apps.inventory.models import Product
 from .stock_guard import check_lines
 
+
+def money_account(value, field='deposit_to'):
+    """The cash book or bank ledger a payment went into, or None if not given.
+
+    Only a live, postable cash/bank ledger will do — anything else would put
+    the money somewhere the cash book cannot see it."""
+    if value in (None, ''):
+        return None
+    from apps.finance.models import LedgerAccount
+    pk = getattr(value, 'pk', value)
+    ledger = (LedgerAccount.objects
+              .filter(pk=pk, kind__in=LedgerAccount.MONEY_KINDS, is_group=False, is_active=True)
+              .first())
+    if ledger is None:
+        raise serializers.ValidationError({field: 'Pick a cash book or bank account.'})
+    return ledger
+
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
@@ -88,6 +105,18 @@ class SaleSerializer(serializers.ModelSerializer):
         counting what earlier undispatched sales have already spoken for.
         """
         items = attrs.get('items') or []
+        for line in items:
+            # The seller may change the price on a line; never below nothing.
+            if line.get('price_at_sale') not in (None, ''):
+                try:
+                    price = float(line['price_at_sale'])
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({'items': ['A price is not a number.']})
+                if price < 0:
+                    raise serializers.ValidationError({'items': ['A price cannot be negative.']})
+        payment = attrs.get('payment_details') or {}
+        if payment.get('amount'):
+            money_account(payment.get('account'), 'payment_details')
         branch = attrs.get('branch') or getattr(self.instance, 'branch', None)
         if not items or branch is None:
             return attrs
@@ -141,15 +170,22 @@ class SaleSerializer(serializers.ModelSerializer):
                 sale=sale,
                 amount=payment_data['amount'],
                 payment_method=payment_data.get('method', 'cash'),
+                deposit_to=money_account(payment_data.get('account'), 'payment_details'),
+                reference=str(payment_data.get('reference') or '')[:100],
                 transaction_type='income'
             )
 
         return sale
 
 class TransactionSerializer(serializers.ModelSerializer):
+    deposit_to_name = serializers.CharField(source='deposit_to.name', read_only=True)
+
     class Meta:
         model = Transaction
         fields = '__all__'
+
+    def validate_deposit_to(self, value):
+        return money_account(value)
 
 class QuotationItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)

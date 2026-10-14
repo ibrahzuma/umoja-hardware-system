@@ -385,6 +385,9 @@ class SalesLedgerEntry(models.Model):
                                            help_text="Money the accountant has confirmed as received")
     confirmed_reference = models.CharField(max_length=100, blank=True,
                                            help_text="Bank ref, transaction ID, cheque no")
+    confirmed_account = models.ForeignKey(
+        'LedgerAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+        help_text="The cash book or bank the money went into — the books debit this ledger")
     invoice_document = models.FileField(upload_to='sales_invoices/%Y/%m/', null=True, blank=True,
                                         help_text="The invoice, attached when the payment is confirmed")
     confirmed_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True,

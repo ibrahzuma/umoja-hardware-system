@@ -324,8 +324,10 @@ class SettingsView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from .models import SystemSettings
         context = super().get_context_data(**kwargs)
+        from apps.users.permissions import is_privileged
         settings, _ = SystemSettings.objects.get_or_create(id=1)
         context['settings'] = settings
+        context['can_set_trial'] = is_privileged(self.request.user)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -346,6 +348,12 @@ class SettingsView(LoginRequiredMixin, TemplateView):
 
         if 'logo' in request.FILES:
             settings.logo = request.FILES['logo']
+
+        # The trial-run switch decides whether goods can be sold that are not
+        # on the shelf — an Admin's call, whoever else can reach this page.
+        from apps.users.permissions import is_privileged
+        if is_privileged(request.user):
+            settings.allow_negative_stock = request.POST.get('allow_negative_stock') == 'on'
             
         settings.save()
         messages.success(request, 'System settings updated successfully.')

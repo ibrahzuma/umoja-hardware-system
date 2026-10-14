@@ -213,19 +213,33 @@ class SaleViewSet(viewsets.ModelViewSet):
 
         # 1. Deduct Stock. Services are not on any shelf, so they are skipped —
         #    otherwise a sale with a fitting charge on it could never leave.
+        #    Checked in full before anything moves, so a refused dispatch
+        #    leaves every stock row as it was. During the trial run
+        #    (allow_negative_stock) a short line is dispatched anyway and the
+        #    stock goes below zero, to be put right when the count is taken.
         from apps.inventory.models import Stock
+        from apps.core.models import SystemSettings
+        from django.db import transaction as db_transaction
+        allow_negative = SystemSettings.negative_stock_allowed()
         errors = []
-        for item in sale.items.all():
-            if item.product.product_type == 'service':
-                continue
-            try:
-                stock = Stock.objects.get(product=item.product, branch=sale.branch)
-                if stock.quantity < item.quantity:
+        with db_transaction.atomic():
+            for item in sale.items.select_related('product'):
+                if item.product.product_type == 'service':
+                    continue
+                stock = (Stock.objects.select_for_update()
+                         .filter(product=item.product, branch=sale.branch).first())
+                if stock is None:
+                    if not allow_negative:
+                        errors.append(f"No stock record for {item.product.name} at this branch")
+                        continue
+                    stock = Stock(product=item.product, branch=sale.branch, quantity=0)
+                if stock.quantity < item.quantity and not allow_negative:
                     errors.append(f"Insufficient stock for {item.product.name}")
+                    continue
                 stock.quantity -= item.quantity
                 stock.save()
-            except Stock.DoesNotExist:
-                errors.append(f"No stock record for {item.product.name} at this branch")
+            if errors:
+                db_transaction.set_rollback(True)
 
         if errors:
             from rest_framework.response import Response
@@ -341,6 +355,12 @@ class SaleViewSet(viewsets.ModelViewSet):
 class POSView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/pos.html'
 
+    def get_context_data(self, **kwargs):
+        from apps.core.models import SystemSettings
+        context = super().get_context_data(**kwargs)
+        context['allow_negative_stock'] = SystemSettings.negative_stock_allowed()
+        return context
+
 class SaleListView(LoginRequiredMixin, TemplateView):
     template_name = 'sales/sale_list.html'
 
@@ -445,6 +465,19 @@ class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
     permission_classes = [permissions.DjangoModelPermissions]
+
+    @action(detail=False, methods=['GET'], permission_classes=[permissions.IsAuthenticated])
+    def money_accounts(self, request):
+        """The cash books and bank accounts a payment can be received into —
+        what the seller picks from as "Received into". Names only, no balances."""
+        from apps.finance.models import LedgerAccount
+        from apps.finance.vouchers import open_the_books
+        open_the_books()
+        rows = (LedgerAccount.objects
+                .filter(kind__in=LedgerAccount.MONEY_KINDS, is_group=False, is_active=True)
+                .order_by('kind', 'name', 'id')
+                .values('id', 'code', 'name', 'kind'))
+        return Response(list(rows))
 
 
 class CustomerViewSet(viewsets.ModelViewSet):

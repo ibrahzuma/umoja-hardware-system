@@ -44,6 +44,17 @@ class SystemSettings(models.Model):
     tin = models.CharField(max_length=40, blank=True, help_text="Taxpayer Identification Number")
     vrn = models.CharField(max_length=40, blank=True, help_text="VAT Registration Number")
     logo = models.ImageField(upload_to='company_logo/', blank=True, null=True)
+    # Trial run: the shelves are not counted in yet, so the system must not
+    # refuse a sale because its stock rows say zero. Admin switches it off once
+    # opening stock is in; with it off nothing is sold that is not there.
+    allow_negative_stock = models.BooleanField(
+        default=False,
+        help_text="Trial run: allow selling items whose stock is zero or negative.")
+
+    @classmethod
+    def negative_stock_allowed(cls):
+        s = cls.objects.only('allow_negative_stock').first()
+        return bool(s and s.allow_negative_stock)
 
     def save(self, *args, **kwargs):
         if not self.pk and SystemSettings.objects.exists():

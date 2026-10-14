@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -42,6 +43,7 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/money_accounts.js' %}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         fetchCreditSales();
@@ -124,9 +126,16 @@
                     <option value="bank">Bank Transfer</option>
                     <option value="mobile">Mobile Money</option>
                 </select>
+                <select id="payAccount" class="form-select mb-2" title="Received into"></select>
                 <input id="payRef" type="text" class="form-control" placeholder="Reference (optional)">`,
             showCancelButton: true,
             confirmButtonText: 'Record payment',
+            didOpen: () => {
+                const method = document.getElementById('payMethod');
+                const account = document.getElementById('payAccount');
+                MoneyAccounts.fill(account, method.value);
+                method.addEventListener('change', () => MoneyAccounts.fill(account, method.value));
+            },
             preConfirm: () => {
                 const amount = parseFloat(document.getElementById('payAmount').value);
                 if (!amount || amount <= 0) {
@@ -137,7 +146,8 @@
                     sale: id,
                     amount,
                     payment_method: document.getElementById('payMethod').value,
-                    reference: document.getElementById('payRef').value
+                    reference: document.getElementById('payRef').value,
+                    deposit_to: document.getElementById('payAccount').value || null
                 };
             }
         });

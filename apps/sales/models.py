@@ -134,6 +134,11 @@ class Transaction(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='cash')
     reference = models.CharField(max_length=100, blank=True)
+    # The cash book or bank account the money went into, picked by whoever took
+    # it. Sales Accounting posts the sale's receipt to this ledger.
+    deposit_to = models.ForeignKey('finance.LedgerAccount', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='till_receipts',
+                                   limit_choices_to={'kind__in': ('cash', 'bank'), 'is_group': False})
     created_at = models.DateTimeField(auto_now_add=True)
     
     # Can also be used for generic income/outcome if we expand

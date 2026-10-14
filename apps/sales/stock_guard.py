@@ -8,7 +8,8 @@ dispatch, in front of a customer.
 
     available = on hand - already committed to sales not yet dispatched
 
-Services carry no stock and are never limited by this.
+Services carry no stock and are never limited by this, and nothing is while
+`SystemSettings.allow_negative_stock` (the trial run) is on.
 """
 
 from __future__ import annotations
@@ -58,6 +59,10 @@ def check_lines(branch_id, lines, exclude_sale_id=None):
 
     Returns a list of human-readable problems — empty when the sale is fine.
     """
+    from apps.core.models import SystemSettings
+    if SystemSettings.negative_stock_allowed():
+        return []
+
     wanted = {}
     for product_id, quantity in lines:
         try:

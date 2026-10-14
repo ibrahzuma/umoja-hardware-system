@@ -100,3 +100,130 @@ class NewestFirstOrderingTest(TestCase):
         # Master data stays alphabetical: it is searched by name, not read as a timeline.
         self.assertEqual(list(Customer._meta.ordering), ['name'])
         self.assertEqual(list(Supplier._meta.ordering), ['name'])
+
+
+class TillChangesTest(TestCase):
+    """The trial-run stock switch, a price changed at the till, and the cash
+    book or bank a payment is received into."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.core.models import SystemSettings
+        from apps.finance.models import LedgerAccount
+        from apps.inventory.models import Stock
+        self.settings, _ = SystemSettings.objects.get_or_create(id=1)
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        self.nails = Product.objects.create(name='NAILS', category=cat, cost=1000, price=2000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=5)
+        Stock.objects.create(product=self.nails, branch=self.branch, quantity=0)
+        self.drawer = LedgerAccount.objects.create(kind='cash', name='Shop Drawer')
+        self.revenue = LedgerAccount.objects.create(kind='income', name='Odd Income')
+        self.rep = User.objects.create_user(username='till_rep', password='pw', role='sales_rep')
+        self.rep.groups.add(Group.objects.get(name='Sales Representative'))
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.client.force_login(self.rep)
+
+    def trial(self, on):
+        self.settings.allow_negative_stock = on
+        self.settings.save()
+
+    def sell(self, lines, **payment):
+        body = {'branch': self.branch.id, 'customer_name': 'Walk-in Customer',
+                'items': [{'product': p.id, 'quantity': q, **({'price_at_sale': pr} if pr is not None else {})}
+                          for p, q, pr in lines]}
+        if payment:
+            body['payment_details'] = payment
+        return self.client.post('/api/sales/', body, content_type='application/json')
+
+    # --- 1. trial run --------------------------------------------------------
+    def test_out_of_stock_is_refused_outside_the_trial_run(self):
+        self.trial(False)
+        self.assertEqual(self.sell([(self.nails, 3, None)]).status_code, 400)
+
+    def test_the_trial_run_sells_out_of_stock_items(self):
+        self.trial(True)
+        res = self.sell([(self.nails, 3, None), (self.cement, 9, None)])
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_dispatch_in_the_trial_run_takes_stock_below_zero(self):
+        from apps.inventory.models import Stock
+        self.trial(True)
+        sale = Sale.objects.get(id=self.sell([(self.cement, 8, None)]).json()['id'])
+        sale.status = 'approved'
+        sale.save()
+        self.client.force_login(self.admin)
+        res = self.client.post(f'/api/sales/{sale.id}/dispatch_order/',
+                               {'store_keeper': self.admin.id, 'lorry_info': 'T 123 ABC'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(Stock.objects.get(product=self.cement, branch=self.branch).quantity, -3)
+
+    def test_a_refused_dispatch_moves_no_stock(self):
+        from apps.inventory.models import Stock
+        sale = Sale.objects.create(invoice_number='D-1', branch=self.branch, total_amount=1, status='approved')
+        from apps.sales.models import SaleItem
+        SaleItem.objects.create(sale=sale, product=self.cement, quantity=2, price_at_sale=1, subtotal=2)
+        SaleItem.objects.create(sale=sale, product=self.nails, quantity=4, price_at_sale=1, subtotal=4)
+        self.trial(False)
+        self.client.force_login(self.admin)
+        res = self.client.post(f'/api/sales/{sale.id}/dispatch_order/',
+                               {'store_keeper': self.admin.id, 'lorry_info': 'T 123 ABC'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 400)
+        # The cement line was fine, but nothing leaves on a refused dispatch.
+        self.assertEqual(Stock.objects.get(product=self.cement, branch=self.branch).quantity, 5)
+
+    def test_only_an_admin_flips_the_switch(self):
+        self.trial(False)
+        manager = User.objects.create_user(username='mgr', password='pw', role='manager')
+        self.client.force_login(manager)
+        self.client.post('/settings/', {'company_name': 'Umoja', 'tax_rate': '18',
+                                        'allow_negative_stock': 'on'})
+        self.settings.refresh_from_db()
+        self.assertFalse(self.settings.allow_negative_stock)
+        self.client.force_login(self.admin)
+        self.client.post('/settings/', {'company_name': 'Umoja', 'tax_rate': '18',
+                                        'allow_negative_stock': 'on'})
+        self.settings.refresh_from_db()
+        self.assertTrue(self.settings.allow_negative_stock)
+
+    # --- 2. price ------------------------------------------------------------
+    def test_the_seller_can_change_the_price(self):
+        res = self.sell([(self.cement, 2, 18500)])
+        self.assertEqual(res.status_code, 201, res.content)
+        sale = Sale.objects.get(id=res.json()['id'])
+        self.assertEqual(sale.items.get().price_at_sale, Decimal('18500'))
+        self.assertEqual(sale.total_amount, Decimal('37000'))
+
+    def test_a_negative_price_is_refused(self):
+        self.assertEqual(self.sell([(self.cement, 1, -5)]).status_code, 400)
+
+    # --- 4. received into ----------------------------------------------------
+    def test_the_payment_records_where_the_money_went(self):
+        res = self.sell([(self.cement, 1, None)], method='cash', amount=20000, account=self.drawer.id)
+        self.assertEqual(res.status_code, 201, res.content)
+        txn = Transaction.objects.get(sale_id=res.json()['id'])
+        self.assertEqual(txn.deposit_to, self.drawer)
+
+    def test_money_cannot_be_received_into_an_income_ledger(self):
+        res = self.sell([(self.cement, 1, None)], method='cash', amount=20000, account=self.revenue.id)
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(Sale.objects.exists())
+
+    def test_the_seller_sees_the_cash_books_and_banks(self):
+        rows = self.client.get('/api/transactions/money_accounts/').json()
+        names = {r['name'] for r in rows}
+        self.assertIn('Shop Drawer', names)
+        self.assertNotIn('Odd Income', names)
+        self.assertTrue(all(r['kind'] in ('cash', 'bank') for r in rows))
+
+    def test_the_pos_page_renders(self):
+        res = self.client.get('/sales/pos/')
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'id="itemPicker"')
+        self.assertContains(res, 'id="receivedInto"')

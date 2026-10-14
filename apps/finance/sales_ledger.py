@@ -52,9 +52,21 @@ def _paid_and_methods(sale):
             continue
         paid += txn.amount or ZERO
         label = METHOD_LABELS.get(txn.payment_method, txn.payment_method)
+        if label and txn.deposit_to_id and txn.deposit_to:
+            label = f'{label} → {txn.deposit_to.name}'
         if label and label not in methods:
             methods.append(label)
-    return paid, ', '.join(methods)
+    return paid, ', '.join(methods)[:120]
+
+
+def till_account(sale):
+    """The cash book or bank the seller said the money went into — the latest
+    payment that named one. Sales Accounting offers it when posting."""
+    if sale is None:
+        return None
+    named = [t for t in sale.transactions.all()
+             if t.transaction_type == 'income' and t.deposit_to_id]
+    return max(named, key=lambda t: (t.created_at, t.id)).deposit_to if named else None
 
 
 def _cost_and_commission(sale):
@@ -303,7 +315,8 @@ def post_to_books(entry, user, request=None):
     lines = []
     received = min(paid, total)
     if received > 0:
-        lines.append({'account': _money_ledger(settings, entry.confirmed_method).id,
+        money = entry.confirmed_account or _money_ledger(settings, entry.confirmed_method)
+        lines.append({'account': money.id,
                       'side': 'debit', 'amount': str(received),
                       'narration': f'Received ({entry.get_confirmed_method_display() or "cash"})'
                                    + (f' {entry.confirmed_reference}' if entry.confirmed_reference else '')})

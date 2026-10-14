@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -63,6 +64,11 @@
                         </div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Received Into</label>
+                        <select class="form-select" id="payAccount"></select>
+                        <div class="form-text">The cash book or bank account the money went into.</div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Amount</label>
                         <input type="number" step="0.01" class="form-control" id="payAmount" required>
                     </div>
@@ -79,6 +85,7 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/money_accounts.js' %}"></script>
 <script>
     let creditSales = [];
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
@@ -135,8 +142,11 @@
         document.getElementById('payAmount').value = Math.round(Number(sale.balance)); // Default to full balance (numeric for input)
         document.getElementById('payAmount').max = sale.balance; // Prevent overpayment? Optional.
 
+        MoneyAccounts.fill(document.getElementById('payAccount'), document.getElementById('payMethod').value);
         paymentModal.show();
     }
+    document.getElementById('payMethod').addEventListener('change', e =>
+        MoneyAccounts.fill(document.getElementById('payAccount'), e.target.value));
 
     document.getElementById('paymentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -145,6 +155,7 @@
             sale: document.getElementById('saleId').value,
             amount: document.getElementById('payAmount').value,
             payment_method: document.getElementById('payMethod').value,
+            deposit_to: document.getElementById('payAccount').value || null,
             transaction_type: 'income'
         };
 

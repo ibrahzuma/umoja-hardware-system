@@ -170,6 +170,11 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Received Into</label>
+                        <select class="form-select" id="confirmAccount" required></select>
+                        <small class="text-muted" id="confirmAccountHint">The cash book or bank account the books debit.</small>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Amount Received</label>
                         <input type="number" step="0.01" min="1" class="form-control" id="confirmAmount" required>
                     </div>
@@ -201,6 +206,7 @@
 {% load static %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="{% static 'js/month_group.js' %}"></script>
+<script src="{% static 'js/money_accounts.js' %}"></script>
 <script>
     let entries = [];
 
@@ -208,6 +214,8 @@
         loadBranches();
         loadEntries();
         document.getElementById('confirmForm').addEventListener('submit', submitConfirm);
+        document.getElementById('confirmMethod').addEventListener('change', e =>
+            MoneyAccounts.fill(document.getElementById('confirmAccount'), e.target.value));
     });
 
     function money(v) {
@@ -370,7 +378,9 @@
         if (e.payment_status === 'confirmed') {
             return '<span class="badge bg-success">Confirmed</span>'
                 + '<div><small class="text-muted">' + money(e.confirmed_amount) + ' by '
-                + escapeHtml(e.confirmed_method || '') + '</small></div>'
+                + escapeHtml(e.confirmed_method || '')
+                + (e.confirmed_account_name ? ' into ' + escapeHtml(e.confirmed_account_name) : '')
+                + '</small></div>'
                 + (e.invoice_document
                     ? '<div><a href="' + e.invoice_document + '" target="_blank" class="small">'
                       + '<i class="bi bi-paperclip"></i> Invoice</a></div>'
@@ -409,7 +419,14 @@
         document.getElementById('confirmInvoice').value =
             e.invoice_number + '  -  ' + e.customer_name;
         document.getElementById('confirmAmount').value = e.total_amount;
-        document.getElementById('confirmMethod').value = 'cash';
+        // Start from where the seller said the money went.
+        const till = e.till_account;
+        const method = till && till.kind === 'bank' ? 'bank' : 'cash';
+        document.getElementById('confirmMethod').value = method;
+        MoneyAccounts.fill(document.getElementById('confirmAccount'), method, till ? till.id : null);
+        document.getElementById('confirmAccountHint').innerText = till
+            ? 'The seller recorded it as received into ' + till.name + '.'
+            : 'The seller did not say — pick the cash book or bank account the books debit.';
         document.getElementById('confirmReference').value = '';
         document.getElementById('confirmFile').value = '';
         if (!confirmModal) {
@@ -430,6 +447,7 @@
         const body = new FormData();
         body.append('method', document.getElementById('confirmMethod').value);
         body.append('amount', document.getElementById('confirmAmount').value);
+        body.append('account', document.getElementById('confirmAccount').value);
         body.append('reference', document.getElementById('confirmReference').value);
         body.append('invoice_document', file);
 

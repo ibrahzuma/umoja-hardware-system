@@ -88,6 +88,23 @@
                         </div>
                     </div>
 
+                    <hr>
+                    <h5 class="text-secondary mb-3">Stock</h5>
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" role="switch" id="allowNegativeStock"
+                               name="allow_negative_stock" {% if settings.allow_negative_stock %}checked{% endif %}
+                               {% if not can_set_trial %}disabled{% endif %}>
+                        <label class="form-check-label fw-semibold" for="allowNegativeStock">
+                            Trial run: allow selling items with zero or negative stock
+                        </label>
+                    </div>
+                    <div class="form-text mb-3">
+                        While this is on, the web POS takes sales whatever the stock rows say, and
+                        dispatch takes the stock below zero. Switch it off once opening stock has been counted in —
+                        from then on nothing is sold that is not on the shelf.
+                        {% if not can_set_trial %}<br><em>Only an Admin can change this.</em>{% endif %}
+                    </div>
+
                     <div class="d-flex justify-content-end mt-4">
                         <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Settings</button>
                     </div>

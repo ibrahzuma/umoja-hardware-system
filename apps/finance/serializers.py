@@ -185,6 +185,15 @@ class SalesLedgerEntrySerializer(serializers.ModelSerializer):
     posted_by_name = serializers.CharField(source='posted_by.username', read_only=True, default='')
     balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     voucher = serializers.SerializerMethodField()
+    till_account = serializers.SerializerMethodField()
+    confirmed_account_name = serializers.CharField(source='confirmed_account.name', read_only=True,
+                                                   default='')
+
+    def get_till_account(self, obj):
+        """The cash book or bank the seller said the money went into."""
+        from .sales_ledger import till_account
+        ledger = till_account(obj.sale)
+        return {'id': ledger.id, 'name': ledger.name, 'kind': ledger.kind} if ledger else None
 
     def get_voucher(self, obj):
         """The Sales voucher the Post button wrote into the General Ledger."""

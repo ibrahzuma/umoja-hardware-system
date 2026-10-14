@@ -1730,3 +1730,55 @@ class SalesAccountingPostsToTheBooksTest(LedgerTestCase):
         entry.refresh_from_db()
         self.assertEqual(entry.status, 'pending')
         self.assertFalse(Voucher.objects.filter(sales_entry=entry).exists())
+
+
+class SalesPostToTheAccountTheSellerChoseTest(SalesAccountingPostsToTheBooksTest):
+    """The seller says which cash book or bank the money went into; Sales
+    Accounting posts the receipt there instead of always the Main Cash Book."""
+
+    def setUp(self):
+        super().setUp()
+        self.drawer = LedgerAccount.objects.create(kind='cash', name='Shop Drawer')
+
+    def pay_at_till(self, entry, account, amount):
+        Transaction.objects.create(sale=entry.sale, amount=Decimal(amount),
+                                   payment_method='cash', deposit_to=account)
+
+    def test_the_sellers_cash_book_is_debited(self):
+        entry = self.make_sale('RA-1', 80000)
+        self.pay_at_till(entry, self.drawer, 80000)
+        res = self.post_entry(entry)
+        self.assertEqual(res.status_code, 200, res.content)
+        voucher = Voucher.objects.get(sales_entry=entry)
+        self.assertIn((self.drawer.id, Decimal('80000'), Decimal('0')), self.gl(voucher))
+        entry.refresh_from_db()
+        self.assertEqual(entry.confirmed_account, self.drawer)
+
+    def test_the_accountant_can_say_otherwise(self):
+        entry = self.make_sale('RA-2', 50000)
+        self.pay_at_till(entry, self.drawer, 50000)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.accountant)
+        res = self.client.post(f'/api/sales-ledger/{entry.id}/post_entry/', {
+            'method': 'bank', 'account': self.bank_ledger.id,
+            'invoice_document': SimpleUploadedFile('inv.pdf', b'%PDF-1.4', 'application/pdf')})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIn((self.bank_ledger.id, Decimal('50000'), Decimal('0')),
+                      self.gl(Voucher.objects.get(sales_entry=entry)))
+
+    def test_only_a_cash_book_or_bank_will_do(self):
+        entry = self.make_sale('RA-3', 50000)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.accountant)
+        res = self.client.post(f'/api/sales-ledger/{entry.id}/post_entry/', {
+            'method': 'cash', 'account': self.sales.id,
+            'invoice_document': SimpleUploadedFile('inv.pdf', b'%PDF-1.4', 'application/pdf')})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(Voucher.objects.filter(sales_entry=entry).exists())
+
+    def test_the_entry_offers_the_sellers_account(self):
+        entry = self.make_sale('RA-4', 10000)
+        self.pay_at_till(entry, self.drawer, 10000)
+        self.client.force_login(self.accountant)
+        row = self.client.get(f'/api/sales-ledger/{entry.id}/').json()
+        self.assertEqual(row['till_account']['id'], self.drawer.id)

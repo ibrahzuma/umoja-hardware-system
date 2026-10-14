@@ -510,6 +510,19 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   Services (`product_type='service'`) are never stock-limited, on the sale *or* at dispatch. The guard
   lives on the serializer, not in a screen, so it holds for the web POS, the Android app and any other
   client; both POS screens also check it up front so nobody keys a whole order first.
+  **The trial run switches all of that off:** `SystemSettings.allow_negative_stock` (Admin only, on
+  `/settings/`) makes `check_lines` pass everything and lets dispatch take `Stock.quantity` below zero
+  (creating the row if there is none). Dispatch checks every line before it moves any stock, inside one
+  transaction, so a refused dispatch leaves the shelves as they were. The Android app still checks stock
+  on the phone and does not read the switch.
+- **The price on a POS line is the seller's.** `price_at_sale` is sent per line (list price by default,
+  editable in the cart, flagged but allowed below cost); the serializer only refuses a negative one.
+- **"Received into".** Every till payment can name the cash book or bank ledger the money went into —
+  `Transaction.deposit_to`, limited to live cash/bank ledgers (`sales/serializers.py::money_account`), listed
+  for any signed-in user at `/api/transactions/money_accounts/` and filled by `static/js/money_accounts.js`
+  on the POS, Credit Sales, Debtors and Sales Accounting screens. `post_entry` takes `account`, defaulting to
+  the seller's choice (`sales_ledger.till_account`), stores it as `SalesLedgerEntry.confirmed_account`, and
+  `post_to_books` debits it; only when neither names one does it fall back to the Main Cash Book / default bank.
 - **Credit sales take an optional deposit** in the POS (`apps/sales/templates/sales/pos.html`), recorded as a
   `Transaction`; the "credit" filter on `/api/sales/?status=credit` annotates paid totals and returns underpaid sales.
 - **`Sale.total_amount` is declared twice in the model** (`apps/sales/models.py`). Known quirk — the second

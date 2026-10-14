@@ -24,7 +24,7 @@ from apps.core.notify import notify
 from apps.core.models import SystemSettings
 from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
 from .statements import profit_and_loss, cash_flow, balance_sheet, period_from
-from .sales_ledger import post_to_books
+from .sales_ledger import post_to_books, till_account
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -807,7 +807,7 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
     The only things that move are `post` and `query`."""
     queryset = SalesLedgerEntry.objects.select_related(
         'sale', 'branch', 'sold_by', 'posted_by'
-    ).prefetch_related('vouchers').all()
+    ).prefetch_related('vouchers', 'sale__transactions__deposit_to').all()
     serializer_class = SalesLedgerEntrySerializer
     permission_classes = [permissions.IsAuthenticated, IsAccounting]
     filterset_fields = ['status', 'settlement', 'branch', 'sold_by']
@@ -845,6 +845,19 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         if document is None and not entry.invoice_document:
             return Response({'detail': 'Attach the invoice for this sale.'}, status=400)
 
+        # Where the money went: what Accounts picked, else what the seller said.
+        raw_account = request.data.get('account')
+        if raw_account not in (None, ''):
+            account = (LedgerAccount.objects
+                       .filter(pk=raw_account, kind__in=LedgerAccount.MONEY_KINDS,
+                               is_group=False, is_active=True).first()
+                       if str(raw_account).isdigit() else None)
+            if account is None:
+                return Response({'detail': 'Pick the cash book or bank account the money went into.'},
+                                status=400)
+        else:
+            account = till_account(entry.sale)
+
         raw_amount = request.data.get('amount')
         try:
             amount = (Decimal(str(raw_amount)) if raw_amount not in (None, '')
@@ -867,6 +880,7 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         entry.confirmed_method = method
         entry.confirmed_amount = amount
         entry.confirmed_reference = (request.data.get('reference') or '').strip()
+        entry.confirmed_account = account
         entry.confirmed_by = request.user
         entry.confirmed_at = now
         if document is not None:
