@@ -59,6 +59,7 @@ split all read off the accounting lines instead.
         {% if header.supplier %}<div class="col-md-3">{% include "finance/includes/field.html" with field=header.supplier %}</div>{% endif %}
         {% if header.payment_status %}<div class="col-md-2">{% include "finance/includes/field.html" with field=header.payment_status %}</div>{% endif %}
         {% if header.reference %}<div class="col-md-{% if header.invoice_number %}1{% else %}3{% endif %}">{% include "finance/includes/field.html" with field=header.reference %}</div>{% endif %}
+        {% if header.branch %}<div class="col-md-2">{% include "finance/includes/field.html" with field=header.branch %}</div>{% endif %}
         {% if header.multi_currency %}
           <div class="col-md-2">{% include "finance/includes/field.html" with field=header.currency %}</div>
           <div class="col-md-2" id="rateWrapper">{% include "finance/includes/field.html" with field=header.exchange_rate %}</div>

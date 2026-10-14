@@ -215,7 +215,8 @@
         loadEntries();
         document.getElementById('confirmForm').addEventListener('submit', submitConfirm);
         document.getElementById('confirmMethod').addEventListener('change', e =>
-            MoneyAccounts.fill(document.getElementById('confirmAccount'), e.target.value));
+            MoneyAccounts.fill(document.getElementById('confirmAccount'), e.target.value, null, confirmBranch));
+        
     });
 
     function money(v) {
@@ -411,6 +412,7 @@
     // Posting a sale and saying its money is in are one act: this collects the
     // method and the invoice, then does both.
     let confirmModal;
+    let confirmBranch = null;
 
     function openConfirm(id) {
         const e = entries.find(x => x.id === id);
@@ -423,7 +425,8 @@
         const till = e.till_account;
         const method = till && till.kind === 'bank' ? 'bank' : 'cash';
         document.getElementById('confirmMethod').value = method;
-        MoneyAccounts.fill(document.getElementById('confirmAccount'), method, till ? till.id : null);
+        confirmBranch = e.branch;
+        MoneyAccounts.fill(document.getElementById('confirmAccount'), method, till ? till.id : null, e.branch);
         document.getElementById('confirmAccountHint').innerText = till
             ? 'The seller recorded it as received into ' + till.name + '.'
             : 'The seller did not say — pick the cash book or bank account the books debit.';

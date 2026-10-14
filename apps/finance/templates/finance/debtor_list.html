@@ -97,7 +97,7 @@
                 <td>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewInvoice(${s.id})">View</button>
                     <button class="btn btn-sm btn-outline-success"
-                            onclick="recordPayment(${s.id}, '${customer}', ${owed})">Record Payment</button>
+                            onclick="recordPayment(${s.id}, '${customer}', ${owed}, ${s.branch || 'null'})">Record Payment</button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -112,7 +112,7 @@
 
     // Records money received against a credit sale — the same Transaction the
     // Credit Follow-up screen writes, so both screens agree on what is owed.
-    async function recordPayment(id, customer, outstanding) {
+    async function recordPayment(id, customer, outstanding, branch) {
         const { value: form, isConfirmed } = await Swal.fire({
             title: `Record payment — ${customer}`,
             html: `
@@ -133,8 +133,8 @@
             didOpen: () => {
                 const method = document.getElementById('payMethod');
                 const account = document.getElementById('payAccount');
-                MoneyAccounts.fill(account, method.value);
-                method.addEventListener('change', () => MoneyAccounts.fill(account, method.value));
+                MoneyAccounts.fill(account, method.value, null, branch);
+                method.addEventListener('change', () => MoneyAccounts.fill(account, method.value, null, branch));
             },
             preConfirm: () => {
                 const amount = parseFloat(document.getElementById('payAmount').value);

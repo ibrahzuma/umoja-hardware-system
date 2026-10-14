@@ -2,6 +2,7 @@ from django.shortcuts import render
 from rest_framework import viewsets, permissions
 from apps.users.permissions import IsSales, CanManageVehicles, CanApproveSales
 from rest_framework.decorators import action
+from django.db.models import Q
 from rest_framework.response import Response
 from .models import Sale, SaleItem, Transaction, Customer, Vehicle, Quotation, QuotationItem
 from .serializers import SaleSerializer, SaleItemSerializer, TransactionSerializer, CustomerSerializer, VehicleSerializer, QuotationSerializer, QuotationItemSerializer
@@ -110,6 +111,11 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        # Staff tied to one shop see that shop's sales only.
+        from apps.users.permissions import home_branch
+        home = home_branch(self.request.user)
+        if home is not None:
+            queryset = queryset.filter(branch=home)
         status = self.request.query_params.get('status')
         if status == 'credit':
             from django.db.models import Sum, F, DecimalField
@@ -357,8 +363,11 @@ class POSView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         from apps.core.models import SystemSettings
+        from apps.users.permissions import home_branch
         context = super().get_context_data(**kwargs)
         context['allow_negative_stock'] = SystemSettings.negative_stock_allowed()
+        home = home_branch(self.request.user)
+        context['home_branch_id'] = home.pk if home is not None else ''
         return context
 
 class SaleListView(LoginRequiredMixin, TemplateView):
@@ -466,18 +475,31 @@ class TransactionViewSet(viewsets.ModelViewSet):
     serializer_class = TransactionSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+    def get_queryset(self):
+        from apps.users.permissions import home_branch
+        queryset = super().get_queryset()
+        home = home_branch(self.request.user)
+        return queryset.filter(sale__branch=home) if home is not None else queryset
+
     @action(detail=False, methods=['GET'], permission_classes=[permissions.IsAuthenticated])
     def money_accounts(self, request):
         """The cash books and bank accounts a payment can be received into —
         what the seller picks from as "Received into". Names only, no balances."""
         from apps.finance.models import LedgerAccount
-        from apps.finance.vouchers import open_the_books
+        from apps.finance.vouchers import open_the_books, ensure_branch_cash_books
+        from apps.users.permissions import home_branch
         open_the_books()
+        ensure_branch_cash_books()
         rows = (LedgerAccount.objects
                 .filter(kind__in=LedgerAccount.MONEY_KINDS, is_group=False, is_active=True)
-                .order_by('kind', 'name', 'id')
-                .values('id', 'code', 'name', 'kind'))
-        return Response(list(rows))
+                .order_by('kind', 'name', 'id'))
+        # A shop's cash book is offered at that shop only; banks and
+        # company-wide cash books everywhere.
+        home = home_branch(request.user)
+        branch = home.pk if home is not None else request.query_params.get('branch')
+        if branch and str(branch).isdigit():
+            rows = rows.filter(Q(branch__isnull=True) | Q(branch_id=int(branch)))
+        return Response(list(rows.values('id', 'code', 'name', 'kind', 'branch')))
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -528,6 +550,12 @@ class QuotationViewSet(viewsets.ModelViewSet):
     queryset = Quotation.objects.all().order_by('-created_at')
     serializer_class = QuotationSerializer
     permission_classes = [permissions.IsAuthenticated, IsSales]
+
+    def get_queryset(self):
+        from apps.users.permissions import home_branch
+        queryset = super().get_queryset()
+        home = home_branch(self.request.user)
+        return queryset.filter(branch=home) if home is not None else queryset
 
     def perform_create(self, serializer):
         # Assign current user and ensure Branch is set (defaulting to first or user's branch logic)

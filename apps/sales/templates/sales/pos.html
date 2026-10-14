@@ -252,6 +252,8 @@
 <script>
     // Trial run: sell whatever the stock rows say (SystemSettings.allow_negative_stock).
     const ALLOW_NEGATIVE_STOCK = {{ allow_negative_stock|yesno:"true,false" }};
+    // The seller's own shop when they are tied to one (users.permissions.home_branch).
+    const HOME_BRANCH = {{ home_branch_id|default:"null" }};
     // --- State ---
     let products = [];
     let cart = [];
@@ -297,6 +299,7 @@
             currentBranch = parseInt(e.target.value);
             // Stock is per branch, so the cart starts again.
             clearCart();
+            fillReceivedInto();
         });
         document.getElementById('depositMethod').addEventListener('change', fillReceivedInto);
         document.getElementById('paymentForm').addEventListener('submit', processSale);
@@ -344,7 +347,7 @@
         const credit = selectedMethod() === 'credit';
         // On credit with no deposit no money moves, so there is nowhere to put it.
         document.getElementById('receivedIntoSection').classList.toggle('d-none', credit && getDeposit() <= 0);
-        MoneyAccounts.fill(document.getElementById('receivedInto'), moneyMethod());
+        MoneyAccounts.fill(document.getElementById('receivedInto'), moneyMethod(), null, currentBranch);
     }
 
     // --- Money helpers (subtotal / discount / total) ---
@@ -387,7 +390,13 @@
             const stocks = Array.isArray(stockData) ? stockData : stockData.results;
             customers = Array.isArray(custData) ? custData : custData.results;
 
-            // Setup Branch Selector
+            // Setup Branch Selector. Staff tied to a shop see that shop only.
+            if (HOME_BRANCH) {
+                branches = branches.filter(b => b.id === HOME_BRANCH);
+                currentBranch = HOME_BRANCH;
+                branchSelect.disabled = true;
+                branchSelect.title = 'You sell from this shop';
+            }
             branchSelect.innerHTML = '';
             branches.forEach((b, idx) => {
                 const opt = document.createElement('option');

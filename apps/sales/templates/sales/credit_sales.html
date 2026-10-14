@@ -142,11 +142,14 @@
         document.getElementById('payAmount').value = Math.round(Number(sale.balance)); // Default to full balance (numeric for input)
         document.getElementById('payAmount').max = sale.balance; // Prevent overpayment? Optional.
 
-        MoneyAccounts.fill(document.getElementById('payAccount'), document.getElementById('payMethod').value);
+        payBranch = sale.branch;
+        MoneyAccounts.fill(document.getElementById('payAccount'), document.getElementById('payMethod').value,
+                           null, payBranch);
         paymentModal.show();
     }
     document.getElementById('payMethod').addEventListener('change', e =>
-        MoneyAccounts.fill(document.getElementById('payAccount'), e.target.value));
+        MoneyAccounts.fill(document.getElementById('payAccount'), e.target.value, null, payBranch));
+    let payBranch = null;
 
     document.getElementById('paymentForm').addEventListener('submit', async (e) => {
         e.preventDefault();

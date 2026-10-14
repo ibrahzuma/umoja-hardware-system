@@ -618,7 +618,7 @@ class VoucherReversalService:
 
         reversal = Voucher(
             voucher_type='journal', financial_year=year, date=reversal_date,
-            customer=original.customer, supplier=original.supplier,
+            customer=original.customer, supplier=original.supplier, branch=original.branch,
             reference=original.number, currency=original.currency,
             exchange_rate=original.exchange_rate, status='draft',
             description=(f"Reversal of {original.number}" + (f": {reason}" if reason else "")),

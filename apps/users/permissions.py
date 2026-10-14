@@ -1,6 +1,28 @@
 from rest_framework import permissions
 
 
+# Roles that work across every shop: they oversee, approve, or keep the books.
+ALL_SHOP_ROLES = ('admin', 'manager', 'accountant', 'sales_credit_manager')
+
+
+def home_branch(user):
+    """The one shop this user sells from, or None when they work across all.
+
+    Admins, managers, the accountant and the Sales & Credit Manager see every
+    shop. Everyone else with a shop set on their user record is tied to it:
+    the POS opens on it and cannot be switched, a sale for another shop is
+    refused, and the sales lists show that shop's sales only. A user with no
+    shop set is not restricted — give them one to tie them to it.
+    """
+    if not (user and user.is_authenticated) or is_privileged(user):
+        return None
+    if (getattr(user, 'role', '') in ALL_SHOP_ROLES
+            or getattr(user, 'is_accountant', False) or getattr(user, 'is_sales_manager', False)
+            or user.groups.filter(name__in=['Manager', 'manager']).exists()):
+        return None
+    return getattr(user, 'branch', None)
+
+
 def is_privileged(user):
     """Top-level access. Django superusers and the in-app 'admin' role can use
     every endpoint — they oversee the whole system. Keep this the single source

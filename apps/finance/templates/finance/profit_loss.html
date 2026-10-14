@@ -25,7 +25,13 @@
                 <label class="form-label small text-muted">To</label>
                 <input type="date" id="dateTo" class="form-control" onchange="load()">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Shop</label>
+                <select id="branchFilter" class="form-select" onchange="load()">
+                    <option value="">All shops</option>
+                </select>
+            </div>
+            <div class="col-md-3">
                 <div class="btn-group btn-group-sm" role="group">
                     <button class="btn btn-outline-secondary" onclick="setPeriod('month')">This month</button>
                     <button class="btn btn-outline-secondary" onclick="setPeriod('last')">Last month</button>
@@ -75,6 +81,7 @@
 
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-white fw-bold" id="statementTitle">Statement</div>
+    <div class="alert alert-info small rounded-0 mb-0 py-2 d-none" id="branchNote"></div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table data-no-paginate class="table align-middle mb-0">
@@ -101,7 +108,19 @@
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', async function () {
+        // The shops to pick from; the statement loads once they are in.
+        try {
+            const res = await fetch('/api/branches/');
+            const data = res.ok ? await res.json() : [];
+            const select = document.getElementById('branchFilter');
+            (Array.isArray(data) ? data : (data.results || [])).forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = b.name;
+                select.appendChild(opt);
+            });
+        } catch (e) { console.error(e); }
         setPeriod('month');
     });
 
@@ -139,7 +158,9 @@
         const from = document.getElementById('dateFrom').value;
         const to = document.getElementById('dateTo').value;
         try {
-            const res = await fetch('/api/profit-loss/?date_from=' + from + '&date_to=' + to);
+            const branch = document.getElementById('branchFilter').value;
+            const res = await fetch('/api/profit-loss/?date_from=' + from + '&date_to=' + to
+                                    + (branch ? '&branch=' + branch : ''));
             if (!res.ok) throw new Error('status ' + res.status);
             render(await res.json());
         } catch (e) {
@@ -165,8 +186,12 @@
     }
 
     function render(d) {
+        const shop = document.getElementById('branchFilter');
         document.getElementById('statementTitle').innerText =
-            'Statement — ' + d.date_from + ' to ' + d.date_to;
+            'Statement — ' + d.date_from + ' to ' + d.date_to
+            + (d.branch ? ' — ' + shop.options[shop.selectedIndex].text : '');
+        document.getElementById('branchNote').classList.toggle('d-none', !d.branch_note);
+        document.getElementById('branchNote').innerText = d.branch_note || '';
         document.getElementById('statRevenue').innerText = money(d.revenue);
         document.getElementById('statSales').innerText =
             d.sales_count + ' posted sale' + (Number(d.sales_count) === 1 ? '' : 's');

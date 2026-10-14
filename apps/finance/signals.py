@@ -74,3 +74,11 @@ for _model, _uid in (('finance.BankAccount', 'ledger_for_bank'),
                      ('sales.Customer', 'ledger_for_customer'),
                      ('inventory.Supplier', 'ledger_for_supplier')):
     post_save.connect(_ledger_follows, sender=_model, dispatch_uid=_uid, weak=False)
+
+
+@receiver(post_save, sender='inventory.Branch', dispatch_uid='ledger_branch_cash_book')
+def _branch_gets_a_cash_book(sender, instance, created, **kwargs):
+    """A new shop gets its own cash book (see vouchers.ensure_branch_cash_books)."""
+    if created:
+        from .vouchers import ensure_branch_cash_books
+        ensure_branch_cash_books()

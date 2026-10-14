@@ -939,6 +939,12 @@ class LedgerAccount(models.Model):
                                     help_text="Which side of the trial balance this ledger belongs to; "
                                               "taken from the kind when left blank")
     category = models.CharField(max_length=25, choices=CATEGORIES, blank=True)
+    # A cash book kept at one shop. Each shop gets its own (see
+    # vouchers.ensure_branch_cash_books); banks and company-wide cash books
+    # leave it empty and are offered at every shop.
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='ledgers',
+                               help_text="The shop this cash book belongs to, if it is a shop's own")
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
                                related_name='children',
                                help_text="A group account, or a customer/supplier control account")
@@ -1287,6 +1293,11 @@ class Voucher(models.Model):
     description = models.TextField(blank=True)
     reference = models.CharField(max_length=100, blank=True,
                                  help_text="Cheque number, external reference, etc.")
+    # Which shop the voucher belongs to, so a shop's P&L can count it. Empty
+    # means company-wide: it counts in the all-shops P&L only.
+    branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='vouchers',
+                               help_text="The shop this voucher belongs to (blank: company-wide)")
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0,
                                 help_text="Total of the debit side (which equals the credit side)")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='posted', db_index=True)

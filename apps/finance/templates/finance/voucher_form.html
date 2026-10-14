@@ -65,7 +65,14 @@
                 <input type="text" id="vEfd" class="form-control" maxlength="50" placeholder="EFD receipt number, if any">
             </div>
             {% endif %}
-            <div class="{% if is_invoice %}col-md-12{% else %}col-md-9{% endif %}">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Shop</label>
+                <select id="vBranch" class="form-select">
+                    <option value="">Company-wide</option>
+                    {% for b in branches %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="{% if is_invoice %}col-md-9{% else %}col-md-6{% endif %}">
                 <label class="form-label small text-muted">Description</label>
                 <input type="text" id="vDescription" class="form-control" maxlength="500"
                        placeholder="What this voucher is for">
@@ -520,6 +527,7 @@
             voucher_type: VOUCHER_TYPE,
             date: document.getElementById('vDate').value,
             description: document.getElementById('vDescription').value,
+            branch: document.getElementById('vBranch').value || null,
             lines: lines.map(l => ({
                 side: l.side,
                 account: l.account,

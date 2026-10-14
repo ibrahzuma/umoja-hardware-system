@@ -118,6 +118,13 @@ class SaleSerializer(serializers.ModelSerializer):
         if payment.get('amount'):
             money_account(payment.get('account'), 'payment_details')
         branch = attrs.get('branch') or getattr(self.instance, 'branch', None)
+        request = self.context.get('request')
+        if request is not None and branch is not None:
+            from apps.users.permissions import home_branch
+            home = home_branch(request.user)
+            if home is not None and getattr(branch, 'pk', branch) != home.pk:
+                raise serializers.ValidationError(
+                    {'branch': f'You sell from {home.name} only.'})
         if not items or branch is None:
             return attrs
 

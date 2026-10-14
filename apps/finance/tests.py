@@ -1782,3 +1782,133 @@ class SalesPostToTheAccountTheSellerChoseTest(SalesAccountingPostsToTheBooksTest
         self.client.force_login(self.accountant)
         row = self.client.get(f'/api/sales-ledger/{entry.id}/').json()
         self.assertEqual(row['till_account']['id'], self.drawer.id)
+
+
+class ShopsTest(LedgerTestCase):
+    """Several shops: staff are tied to theirs, each shop has its own cash
+    book, and the P&L can be read for one shop."""
+
+    def setUp(self):
+        super().setUp()
+        vouchers.open_the_books()
+        self.other = Branch.objects.create(name='Kariakoo')
+        self.rep = User.objects.create_user(username='rep_k', password='pw', role='sales_rep',
+                                            branch=self.other)
+        self.rep.groups.add(Group.objects.get(name='Sales Representative'))
+
+    def test_who_is_tied_to_a_shop(self):
+        from apps.users.permissions import home_branch
+        self.assertEqual(home_branch(self.rep), self.other)
+        self.accountant.branch = self.other
+        self.accountant.save()
+        self.assertIsNone(home_branch(self.accountant))
+        admin = User.objects.create_superuser(username='boss', password='pw', branch=self.other)
+        self.assertIsNone(home_branch(admin))
+
+    def test_a_seller_cannot_sell_from_another_shop(self):
+        self.client.force_login(self.rep)
+        res = self.client.post('/api/sales/', {'branch': self.branch.id, 'customer_name': 'X',
+                                               'items': []}, content_type='application/json')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('Kariakoo', str(res.json()))
+
+    def test_a_seller_sees_their_shops_sales_only(self):
+        Sale.objects.create(invoice_number='K-1', branch=self.other, total_amount=1, status='pending')
+        Sale.objects.create(invoice_number='M-1', branch=self.branch, total_amount=1, status='pending')
+        self.client.force_login(self.rep)
+        data = self.client.get('/api/sales/').json()
+        rows = data if isinstance(data, list) else data['results']
+        self.assertEqual([r['invoice_number'] for r in rows], ['K-1'])
+        self.client.force_login(self.accountant)
+        data = self.client.get('/api/sales/').json()
+        rows = data if isinstance(data, list) else data['results']
+        self.assertEqual(len(rows), 2)
+
+    def test_each_shop_has_its_own_cash_book(self):
+        # The shop trading all along keeps the Main Cash Book; a new one gets its own.
+        self.cash.refresh_from_db()
+        self.assertEqual(self.cash.branch, self.branch)
+        own = LedgerAccount.objects.get(kind='cash', branch=self.other)
+        self.assertEqual(own.name, 'Cash Book - Kariakoo')
+
+    def test_the_seller_is_offered_their_shops_cash_book(self):
+        self.client.force_login(self.rep)
+        names = {r['name'] for r in self.client.get('/api/transactions/money_accounts/').json()}
+        self.assertIn('Cash Book - Kariakoo', names)
+        self.assertNotIn('Main Cash Book', names)       # another shop's drawer
+        self.assertIn('CRDB Main', names)                # banks are company-wide
+        self.assertIn('Petty Cash', names)               # so is petty cash
+
+    def test_a_shops_cash_sale_lands_in_its_cash_book(self):
+        Sale.objects.create(invoice_number='K-2', branch=self.other, total_amount=Decimal('40000'),
+                            status='approved')
+        entry = SalesLedgerEntry.objects.get(invoice_number='K-2')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.accountant)
+        res = self.client.post(f'/api/sales-ledger/{entry.id}/post_entry/', {
+            'method': 'cash',
+            'invoice_document': SimpleUploadedFile('inv.pdf', b'%PDF-1.4', 'application/pdf')})
+        self.assertEqual(res.status_code, 200, res.content)
+        voucher = Voucher.objects.get(sales_entry=entry)
+        own = LedgerAccount.objects.get(kind='cash', branch=self.other)
+        self.assertTrue(GeneralLedgerEntry.objects.filter(voucher=voucher, account=own,
+                                                          debit=Decimal('40000')).exists())
+        self.assertEqual(voucher.branch, self.other)
+
+    def test_one_shops_profit_and_loss(self):
+        from apps.finance.models import Expense, ExpenseCategory, TaxPayment
+        day = date(2026, 9, 10)
+        for number, shop, total in (('PL-1', self.branch, 100000), ('PL-2', self.other, 30000)):
+            Sale.objects.create(invoice_number=number, branch=shop, total_amount=Decimal(total),
+                                status='approved')
+            SalesLedgerEntry.objects.filter(invoice_number=number).update(status='posted', sale_date=day)
+        cat = ExpenseCategory.objects.create(name='Rent')
+        Expense.objects.create(category=cat, branch=self.other, amount=Decimal('5000'),
+                               date_incurred=day, description='rent')
+        Expense.objects.create(category=cat, branch=self.branch, amount=Decimal('9000'),
+                               date_incurred=day, description='rent')
+        # A voucher naming the shop counts there; a company-wide one does not.
+        self.post('journal', [{'account': self.rent.id, 'side': 'debit', 'amount': '2000'},
+                              {'account': self.cash.id, 'side': 'credit', 'amount': '2000'}])
+        named = Voucher.objects.order_by('-id').first()
+        named.branch = self.other
+        named.save(update_fields=['branch'])
+        self.post('journal', [{'account': self.rent.id, 'side': 'debit', 'amount': '700'},
+                              {'account': self.cash.id, 'side': 'credit', 'amount': '700'}])
+
+        shop = profit_and_loss('2026-09-01', '2026-09-30', branch=self.other.id)
+        self.assertEqual(Decimal(shop['revenue_till']), Decimal('30000'))
+        lines = {l['label']: Decimal(l['amount']) for l in shop['lines']}
+        self.assertEqual(lines['Expenses'], Decimal('5000'))
+        self.assertEqual(lines['Expenses (purchase vouchers)'], Decimal('2000'))
+        self.assertEqual(lines['Taxes paid'], Decimal('0'))
+        self.assertTrue(shop['branch_note'])
+
+        everything = profit_and_loss('2026-09-01', '2026-09-30')
+        self.assertEqual(Decimal(everything['revenue_till']), Decimal('130000'))
+        lines = {l['label']: Decimal(l['amount']) for l in everything['lines']}
+        self.assertEqual(lines['Expenses'], Decimal('14000'))
+        self.assertEqual(lines['Expenses (purchase vouchers)'], Decimal('2700'))
+
+        self.client.force_login(self.accountant)
+        res = self.client.get(f'/api/profit-loss/?date_from=2026-09-01&date_to=2026-09-30&branch={self.other.id}')
+        self.assertEqual(Decimal(res.json()['revenue_till']), Decimal('30000'))
+
+    def test_both_voucher_forms_ask_for_the_shop(self):
+        self.client.force_login(self.accountant)
+        res = self.client.get(reverse('finance:voucher_entry', kwargs={'voucher_type': 'journal'}))
+        self.assertContains(res, 'name="branch"')
+        res = self.client.get(reverse('finance:voucher_new', kwargs={'voucher_type': 'journal'}))
+        self.assertContains(res, 'id="vBranch"')
+        self.assertContains(res, 'Kariakoo')
+
+    def test_a_voucher_posted_through_the_api_keeps_its_shop(self):
+        self.client.force_login(self.accountant)
+        res = self.client.post('/api/vouchers/', {
+            'voucher_type': 'journal', 'date': '2026-09-10', 'description': 'shop rent',
+            'branch': self.other.id,
+            'lines': [{'account': self.rent.id, 'side': 'debit', 'amount': '100'},
+                      {'account': self.cash.id, 'side': 'credit', 'amount': '100'}]},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Voucher.objects.get(pk=res.json()['id']).branch, self.other)

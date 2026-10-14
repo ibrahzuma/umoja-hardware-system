@@ -251,6 +251,16 @@ def _money_ledger(settings, method):
     return cash
 
 
+def _branch_cash_book(entry):
+    """The cash book of the shop the sale was made at, if it has one."""
+    from .models import LedgerAccount
+    from .vouchers import ensure_branch_cash_books
+    if not entry.branch_id:
+        return None
+    ensure_branch_cash_books()
+    return _first(LedgerAccount.objects.filter(kind='cash', branch_id=entry.branch_id))
+
+
 def _customer_ledger(entry):
     """The sale's customer's own sub-ledger, or None for a walk-in."""
     sale = entry.sale
@@ -315,7 +325,9 @@ def post_to_books(entry, user, request=None):
     lines = []
     received = min(paid, total)
     if received > 0:
-        money = entry.confirmed_account or _money_ledger(settings, entry.confirmed_method)
+        money = (entry.confirmed_account
+                 or (_branch_cash_book(entry) if entry.confirmed_method not in _BANK_METHODS else None)
+                 or _money_ledger(settings, entry.confirmed_method))
         lines.append({'account': money.id,
                       'side': 'debit', 'amount': str(received),
                       'narration': f'Received ({entry.get_confirmed_method_display() or "cash"})'
@@ -338,7 +350,8 @@ def post_to_books(entry, user, request=None):
         request=request, reference=entry.invoice_number, draft_only=True,
     )
     voucher.sales_entry = entry
-    voucher.save(update_fields=['sales_entry'])
+    voucher.branch_id = entry.branch_id
+    voucher.save(update_fields=['sales_entry', 'branch'])
     try:
         VoucherPostingService(voucher, user, request).post()
     except VoucherValidationError as exc:

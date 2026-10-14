@@ -162,6 +162,37 @@ def control_account(kind):
     raise ValueError(kind)
 
 
+def ensure_branch_cash_books():
+    """Give every shop its own cash book. Returns how many were created.
+
+    The first time this runs, the shop that has been trading all along keeps
+    the Main Cash Book it already uses: it is tied to the oldest shop rather
+    than duplicated. Every other shop gets "Cash Book - <shop>". Petty Cash
+    and the banks stay company-wide. Cheap when nothing is missing.
+    """
+    from apps.inventory.models import Branch
+    missing = list(Branch.objects.exclude(ledgers__kind='cash').order_by('id'))
+    if not missing:
+        return 0
+    # Seed the chart first: a shop's cash book created into an empty chart
+    # would stop the default ledgers (Main Cash Book among them) being seeded.
+    if not LedgerAccount.objects.filter(kind='cash').exists():
+        sync_chart_of_accounts()
+    created = 0
+    if not LedgerAccount.objects.filter(kind='cash', branch__isnull=False).exists():
+        main = (LedgerAccount.objects
+                .filter(kind='cash', name='Main Cash Book', branch__isnull=True, is_group=False)
+                .order_by('id').first())
+        if main is not None:
+            main.branch = missing.pop(0)
+            main.save(update_fields=['branch'])
+    for branch in missing:
+        LedgerAccount.objects.create(kind='cash', name=f'Cash Book - {branch.name}'[:150],
+                                     branch=branch)
+        created += 1
+    return created
+
+
 def sync_chart_of_accounts():
     """Make sure every bank account, customer and supplier has a ledger, that
     the default ledgers exist, and that each party ledger hangs under its

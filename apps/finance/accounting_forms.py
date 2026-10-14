@@ -235,22 +235,22 @@ CURRENCY_FIELDS = ['currency', 'exchange_rate']
 # the amounts and the VAT ledger are read off the lines (see
 # `drafts.VoucherDraftService`), so there is no second place to get them wrong.
 HEADER_FIELDS = {
-    'sales': ['date', 'invoice_number', 'efd_number', 'description'] + CURRENCY_FIELDS,
-    'purchase': ['date', 'invoice_number', 'efd_number', 'description'] + CURRENCY_FIELDS,
-    'receipt': ['date', 'description'] + CURRENCY_FIELDS,
-    'payment': ['date', 'description'] + CURRENCY_FIELDS,
-    'contra': ['date', 'reference', 'description'] + CURRENCY_FIELDS,
-    'journal': ['date', 'reference', 'description'] + CURRENCY_FIELDS,
+    'sales': ['date', 'invoice_number', 'efd_number', 'branch', 'description'] + CURRENCY_FIELDS,
+    'purchase': ['date', 'invoice_number', 'efd_number', 'branch', 'description'] + CURRENCY_FIELDS,
+    'receipt': ['date', 'branch', 'description'] + CURRENCY_FIELDS,
+    'payment': ['date', 'branch', 'description'] + CURRENCY_FIELDS,
+    'contra': ['date', 'reference', 'branch', 'description'] + CURRENCY_FIELDS,
+    'journal': ['date', 'reference', 'branch', 'description'] + CURRENCY_FIELDS,
 }
 
 
 class VoucherHeaderForm(BootstrapFormMixin, forms.ModelForm):
     class Meta:
         model = Voucher
-        fields = ['date', 'invoice_number', 'efd_number', 'reference', 'description',
+        fields = ['date', 'invoice_number', 'efd_number', 'reference', 'branch', 'description',
                   'currency', 'exchange_rate']
         widgets = {'description': forms.Textarea(attrs={'rows': 2})}
-        labels = {'description': 'Description / narration'}
+        labels = {'description': 'Description / narration', 'branch': 'Shop'}
 
     def __init__(self, *args, voucher_type, **kwargs):
         super().__init__(*args, **kwargs)
@@ -260,6 +260,9 @@ class VoucherHeaderForm(BootstrapFormMixin, forms.ModelForm):
             if name not in keep:
                 del self.fields[name]
         self.fields['date'].widget.attrs.update({'autofocus': True})
+        if 'branch' in self.fields:
+            self.fields['branch'].required = False
+            self.fields['branch'].empty_label = 'Company-wide'
         self._setup_currency()
         if 'invoice_number' in self.fields:
             self.fields['invoice_number'].required = True

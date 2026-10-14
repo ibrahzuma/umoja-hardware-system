@@ -966,7 +966,9 @@ class ProfitLossViewSet(viewsets.ViewSet):
 
     def list(self, request):
         date_from, date_to = period_from(request.query_params)
-        return Response(profit_and_loss(date_from, date_to))
+        branch = request.query_params.get('branch') or ''
+        return Response(profit_and_loss(date_from, date_to,
+                                        int(branch) if branch.isdigit() else None))
 
 
 class CashFlowViewSet(viewsets.ViewSet):
@@ -1297,6 +1299,11 @@ class VoucherViewSet(mixins.CreateModelMixin, mixins.RetrieveModelMixin,
             d.get('voucher_type'), d.get('date'), d.get('description'), d.get('lines'), request.user,
             header={k: d.get(k) for k in ('customer', 'supplier', 'invoice_number', 'efd_number')},
         )
+        # The shop it belongs to, for that shop's P&L; blank is company-wide.
+        branch = str(d.get('branch') or '')
+        if branch.isdigit() and Branch.objects.filter(pk=int(branch)).exists():
+            voucher.branch_id = int(branch)
+            voucher.save(update_fields=['branch'])
         voucher = self.get_queryset().get(pk=voucher.pk)
         return Response(self.get_serializer(voucher).data, status=201)
 
@@ -1506,6 +1513,7 @@ class VoucherFormView(AccountingAccessMixin, TemplateView):
             'credit_kinds': json.dumps(_rule_kinds(credit_rule)),
             'today': date.today().isoformat(),
             'voucher_types': Voucher.TYPES,
+            'branches': Branch.objects.all(),
         })
         return ctx
 

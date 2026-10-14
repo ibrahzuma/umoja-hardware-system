@@ -36,6 +36,8 @@ EXPECTED_MIGRATIONS = [
     "0021_open_the_books",
     "0022_remove_invoice_unique_customer_invoice_number_and_more",
     "0023_voucher_sales_entry",
+    "0024_salesledgerentry_confirmed_account",
+    "0025_ledgeraccount_branch_voucher_branch",
 ]
 
 

@@ -65,7 +65,7 @@ def _voucher_gl():
 
 
 def _ledger_movement(account_type, date_from=None, date_to=None, kinds=None,
-                     exclude_kinds=None):
+                     exclude_kinds=None, branch=None):
     """Movement on one account type over a window, read the way that type is
     read: debit-positive for assets and expenses, credit-positive for income,
     liabilities and equity. So every figure comes back as the positive number
@@ -73,6 +73,8 @@ def _ledger_movement(account_type, date_from=None, date_to=None, kinds=None,
     entry.
     """
     qs = _voucher_gl().filter(account__account_type=account_type)
+    if branch:
+        qs = qs.filter(voucher__branch_id=branch)
     if kinds:
         qs = qs.filter(account__kind__in=kinds)
     if exclude_kinds:
@@ -133,12 +135,18 @@ def _line(label, amount, source, kind='cost'):
 # Profit & loss
 # ---------------------------------------------------------------------------
 
-def profit_and_loss(date_from, date_to):
+def profit_and_loss(date_from, date_to, branch=None):
     """Revenue is **posted sales only** — a sale the accountant has not taken
     up is not in the books, whatever the till did with it. Cash confirmed is
-    reported beside it but never in place of it."""
+    reported beside it but never in place of it.
+
+    With `branch`, one shop's P&L: every source is narrowed to that shop, and
+    vouchers count only when they name it. Taxes paid are company-wide (a tax
+    payment names no shop), so a shop's P&L leaves them out and says so.
+    """
+    at = {'branch_id': branch} if branch else {}
     posted = SalesLedgerEntry.objects.filter(
-        status='posted', sale_date__gte=date_from, sale_date__lte=date_to)
+        status='posted', sale_date__gte=date_from, sale_date__lte=date_to, **at)
 
     sales = posted.aggregate(
         revenue=Sum('total_amount'),
@@ -153,21 +161,21 @@ def profit_and_loss(date_from, date_to):
     confirmed = sales['confirmed'] or ZERO
 
     expenses = _sum(Expense.objects.filter(
-        date_incurred__gte=date_from, date_incurred__lte=date_to))
+        date_incurred__gte=date_from, date_incurred__lte=date_to, **at))
     petty = _sum(PettyCashTransaction.objects.filter(
-        entry_type='out', date__gte=date_from, date__lte=date_to))
+        entry_type='out', date__gte=date_from, date__lte=date_to, **at))
     other_out = _sum(OtherPayment.objects.filter(
-        payment_date__gte=date_from, payment_date__lte=date_to))
-    taxes = _sum(TaxPayment.objects.filter(
+        payment_date__gte=date_from, payment_date__lte=date_to, **at))
+    taxes = ZERO if branch else _sum(TaxPayment.objects.filter(
         payment_date__gte=date_from, payment_date__lte=date_to))
     other_income = _sum(Income.objects.filter(
-        date_received__gte=date_from, date_received__lte=date_to))
+        date_received__gte=date_from, date_received__lte=date_to, **at))
 
     # The voucher ledger's own income and expense over the same window. These
     # are the invoices and journals the till never saw, so they are added to
     # rather than reconciled against the figures above (see the module note).
-    voucher_income = _ledger_movement(LedgerAccount.INCOME, date_from, date_to)
-    voucher_expense = _ledger_movement(LedgerAccount.EXPENSE, date_from, date_to)
+    voucher_income = _ledger_movement(LedgerAccount.INCOME, date_from, date_to, branch=branch)
+    voucher_expense = _ledger_movement(LedgerAccount.EXPENSE, date_from, date_to, branch=branch)
 
     gross_profit = revenue + voucher_income - cost
     operating_costs = expenses + petty + other_out + commission + voucher_expense
@@ -177,6 +185,9 @@ def profit_and_loss(date_from, date_to):
     return {
         'date_from': str(date_from),
         'date_to': str(date_to),
+        'branch': branch,
+        'branch_note': ('One shop only: taxes paid are company-wide and are left out, '
+                        'and a voucher counts only if it names this shop.') if branch else '',
         'sales_count': posted.count(),
         'revenue': str(revenue + voucher_income),
         'revenue_till': str(revenue),

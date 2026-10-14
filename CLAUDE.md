@@ -515,6 +515,23 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   (creating the row if there is none). Dispatch checks every line before it moves any stock, inside one
   transaction, so a refused dispatch leaves the shelves as they were. The Android app still checks stock
   on the phone and does not read the switch.
+- **Several shops (`inventory.Branch`).** Stock, sales, POs/GRNs, expenses, income and petty cash all carry
+  their shop. Three things make shops separate rather than just labelled:
+  - **Staff are tied to their shop** by `users.permissions.home_branch(user)`: anyone with `User.branch` set
+    who is not admin/manager/accountant/Sales & Credit Manager. For them the POS opens on that shop with the
+    dropdown locked, `SaleSerializer.validate` refuses a sale for any other shop, and the Sale, Quotation and
+    Transaction querysets are narrowed to it. A user with no shop set is not restricted.
+  - **Each shop has its own cash book** (`LedgerAccount.branch`), made by
+    `vouchers.ensure_branch_cash_books()` — on a new `Branch` (finance signal) and when the money accounts
+    are listed. The first time, the oldest shop *adopts* the existing Main Cash Book instead of getting a
+    copy. `money_accounts` offers a shop its own cash book plus every company-wide one (banks, Petty Cash) and
+    never another shop's; the POS and the payment screens preselect it, and `post_to_books` falls back to the
+    sale's shop cash book before the Main Cash Book.
+  - **A P&L per shop.** `Voucher.branch` (the "Shop" box on both voucher screens; blank = company-wide; copied
+    onto a reversal; set from the sale on the Sales Accounting voucher). `profit_and_loss(..., branch=)` and
+    `/api/profit-loss/?branch=` narrow every source to the shop and count a voucher only if it names it.
+    Taxes paid name no shop, so a shop's P&L leaves them out and says so (`branch_note`). The cash flow and
+    balance sheet are still company-wide only.
 - **The price on a POS line is the seller's.** `price_at_sale` is sent per line (list price by default,
   editable in the cart, flagged but allowed below cost); the serializer only refuses a negative one.
 - **"Received into".** Every till payment can name the cash book or bank ledger the money went into —
