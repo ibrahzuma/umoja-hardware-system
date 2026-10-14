@@ -455,17 +455,28 @@
             const sales = Array.isArray(salesData) ? salesData : salesData.results;
             const stocks = Array.isArray(stockData) ? stockData : stockData.results;
 
-            const currentMonth = new Date().getMonth();
-            const monthlyTotal = sales.reduce((acc, sale) => {
-                const saleDate = new Date(sale.created_at);
-                if (saleDate.getMonth() === currentMonth) {
-                    return acc + parseFloat(sale.total_amount);
-                }
-                return acc;
-            }, 0);
+            // This month so far, and last month up to the same day, so the
+            // comparison is like for like. Cancelled sales are not revenue.
+            const now = new Date();
+            const thisStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const lastStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+            const lastSameDay = new Date(now.getFullYear(), now.getMonth() - 1,
+                                         Math.min(now.getDate(), lastDays), 23, 59, 59);
+            let monthlyTotal = 0, lastTotal = 0, monthCount = 0, lastCount = 0;
+            sales.forEach(sale => {
+                if (sale.status === 'cancelled') return;
+                const d = new Date(sale.created_at);
+                const amount = parseFloat(sale.total_amount) || 0;
+                if (d >= thisStart) { monthlyTotal += amount; monthCount++; }
+                else if (d >= lastStart && d <= lastSameDay) { lastTotal += amount; lastCount++; }
+            });
 
             setText('monthly-revenue', 'TZS ' + Math.round(monthlyTotal).toLocaleString());
             setText('total-sales-count', sales.length.toLocaleString());
+            setTrend('revenue-trend', monthlyTotal, lastTotal);
+            const orders = document.getElementById('orders-trend');
+            if (orders) orders.innerText = monthCount.toLocaleString() + ' this month';
 
             let totalStockVal = 0;
             let lowStockCount = 0;
@@ -480,6 +491,23 @@
         } catch (error) {
             console.error("Failed to load dashboard data", error);
         }
+    }
+
+    // A real change against last month, or plain words when there is nothing
+    // to compare with — never a made-up percentage.
+    function setTrend(id, now, before) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove('trend-up', 'trend-down', 'trend-flat');
+        if (!before) {
+            el.classList.add('trend-flat');
+            el.innerText = now ? 'No sales last month to compare' : 'No sales yet this month';
+            return;
+        }
+        const pct = (now - before) / before * 100;
+        const up = pct >= 0;
+        el.classList.add(Math.abs(pct) < 0.05 ? 'trend-flat' : (up ? 'trend-up' : 'trend-down'));
+        el.innerHTML = `<i class="bi bi-arrow-${up ? 'up' : 'down'}-short"></i> ${up ? '+' : ''}${pct.toFixed(1)}% vs last month`;
     }
 
     function setText(id, value) {

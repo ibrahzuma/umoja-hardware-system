@@ -147,7 +147,11 @@ small, .small { font-size: 0.82rem; }
     width: 100%;
     align-items: stretch;
     position: relative;
+    /* Clip, not hide: overflow-x:hidden makes the wrapper a scroll container,
+       and a sticky sidebar inside one scrolls away with the page instead of
+       staying put. `hidden` stays as the fallback for browsers without clip. */
     overflow-x: hidden;
+    overflow-x: clip;
     min-height: 100vh;
 }
 
@@ -820,6 +824,7 @@ small, .small { font-size: 0.82rem; }
 }
 .trend-up   { background: var(--success-50); color: var(--success-700); }
 .trend-down { background: var(--danger-50);  color: var(--danger-700); }
+.trend-flat { background: var(--slate-100);  color: var(--slate-600); }
 
 /* Activity list */
 .update-item {
