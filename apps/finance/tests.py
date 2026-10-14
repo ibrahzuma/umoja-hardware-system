@@ -1912,3 +1912,50 @@ class ShopsTest(LedgerTestCase):
             content_type='application/json')
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(Voucher.objects.get(pk=res.json()['id']).branch, self.other)
+
+
+class AccountingHomeFlagsSalesGoneFromTheTillTest(SalesAccountingPostsToTheBooksTest):
+    """A sale posted into the books and then deleted at the till stays in the
+    books (posting froze it) — Accounting Home must say so until it is reversed."""
+
+    def test_a_deleted_posted_sale_is_flagged_until_reversed(self):
+        from django.utils import timezone
+        from .posting import VoucherReversalService
+        entry = self.make_sale('GONE-1', 70000)
+        self.assertEqual(self.post_entry(entry).status_code, 200)
+        Sale.objects.get(invoice_number='GONE-1').delete()
+        entry.refresh_from_db()
+        self.assertEqual(entry.sale_status, 'deleted')
+
+        self.client.force_login(self.accountant)
+        page = self.client.get(reverse('finance:accounting_dashboard'))
+        self.assertContains(page, 'no longer at the till')
+        self.assertContains(page, 'GONE-1')
+
+        voucher = Voucher.objects.get(sales_entry=entry)
+        VoucherReversalService(voucher, self.accountant).reverse(
+            reversal_date=timezone.localdate(), reason='sale deleted at the till')
+        page = self.client.get(reverse('finance:accounting_dashboard'))
+        self.assertNotContains(page, 'no longer at the till')
+
+    def test_sales_waiting_in_sales_accounting_are_mentioned(self):
+        self.make_sale('WAIT-1', 15000)
+        self.client.force_login(self.accountant)
+        page = self.client.get(reverse('finance:accounting_dashboard'))
+        self.assertContains(page, 'waiting in')
+
+    def test_keep_in_books_stops_the_warning_and_leaves_the_voucher(self):
+        entry = self.make_sale('KEEP-1', 50000)
+        self.assertEqual(self.post_entry(entry).status_code, 200)
+        Sale.objects.get(invoice_number='KEEP-1').delete()
+        self.client.force_login(self.accountant)
+        self.assertContains(self.client.get(reverse('finance:accounting_dashboard')), 'KEEP-1')
+        res = self.client.post(reverse('finance:sales_entry_keep', args=[entry.pk]))
+        self.assertEqual(res.status_code, 302)
+        entry.refresh_from_db()
+        self.assertTrue(entry.kept_in_books)
+        self.assertEqual(Voucher.objects.get(sales_entry=entry).status, 'posted')
+        self.assertNotContains(self.client.get(reverse('finance:accounting_dashboard')), 'no longer at the till')
+        # Only Accounts may answer.
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.client.post(reverse('finance:sales_entry_keep', args=[entry.pk])).status_code, 403)

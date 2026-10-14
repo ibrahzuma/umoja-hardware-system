@@ -183,6 +183,21 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
 
         status_counts = {row['status']: row['n'] for row in
                          Voucher.objects.values('status').annotate(n=Count('id'))}
+
+        # Sales Accounting's side of the books. A posted sale freezes, so one
+        # cancelled or deleted at the till afterwards stays in the books until
+        # somebody reverses its voucher — say so here, where the totals are.
+        from .models import SalesLedgerEntry
+        from .sales_ledger import books_voucher
+        gone = []
+        for entry in (SalesLedgerEntry.objects
+                      .filter(status='posted', sale_status__in=('cancelled', 'deleted'),
+                              kept_in_books=False)
+                      .order_by('sale_date', 'id')):
+            voucher = books_voucher(entry)
+            if voucher is not None and voucher.status == 'posted':
+                gone.append({'entry': entry, 'voucher': voucher})
+        waiting = SalesLedgerEntry.objects.filter(status__in=('pending', 'queried'))
         labels, sales_values = _month_series(financial_year, 'sales')
         _, purchase_values = _month_series(financial_year, 'purchase')
 
@@ -204,11 +219,15 @@ class AccountingDashboardView(AccountingMixin, TemplateView):
             'supp_outstanding_count': supplier_bills.count(),
             'supp_outstanding_total': quantize(
                 sum((i.outstanding_amount for i in supplier_bills), ZERO)),
+            'gone_sales': gone,
+            'gone_sales_total': quantize(sum((g['entry'].total_amount for g in gone), ZERO)),
+            'sales_waiting_count': waiting.count(),
+            'sales_waiting_total': quantize(waiting.aggregate(t=Sum('total_amount'))['t'] or ZERO),
             'draft_count': status_counts.get('draft', 0),
             'posted_count': status_counts.get('posted', 0),
             'reversed_count': status_counts.get('reversed', 0),
             'recent_vouchers': (Voucher.objects
-                                .select_related('customer', 'supplier', 'created_by')
+                                .select_related('customer', 'supplier', 'created_by', 'sales_entry')
                                 .order_by('-created_at')[:10]),
             'chart_labels': labels,
             'chart_sales': sales_values,
@@ -934,6 +953,27 @@ def _handle_voucher_form(request, voucher_type, voucher=None):
         'voucher_types': Voucher.TYPES,
         'settings': settings_row,
     })
+
+
+@login_required
+def sales_entry_keep(request, pk):
+    """Accounts say a sale gone from the till really happened: it stays in the
+    books and Accounting Home stops listing it. Reversing its voucher is the
+    other answer, and is done from the voucher itself."""
+    _guard(request)
+    if request.method != 'POST':
+        return HttpResponseBadRequest('POST only')
+    from .models import SalesLedgerEntry
+    from .audit import log_action
+    entry = get_object_or_404(SalesLedgerEntry, pk=pk, status='posted')
+    if not entry.kept_in_books:
+        entry.kept_in_books = True
+        entry.save(update_fields=['kept_in_books'])
+        log_action('EDITED', request=request, obj=entry,
+                   description=f'Kept sale {entry.invoice_number} in the books although it was '
+                               f'{entry.sale_status} at the till')
+    messages.success(request, f'Sale {entry.invoice_number} stays in the books.')
+    return redirect('finance:accounting_dashboard')
 
 
 @login_required

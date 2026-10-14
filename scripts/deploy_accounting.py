@@ -38,6 +38,7 @@ EXPECTED_MIGRATIONS = [
     "0023_voucher_sales_entry",
     "0024_salesledgerentry_confirmed_account",
     "0025_ledgeraccount_branch_voucher_branch",
+    "0026_salesledgerentry_kept_in_books",
 ]
 
 

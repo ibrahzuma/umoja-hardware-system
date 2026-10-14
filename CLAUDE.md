@@ -305,7 +305,9 @@ See `DEPLOYMENT.md` for one-time server setup.
     till sale is already offered for allocation as itself. If the books refuse it (closed period,
     duplicate invoice number) the whole Post rolls back with "The books refused this sale: …".
     Idempotent; `python manage.py post_sales_to_books [--dry-run]` backfills sales posted before
-    this existed.
+    this existed. A posted sale later cancelled or deleted at the till keeps its voucher (posting froze
+    it); Accounting Home lists every such sale until Accounts answer — **Reverse** the voucher, or
+    **Keep in books** (`SalesLedgerEntry.kept_in_books`, `finance:sales_entry_keep`).
   - **The statements read both records, and count each thing once.** The only voucher anything
     auto-posts is the one above, and `statements._voucher_gl()` leaves its GL rows (and its
     reversal's) out, since the sale is already counted through its `SalesLedgerEntry`. Every other

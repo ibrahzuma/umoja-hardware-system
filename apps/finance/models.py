@@ -385,6 +385,12 @@ class SalesLedgerEntry(models.Model):
                                            help_text="Money the accountant has confirmed as received")
     confirmed_reference = models.CharField(max_length=100, blank=True,
                                            help_text="Bank ref, transaction ID, cheque no")
+    # A posted sale later cancelled or deleted at the till stays in the books
+    # (posting froze it). Accounts either reverse its voucher or say it really
+    # happened — this records the second answer, so Accounting Home stops asking.
+    kept_in_books = models.BooleanField(
+        default=False,
+        help_text="Accounts confirmed this sale happened, though it was cancelled or deleted at the till")
     confirmed_account = models.ForeignKey(
         'LedgerAccount', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
         help_text="The cash book or bank the money went into — the books debit this ledger")

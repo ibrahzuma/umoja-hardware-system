@@ -55,6 +55,7 @@ urlpatterns = [
     # Accounting: the accountant's own area
     # ------------------------------------------------------------------
     path('accounting/', acc.AccountingDashboardView.as_view(), name='accounting_dashboard'),
+    path('accounting/sales/<int:pk>/keep/', acc.sales_entry_keep, name='sales_entry_keep'),
 
     # Configuration
     path('accounting/settings/', acc.AccountingSettingsView.as_view(), name='accounting_settings'),

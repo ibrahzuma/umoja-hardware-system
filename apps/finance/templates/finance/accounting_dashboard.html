@@ -11,6 +11,32 @@
 </div>
 {% endif %}
 
+{% if gone_sales %}
+<div class="alert alert-danger">
+  <div class="fw-semibold mb-1"><i class="bi bi-exclamation-octagon me-1"></i>
+    {{ gone_sales|length }} posted sale{{ gone_sales|length|pluralize }} no longer at the till — {{ gone_sales_total|money }} still counted in the totals below.</div>
+  <div class="small mb-2">These were posted into the books and later cancelled or deleted at the till. Posting froze them, so nothing changed by itself.
+    If the sale did not happen, open its voucher and <strong>Reverse</strong> it. If it did, press <strong>Keep in books</strong>.</div>
+  <ul class="small mb-0">
+    {% for g in gone_sales %}
+    <li>Invoice <strong>{{ g.entry.invoice_number }}</strong> of {{ g.entry.sale_date|date:"d/m/Y" }}, {{ g.entry.customer_name|default:"Walk-in Customer" }},
+      {{ g.entry.total_amount|money }} — {{ g.entry.sale_status }} at the till —
+      <a href="{% url 'finance:voucher_detail' g.voucher.pk %}" class="alert-link">{{ g.voucher.voucher_number }}</a>
+      <form method="post" action="{% url 'finance:sales_entry_keep' g.entry.pk %}" class="d-inline ms-1">{% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">Keep in books</button>
+      </form></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% if sales_waiting_count %}
+<div class="alert alert-info py-2 small">
+  <i class="bi bi-hourglass-split me-1"></i>
+  {{ sales_waiting_count }} till sale{{ sales_waiting_count|pluralize }} ({{ sales_waiting_total|money }}) waiting in
+  <a href="{% url 'finance:sales_ledger' %}" class="alert-link">Sales Accounting</a> — not in these figures until posted.
+</div>
+{% endif %}
+
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between align-items-center">
     <div><div class="stat-label">Total sales (FY)</div><div class="stat-value">{{ sales_total|money }}</div></div><i class="bi bi-cart-check stat-icon text-success"></i></div></div></div>
@@ -76,7 +102,7 @@
             <td><a class="table-link" href="{% url 'finance:voucher_detail' v.pk %}">{{ v.voucher_number }}</a></td>
             <td>{{ v.get_voucher_type_display }}</td>
             <td>{{ v.transaction_date|date:"d/m/Y" }}</td>
-            <td>{{ v.party|default:"—" }}</td>
+            <td>{% if v.party %}{{ v.party }}{% elif v.sales_entry_id %}{{ v.sales_entry.customer_name|default:"Walk-in Customer" }}{% else %}—{% endif %}</td>
             <td class="num">{{ v.total_debit|money }}</td>
             <td>{{ v.status|status_badge }}</td>
             <td class="text-muted-sm">{{ v.created_by.username|default:"—" }}</td>
@@ -93,7 +119,7 @@
       <ul class="list-group list-group-flush">
         {% for account, balance in bank_cash_balances %}
         <li class="list-group-item d-flex justify-content-between">
-          <a href="{% url 'finance:account_detail' account.pk %}" class="table-link"><i class="bi {% if account.is_money %}bi-bank{% else %}bi-cash{% endif %} me-1"></i>{{ account.name }}</a>
+          <a href="{% url 'finance:account_detail' account.pk %}" class="table-link"><i class="bi {% if account.kind == 'cash' %}bi-cash-stack{% else %}bi-bank{% endif %} me-1"></i>{{ account.name }}</a>
           <span class="num {% if balance < 0 %}text-danger{% endif %}">{{ balance|money }}</span>
         </li>
         {% empty %}<li class="list-group-item text-muted">No cash or bank accounts defined.</li>{% endfor %}
