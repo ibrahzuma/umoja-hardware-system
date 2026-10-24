@@ -76,6 +76,28 @@ for _model, _uid in (('finance.BankAccount', 'ledger_for_bank'),
     post_save.connect(_ledger_follows, sender=_model, dispatch_uid=_uid, weak=False)
 
 
+@receiver(post_save, sender='finance.LedgerAccount', dispatch_uid='party_for_ledger')
+def _party_follows_ledger(sender, instance, created, raw=False, **kwargs):
+    """The mirror of the above: a customer/supplier ledger keyed straight into
+    the chart of accounts grows the sales.Customer / inventory.Supplier it
+    stands for, so a customer created there shows on the POS and in the register
+    too. No-op for a ledger that already names its party (the usual path) or one
+    that is not a party ledger — see vouchers.ensure_party_for."""
+    if raw:
+        return
+    if instance.kind not in ('customer', 'supplier') or instance.is_group:
+        return
+    if instance.is_customer_control or instance.is_supplier_control:
+        return
+    if instance.customer_id or instance.supplier_id:
+        return
+    try:
+        from . import vouchers
+        vouchers.ensure_party_for(instance)
+    except Exception:
+        logger.exception('Could not keep a party for ledger %s', instance.pk)
+
+
 @receiver(post_save, sender='inventory.Branch', dispatch_uid='ledger_branch_cash_book')
 def _branch_gets_a_cash_book(sender, instance, created, **kwargs):
     """A new shop gets its own cash book (see vouchers.ensure_branch_cash_books)."""

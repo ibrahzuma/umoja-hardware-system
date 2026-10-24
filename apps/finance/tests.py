@@ -112,6 +112,57 @@ class ChartOfAccountsTest(LedgerTestCase):
         self.assertEqual(vouchers.sync_chart_of_accounts(), 0)
         self.assertEqual(LedgerAccount.objects.count(), before)
 
+    def test_a_customer_ledger_keyed_in_the_chart_grows_a_customer(self):
+        """A customer ledger created straight in the chart of accounts gets the
+        sales.Customer behind it, so the POS and the register see it too — the
+        mirror of a customer growing a ledger. And no duplicate ledger is left."""
+        ledger = LedgerAccount.objects.create(kind='customer', name='Direct Chart Customer')
+        ledger.refresh_from_db()
+        self.assertIsNotNone(ledger.customer_id)
+        self.assertEqual(ledger.customer.name, 'Direct Chart Customer')
+        # Exactly one customer ledger for the new party — the dupe the party's
+        # own save-signal made was dropped.
+        self.assertEqual(
+            LedgerAccount.objects.filter(kind='customer', customer=ledger.customer).count(), 1)
+        # It is now a real customer the till can sell to.
+        self.assertTrue(Customer.objects.filter(name='Direct Chart Customer').exists())
+
+    def test_a_supplier_ledger_keyed_in_the_chart_grows_a_supplier(self):
+        ledger = LedgerAccount.objects.create(kind='supplier', name='Direct Chart Supplier')
+        ledger.refresh_from_db()
+        self.assertIsNotNone(ledger.supplier_id)
+        self.assertEqual(ledger.supplier.name, 'Direct Chart Supplier')
+        self.assertEqual(
+            LedgerAccount.objects.filter(kind='supplier', supplier=ledger.supplier).count(), 1)
+
+    def test_group_and_control_ledgers_grow_no_party(self):
+        """A customer control account or a group is not a party — it must not
+        spawn a phantom customer."""
+        before = Customer.objects.count()
+        LedgerAccount.objects.create(kind='customer', name='A group', is_group=True)
+        LedgerAccount.objects.create(kind='customer', name='Receivables',
+                                     is_customer_control=True)
+        self.assertEqual(Customer.objects.count(), before)
+
+    def test_sync_backfills_a_party_for_a_bare_customer_ledger(self):
+        """sync_chart_of_accounts (run on every open_books) repairs a customer
+        ledger that predates this and has no party yet."""
+        from django.db.models.signals import post_save
+        from apps.finance.signals import _party_follows_ledger
+        # Make a genuinely bare ledger, as pre-existing data would be, by
+        # keeping the reverse-sync signal out of its creation.
+        post_save.disconnect(sender=LedgerAccount, dispatch_uid='party_for_ledger')
+        try:
+            bare = LedgerAccount.objects.create(kind='customer', name='Legacy Customer')
+        finally:
+            post_save.connect(_party_follows_ledger, sender=LedgerAccount,
+                              dispatch_uid='party_for_ledger', weak=False)
+        self.assertIsNone(bare.customer_id)
+        vouchers.sync_chart_of_accounts()
+        bare.refresh_from_db()
+        self.assertIsNotNone(bare.customer_id)
+        self.assertEqual(bare.customer.name, 'Legacy Customer')
+
     def test_dropdown_groups(self):
         self.client.force_login(self.accountant)
         money = {a['kind'] for a in self.client.get('/api/ledger-accounts/?group=money').json()}

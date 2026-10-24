@@ -240,6 +240,18 @@ def sync_chart_of_accounts():
                                      parent=payable)
         created += 1
 
+    # A party ledger keyed straight into the chart (no sales.Customer /
+    # inventory.Supplier behind it) gets its party, so the till and the register
+    # see it too — the mirror of the loops above.
+    for ledger in LedgerAccount.objects.filter(
+            kind='customer', customer__isnull=True, is_group=False, is_customer_control=False):
+        if ensure_party_for(ledger) is not None:
+            created += 1
+    for ledger in LedgerAccount.objects.filter(
+            kind='supplier', supplier__isnull=True, is_group=False, is_supplier_control=False):
+        if ensure_party_for(ledger) is not None:
+            created += 1
+
     # A party ledger created before the control accounts existed is adopted now.
     LedgerAccount.objects.filter(kind='customer', customer__isnull=False, parent__isnull=True)\
         .update(parent=receivable)
@@ -275,6 +287,48 @@ def ensure_ledger_for(instance):
         if ledger.name != instance.name:
             ledger.name = instance.name
             ledger.save(update_fields=['name'])
+
+
+def _adopt_ledger(ledger, field, party):
+    """Point `ledger` at the party just created, and drop the empty ledger the
+    party's own save-signal (`ensure_ledger_for`) made for it.
+
+    The duplicate is removed *before* `ledger` adopts the party, because the
+    party→ledger link is one-to-one: two ledgers pointing at it for even an
+    instant would break the unique constraint. The duplicate is brand new and
+    has no entries, so dropping it is safe. `.update()` re-points the ledger
+    without firing another save-signal."""
+    LedgerAccount.objects.filter(**{field: party}).exclude(pk=ledger.pk).delete()
+    LedgerAccount.objects.filter(pk=ledger.pk).update(**{field: party})
+
+
+def ensure_party_for(ledger):
+    """The mirror image of `ensure_ledger_for`.
+
+    A customer or supplier ledger keyed straight into the chart of accounts
+    (the New Ledger form, a bulk import) carries no `sales.Customer` /
+    `inventory.Supplier` behind it, so the till, the POS dropdown and the party
+    register never see it. This gives it one, so a customer created in either
+    place shows up in both. A ledger that already names its party, a group or a
+    control account is left alone — and so is a cash/bank/income/… ledger, which
+    stands for no party.
+
+    Returns the party created, or None when nothing was needed.
+    """
+    if ledger.is_group or ledger.is_customer_control or ledger.is_supplier_control:
+        return None
+    name = (ledger.name or '').strip()[:200]
+    if not name:
+        return None
+    if ledger.kind == 'customer' and ledger.customer_id is None:
+        customer = Customer.objects.create(name=name)
+        _adopt_ledger(ledger, 'customer', customer)
+        return customer
+    if ledger.kind == 'supplier' and ledger.supplier_id is None:
+        supplier = Supplier.objects.create(name=name)
+        _adopt_ledger(ledger, 'supplier', supplier)
+        return supplier
+    return None
 
 
 def accounts_for(side_rule):
