@@ -497,12 +497,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
         rows = (LedgerAccount.objects
                 .filter(kind__in=LedgerAccount.MONEY_KINDS, is_group=False, is_active=True)
                 .order_by('kind', 'name', 'id'))
-        # A shop's cash book is offered at that shop only; banks and
-        # company-wide cash books everywhere.
+        # A user tied to one shop is offered that shop's own cash book and the
+        # company-wide ones (banks, Petty Cash), never another shop's. A user
+        # who works across all shops — an overseeing role, or anyone assigned to
+        # all branches by leaving their shop blank — sees every cash book and
+        # bank. The POS still preselects the cash book of the shop in hand.
         home = home_branch(request.user)
-        branch = home.pk if home is not None else request.query_params.get('branch')
-        if branch and str(branch).isdigit():
-            rows = rows.filter(Q(branch__isnull=True) | Q(branch_id=int(branch)))
+        if home is not None:
+            rows = rows.filter(Q(branch__isnull=True) | Q(branch_id=home.pk))
         return Response(list(rows.values('id', 'code', 'name', 'kind', 'branch')))
 
 

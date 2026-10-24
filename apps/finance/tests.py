@@ -1908,6 +1908,18 @@ class ShopsTest(LedgerTestCase):
         self.assertIn('CRDB Main', names)                # banks are company-wide
         self.assertIn('Petty Cash', names)               # so is petty cash
 
+    def test_an_all_branch_user_is_offered_every_cash_book(self):
+        """A user who works across all shops — an overseeing role, or anyone
+        assigned to all branches by leaving their shop blank — sees every cash
+        book, even with a shop selected at the till."""
+        self.client.force_login(self.accountant)   # unrestricted (home_branch None)
+        url = f'/api/transactions/money_accounts/?branch={self.other.id}'
+        names = {r['name'] for r in self.client.get(url).json()}
+        self.assertIn('Main Cash Book', names)         # this shop's drawer
+        self.assertIn('Cash Book - Kariakoo', names)   # and the other shop's
+        self.assertIn('CRDB Main', names)              # banks
+        self.assertIn('Petty Cash', names)
+
     def test_a_shops_cash_sale_lands_in_its_cash_book(self):
         Sale.objects.create(invoice_number='K-2', branch=self.other, total_amount=Decimal('40000'),
                             status='approved')
