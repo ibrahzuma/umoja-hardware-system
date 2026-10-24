@@ -142,6 +142,14 @@ def _books_look_open():
             or Customer.objects.filter(ledger__isnull=True).exists()
             or Supplier.objects.filter(ledger__isnull=True).exists()):
         return False
+    # The reverse: a customer/supplier ledger keyed straight into the chart with
+    # no party behind it yet. Left bare it never reaches the till or the
+    # register, so there is still work for the sweep to do (ensure_party_for).
+    if (LedgerAccount.objects.filter(kind='customer', customer__isnull=True,
+                                     is_group=False, is_customer_control=False).exists()
+            or LedgerAccount.objects.filter(kind='supplier', supplier__isnull=True,
+                                            is_group=False, is_supplier_control=False).exists()):
+        return False
     return True
 
 

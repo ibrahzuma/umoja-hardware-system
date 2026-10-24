@@ -163,6 +163,24 @@ class ChartOfAccountsTest(LedgerTestCase):
         self.assertIsNotNone(bare.customer_id)
         self.assertEqual(bare.customer.name, 'Legacy Customer')
 
+    def test_open_the_books_does_not_skip_a_bare_party_ledger(self):
+        """A bare party ledger is work to do, so open_the_books must run the
+        full sweep (not short-circuit) and give it a party — the path the
+        deploy's `open_books` takes."""
+        from django.db.models.signals import post_save
+        from apps.finance.signals import _party_follows_ledger
+        post_save.disconnect(sender=LedgerAccount, dispatch_uid='party_for_ledger')
+        try:
+            bare = LedgerAccount.objects.create(kind='customer', name='Chart-only Customer')
+        finally:
+            post_save.connect(_party_follows_ledger, sender=LedgerAccount,
+                              dispatch_uid='party_for_ledger', weak=False)
+        self.assertFalse(vouchers._books_look_open())  # there is work to do
+        vouchers.open_the_books()
+        bare.refresh_from_db()
+        self.assertIsNotNone(bare.customer_id)
+        self.assertTrue(Customer.objects.filter(name='Chart-only Customer').exists())
+
     def test_dropdown_groups(self):
         self.client.force_login(self.accountant)
         money = {a['kind'] for a in self.client.get('/api/ledger-accounts/?group=money').json()}
