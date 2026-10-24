@@ -40,7 +40,7 @@
             tbody.innerHTML += `
                 <tr>
                     <td class="fw-bold">${s.product_name}</td>
-                    <td>${s.branch_name}</td>
+                    <td>${s.branch_name}${s.godown_name ? ' — ' + s.godown_name : ''}</td>
                     <td>${s.quantity}</td>
                     <td>${status}</td>
                 </tr>`;

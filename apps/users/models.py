@@ -19,6 +19,9 @@ class User(AbstractUser):
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='staff')
     branch = models.ForeignKey('inventory.Branch', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    # Staff tied to a branch can also be tied to one godown or shop in it.
+    godown = models.ForeignKey('inventory.Godown', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='users')
 
     @property
     def is_manager(self):

@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DriverIssue, DeliveryCheck, DeliveryCheckItem
+from .models import Godown, Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DriverIssue, DeliveryCheck, DeliveryCheckItem
 from .serializers import (
+    GodownSerializer,
     BranchSerializer, CategorySerializer, ProductSerializer,
     StockSerializer, PurchaseSerializer, SupplierSerializer, StockTransferSerializer,
     PurchaseOrderSerializer, PurchaseOrderItemSerializer, TruckSerializer, TruckAllocationSerializer, StockAdjustmentSerializer,
@@ -219,21 +220,17 @@ class ProductViewSet(viewsets.ModelViewSet):
                             product.unit = unit
                             product.save(update_fields=['unit'])
 
-                        # Ensure Stock record exists in the Main Branch for 'product' types
+                        # Opening stock goes into the first branch's default godown,
+                        # added to what is already there.
                         if product.product_type == 'product':
-                            branch, _ = Branch.objects.get_or_create(name="Main Branch")
-                            stock_obj, s_created = Stock.objects.get_or_create(
-                                product=product,
-                                branch=branch,
-                                defaults={
-                                    'quantity': opening_stock,
-                                    'low_stock_threshold': low_stock
-                                }
-                            )
-                            if not s_created:
-                                # If stock record already existed, ADD to it
-                                stock_obj.quantity += opening_stock
-                                stock_obj.save()
+                            from .stock import stock_row
+                            branch = (Branch.objects.order_by('id').first()
+                                      or Branch.objects.create(name="Main Branch"))
+                            stock_obj = stock_row(product, branch=branch)
+                            if stock_obj.quantity == 0 and stock_obj.low_stock_threshold == 10:
+                                stock_obj.low_stock_threshold = low_stock
+                            stock_obj.quantity += opening_stock
+                            stock_obj.save()
 
                         imported_count += 1
                 except Exception as e:
@@ -246,10 +243,32 @@ class ProductViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED if not errors else status.HTTP_207_MULTI_STATUS)
 
 class StockViewSet(viewsets.ModelViewSet):
-    queryset = Stock.objects.all()
+    queryset = Stock.objects.select_related('product', 'branch', 'godown')
     serializer_class = StockSerializer
     permission_classes = [permissions.DjangoModelPermissions]
-    filterset_fields = ['branch', 'product']
+    filterset_fields = ['branch', 'product', 'godown']
+
+
+class GodownViewSet(viewsets.ModelViewSet):
+    """The godowns and shops of each branch. A godown holding stock cannot be
+    deleted — move its stock out (a transfer) or switch it off instead."""
+    queryset = Godown.objects.select_related('branch')
+    serializer_class = GodownSerializer
+    permission_classes = [permissions.DjangoModelPermissions]
+    filterset_fields = ['branch', 'kind', 'is_active']
+
+    def perform_destroy(self, instance):
+        from django.db.models import Sum
+        held = instance.stocks.aggregate(t=Sum('quantity'))['t'] or 0
+        if held:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': f'{instance.name} still holds stock ({held}). '
+                                             f'Transfer it out first, or switch the godown off.'})
+        if instance.is_default and instance.branch.godowns.exclude(pk=instance.pk).exists():
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': 'Make another godown the default before deleting this one.'})
+        instance.stocks.all().delete()
+        instance.delete()
 
 class SupplierViewSet(viewsets.ModelViewSet):
     queryset = Supplier.objects.all()
@@ -271,14 +290,9 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             # only send quantity + unit_cost.
             total_cost = serializer.validated_data['quantity'] * serializer.validated_data['unit_cost']
             purchase = serializer.save(total_cost=total_cost)
-            # Increase Stock
-            stock, _ = Stock.objects.get_or_create(
-                product=purchase.product,
-                branch=purchase.branch,
-                defaults={'quantity': 0}
-            )
-            stock.quantity += purchase.quantity
-            stock.save()
+            # Increase Stock (the branch's default godown)
+            from .stock import add_stock
+            add_stock(purchase.product, purchase.quantity, branch=purchase.branch)
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -289,21 +303,35 @@ class StockTransferViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.DjangoModelPermissions]
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        from rest_framework.exceptions import ValidationError
+        from .stock import add_stock, resolve_godown
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        # Godowns decide; a branch alone means its default godown. Either
+        # side may be given by godown only, and its branch is then its own.
+        source = resolve_godown(data.get('from_branch'), data.get('from_godown'))
+        target = resolve_godown(data.get('to_branch'), data.get('to_godown'))
+        if source.pk == target.pk:
+            raise ValidationError({'to_godown': 'Pick a different godown to move the stock to.'})
+        # Nothing moves that is not there (the trial run excepted).
+        from apps.core.models import SystemSettings
+        try:
+            wanted = int(data.get('quantity') or 0)
+        except (TypeError, ValueError):
+            wanted = 0
+        if data.get('product') and wanted > 0 and not SystemSettings.negative_stock_allowed():
+            held = Stock.objects.filter(product_id=data.get('product'), godown=source) \
+                .values_list('quantity', flat=True).first() or 0
+            if wanted > held:
+                raise ValidationError({'detail': f'{source.name} has only {held} of that item.'})
+        data['from_branch'], data['from_godown'] = source.branch_id, source.pk
+        data['to_branch'], data['to_godown'] = target.branch_id, target.pk
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        transfer = serializer.save()
 
-        # Update Stocks
         with transaction.atomic():
-            # Decrease Source
-            source_stock, _ = Stock.objects.get_or_create(product=transfer.product, branch=transfer.from_branch)
-            source_stock.quantity -= transfer.quantity
-            source_stock.save()
-
-            # Increase Dest
-            dest_stock, _ = Stock.objects.get_or_create(product=transfer.product, branch=transfer.to_branch)
-            dest_stock.quantity += transfer.quantity
-            dest_stock.save()
+            transfer = serializer.save()
+            add_stock(transfer.product, -transfer.quantity, godown=source)
+            add_stock(transfer.product, transfer.quantity, godown=target)
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -329,11 +357,8 @@ def _receive_delivery(check):
         if line.delivered_quantity <= 0:
             continue
         item = line.item
-        stock, _ = Stock.objects.get_or_create(
-            product=item.product, branch=po.branch, defaults={'quantity': 0}
-        )
-        stock.quantity += line.delivered_quantity
-        stock.save()
+        from .stock import add_stock
+        add_stock(item.product, line.delivered_quantity, branch=po.branch, godown=po.godown)
         item.received_quantity = (item.received_quantity or 0) + line.delivered_quantity
         item.save(update_fields=['received_quantity'])
 
@@ -768,14 +793,11 @@ class GoodsReceivedNoteViewSet(viewsets.ModelViewSet):
                 remarks=request.data.get('remarks', '')
             )
             
-            # UPDATE STOCK
-            stock, created = Stock.objects.get_or_create(
-                product=product, 
-                branch=grn.branch,
-                defaults={'quantity': 0}
-            )
-            stock.quantity += int(qty)
-            stock.save()
+            # UPDATE STOCK: the order's godown when the GRN is against one,
+            # else the branch's default godown.
+            from .stock import add_stock
+            po_godown = grn.purchase_order.godown if grn.purchase_order_id else None
+            add_stock(product, int(qty), branch=grn.branch, godown=po_godown)
 
             return Response(GRNItemSerializer(item).data)
         except Exception as e:
@@ -988,12 +1010,13 @@ class StockAdjustmentViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             adjustment = serializer.save(user=request.user if request.user.is_authenticated else None)
             
-            # Update Stock
-            stock, _ = Stock.objects.get_or_create(
-                product=adjustment.product, 
-                branch=adjustment.branch,
-                defaults={'quantity': 0}
-            )
+            # Update Stock, in the godown named (else the branch's default).
+            from .stock import resolve_godown, stock_row
+            godown = resolve_godown(adjustment.branch_id, adjustment.godown_id)
+            if adjustment.godown_id != godown.pk:
+                adjustment.godown = godown
+                adjustment.save(update_fields=['godown'])
+            stock = stock_row(adjustment.product, godown=godown, lock=True)
             
             if adjustment.adjustment_type == 'addition':
                 stock.quantity += adjustment.quantity

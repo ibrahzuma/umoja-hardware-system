@@ -609,3 +609,166 @@ class VehicleLoadTest(TestCase):
             self.client.post('/api/products/import/', {
                 'file': SimpleUploadedFile('p.csv', csv.encode(), 'text/csv')})
             self.assertEqual(Product.objects.get(name=name).unit_weight, Decimal('25'))
+
+
+class GodownTest(TestCase):
+    """Godowns: stock is counted per godown inside a branch. Mwanza has VOIL
+    and Shop 1; selling, dispatching, receiving, adjusting and transferring
+    all happen in a named godown, and anything naming none uses the default."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        from apps.inventory.models import Godown
+        from apps.inventory.stock import add_stock
+        self.Godown = Godown
+        self.mwanza = Branch.objects.create(name='Mwanza Branch')
+        self.dar = Branch.objects.create(name='Dar Branch')
+        self.voil = Godown.objects.create(branch=self.mwanza, name='VOIL')
+        self.shop1 = Godown.objects.create(branch=self.mwanza, name='SHOP 1', kind='shop')
+        self.godown1 = Godown.objects.create(branch=self.dar, name='Godown1')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, unit='bags', cost=15000, price=20000)
+        add_stock(self.cement, 10, godown=self.voil)
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        self.rep = User.objects.create_user(username='rep', password='pw', role='sales_rep',
+                                            branch=self.mwanza, godown=self.shop1)
+        self.rep.groups.add(Group.objects.get(name='Sales Representative'))
+
+    def qty(self, godown):
+        return Stock.objects.filter(product=self.cement, godown=godown).values_list('quantity', flat=True).first() or 0
+
+    def sell(self, user, godown, qty):
+        self.client.force_login(user)
+        body = {'branch': self.mwanza.id, 'customer_name': 'Walk-in',
+                'items': [{'product': self.cement.id, 'quantity': qty}]}
+        if godown is not None:
+            body['godown'] = godown.id
+        return self.client.post('/api/sales/', body, content_type='application/json')
+
+    def test_the_first_godown_is_the_default_and_there_is_only_one(self):
+        self.assertTrue(self.voil.is_default)
+        self.shop1.refresh_from_db()
+        self.assertFalse(self.shop1.is_default)
+        self.shop1.is_default = True
+        self.shop1.save()
+        self.voil.refresh_from_db()
+        self.assertFalse(self.voil.is_default)
+
+    def test_a_branch_with_no_godown_gets_a_main_store(self):
+        kigoma = Branch.objects.create(name='Kigoma')
+        row = Stock.objects.create(product=self.cement, branch=kigoma, quantity=4)
+        self.assertEqual(row.godown.name, 'Main Store')
+        self.assertTrue(row.godown.is_default)
+
+    def test_stock_is_counted_per_godown_and_summed_per_branch(self):
+        from apps.inventory.stock import add_stock
+        add_stock(self.cement, 3, godown=self.shop1)
+        self.assertEqual((self.qty(self.voil), self.qty(self.shop1)), (10, 3))
+        from django.db.models import Sum
+        self.assertEqual(Stock.objects.filter(branch=self.mwanza).aggregate(t=Sum('quantity'))['t'], 13)
+
+    def test_a_sale_is_checked_against_its_godown(self):
+        self.assertEqual(self.sell(self.admin, self.shop1, 5).status_code, 400)   # SHOP 1 is empty
+        self.assertEqual(self.sell(self.admin, self.voil, 5).status_code, 201)
+        # 5 of VOIL's 10 are now promised: only 5 more can be sold there.
+        self.assertEqual(self.sell(self.admin, self.voil, 6).status_code, 400)
+
+    def test_a_sale_naming_no_godown_uses_the_default(self):
+        self.assertEqual(self.sell(self.admin, None, 10).status_code, 201)
+        self.assertEqual(self.sell(self.admin, None, 1).status_code, 400)
+
+    def test_a_godown_from_another_branch_is_refused(self):
+        res = self.sell(self.admin, self.godown1, 1)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('godown', res.json())
+
+    def test_dispatch_takes_the_goods_from_the_sales_godown(self):
+        from apps.inventory.stock import add_stock
+        from apps.sales.models import Sale
+        add_stock(self.cement, 8, godown=self.shop1)
+        sale = Sale.objects.get(pk=self.sell(self.admin, self.shop1, 6).json()['id'])
+        sale.status = 'approved'
+        sale.save()
+        res = self.client.post(f'/api/sales/{sale.id}/dispatch_order/',
+                               {'store_keeper': self.admin.id, 'lorry_info': 'T 1 AAA'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((self.qty(self.voil), self.qty(self.shop1)), (10, 2))
+
+    def test_a_seller_tied_to_a_shop_sells_from_it(self):
+        from apps.inventory.stock import add_stock
+        add_stock(self.cement, 4, godown=self.shop1)
+        res = self.sell(self.rep, self.voil, 1)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('SHOP 1', str(res.json()))
+        res = self.sell(self.rep, None, 2)                 # no godown named: theirs is used
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()['godown'], self.shop1.id)
+        self.client.force_login(self.rep)
+        page = self.client.get('/sales/pos/')
+        self.assertContains(page, f'const HOME_GODOWN = {self.shop1.id};')
+
+    def test_a_transfer_moves_stock_between_godowns(self):
+        self.client.force_login(self.admin)
+        res = self.client.post('/api/transfers/', {
+            'product': self.cement.id, 'from_godown': self.voil.id, 'to_godown': self.shop1.id,
+            'quantity': 4}, content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual((self.qty(self.voil), self.qty(self.shop1)), (6, 4))
+        # Across branches too, and never more than the godown holds.
+        res = self.client.post('/api/transfers/', {
+            'product': self.cement.id, 'from_godown': self.voil.id, 'to_godown': self.godown1.id,
+            'quantity': 7}, content_type='application/json')
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.qty(self.voil), 6)
+        res = self.client.post('/api/transfers/', {
+            'product': self.cement.id, 'from_godown': self.voil.id, 'to_godown': self.voil.id,
+            'quantity': 1}, content_type='application/json')
+        self.assertEqual(res.status_code, 400)
+
+    def test_an_adjustment_lands_in_its_godown(self):
+        self.client.force_login(self.admin)
+        res = self.client.post('/api/stock-adjustments/', {
+            'product': self.cement.id, 'branch': self.mwanza.id, 'godown': self.shop1.id,
+            'adjustment_type': 'addition', 'quantity': 7, 'reason': 'count'},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual((self.qty(self.voil), self.qty(self.shop1)), (10, 7))
+
+    def test_a_delivery_is_received_into_the_orders_godown(self):
+        from apps.inventory.views import _receive_delivery
+        supplier = Supplier.objects.create(name='Kibo')
+        po = PurchaseOrder.objects.create(supplier=supplier, branch=self.mwanza, godown=self.shop1,
+                                          status='sent', created_by=self.admin)
+        item = PurchaseOrderItem.objects.create(purchase_order=po, product=self.cement, quantity=20,
+                                                unit_cost=15000)
+        check = DeliveryCheck.objects.create(purchase_order=po)
+        DeliveryCheckItem.objects.create(delivery_check=check, item=item, expected_quantity=20, delivered_quantity=20)
+        _receive_delivery(check)
+        self.assertEqual((self.qty(self.voil), self.qty(self.shop1)), (10, 20))
+
+    def test_godowns_api(self):
+        self.client.force_login(self.admin)
+        res = self.client.post('/api/godowns/', {'branch': self.mwanza.id, 'name': 'ALAF', 'kind': 'godown'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        res = self.client.post('/api/godowns/', {'branch': self.mwanza.id, 'name': 'alaf'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 400)                       # same name in the branch
+        res = self.client.post('/api/godowns/', {'branch': self.dar.id, 'name': 'ALAF'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 201)                       # fine in another branch
+        self.assertEqual(self.client.delete(f'/api/godowns/{self.voil.id}/').status_code, 400)  # holds stock
+        self.assertEqual(self.client.delete(f'/api/godowns/{self.shop1.id}/').status_code, 204)
+
+    def test_the_seller_sees_godowns(self):
+        self.client.force_login(self.rep)
+        res = self.client.get('/api/godowns/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self.client.post('/api/godowns/', {'branch': self.mwanza.id, 'name': 'X'},
+                                          content_type='application/json').status_code, 403)

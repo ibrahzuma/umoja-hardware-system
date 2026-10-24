@@ -22,6 +22,11 @@
                     <label class="form-label">Branch</label>
                     <select class="form-select" id="poBranch" required></select>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">Deliver to (godown / shop)</label>
+                    <select class="form-select" id="poGodown"><option value="">Branch's default godown</option></select>
+                    <div class="form-text">Where the goods go into stock when the delivery is accepted.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -118,9 +123,13 @@
 
     async function fetchInitialData() {
         try {
-            const [supRes, branchRes, prodRes] = await Promise.all([
-                fetch('/api/suppliers/'), fetch('/api/branches/'), fetch('/api/products/')
+            const [supRes, branchRes, prodRes, godownRes] = await Promise.all([
+                fetch('/api/suppliers/'), fetch('/api/branches/'), fetch('/api/products/'),
+                fetch('/api/godowns/?is_active=true')
             ]);
+            const gData = godownRes.ok ? await godownRes.json() : [];
+            poGodowns = Array.isArray(gData) ? gData : (gData.results || []);
+            document.getElementById('poBranch').addEventListener('change', fillPoGodowns);
             const suppliers = await supRes.json();
             const branches = await branchRes.json();
             products = await prodRes.json();
@@ -251,6 +260,14 @@
         renderCreditAgainstTotal();
     }
 
+    let poGodowns = [];
+    function fillPoGodowns() {
+        const branch = Number(document.getElementById('poBranch').value);
+        const mine = poGodowns.filter(g => g.branch === branch);
+        document.getElementById('poGodown').innerHTML = '<option value="">Branch\'s default godown</option>' +
+            mine.map(g => `<option value="${g.id}">${g.name}${g.is_default ? ' (default)' : ''}</option>`).join('');
+    }
+
     async function submitOrder() {
         const supplier = document.getElementById('poSupplier').value;
         const branch = document.getElementById('poBranch').value;
@@ -262,6 +279,7 @@
 
         const payload = {
             supplier, branch, status: 'draft',
+            godown: document.getElementById('poGodown').value || null,
             items_input: lineItems.map(i => ({ product: i.product, quantity: i.quantity, unit: i.unit, unit_cost: i.unit_cost })),
         };
         try {

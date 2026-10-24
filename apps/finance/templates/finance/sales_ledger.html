@@ -425,8 +425,10 @@
         const till = e.till_account;
         const method = till && till.kind === 'bank' ? 'bank' : 'cash';
         document.getElementById('confirmMethod').value = method;
-        confirmBranch = e.branch;
-        MoneyAccounts.fill(document.getElementById('confirmAccount'), method, till ? till.id : null, e.branch);
+        // Accounting sees every cash book and bank, not just the sale's shop —
+        // the whole chart of accounts, the same ledgers as Accounting Home.
+        confirmBranch = null;
+        MoneyAccounts.fill(document.getElementById('confirmAccount'), method, till ? till.id : null, null);
         document.getElementById('confirmAccountHint').innerText = till
             ? 'The seller recorded it as received into ' + till.name + '.'
             : 'The seller did not say — pick the cash book or bank account the books debit.';

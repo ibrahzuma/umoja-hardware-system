@@ -17,6 +17,51 @@ class Branch(models.Model):
     def __str__(self):
         return self.name
 
+
+class Godown(models.Model):
+    """A place inside a branch where stock is kept — a godown (store) or a
+    shop. Stock is counted per godown; a branch's stock is the sum of its
+    godowns'. Each branch has one default godown, which takes whatever does
+    not name a godown (the Android app, imports, opening stock)."""
+    KINDS = (('godown', 'Godown'), ('shop', 'Shop'))
+
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='godowns')
+    name = models.CharField(max_length=100)
+    kind = models.CharField(max_length=10, choices=KINDS, default='godown')
+    is_default = models.BooleanField(default=False,
+                                     help_text="Takes stock that does not name a godown")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['branch__name', '-is_default', 'name', 'id']
+        constraints = [models.UniqueConstraint(fields=['branch', 'name'], name='unique_godown_name_per_branch')]
+
+    def __str__(self):
+        return f"{self.branch.name} — {self.name}"
+
+    def save(self, *args, **kwargs):
+        # A branch always has exactly one default: the first godown is it, and
+        # making another the default takes it off the old one.
+        if not self.is_default and not Godown.objects.filter(branch_id=self.branch_id, is_default=True) \
+                .exclude(pk=self.pk).exists():
+            self.is_default = True
+        super().save(*args, **kwargs)
+        if self.is_default:
+            Godown.objects.filter(branch_id=self.branch_id, is_default=True).exclude(pk=self.pk) \
+                .update(is_default=False)
+
+    @classmethod
+    def default_for(cls, branch):
+        """The branch's default godown, made ("Main Store") if it has none."""
+        branch_id = getattr(branch, 'pk', branch)
+        godown = (cls.objects.filter(branch_id=branch_id, is_default=True).first()
+                  or cls.objects.filter(branch_id=branch_id, is_active=True).order_by('id').first())
+        if godown is None:
+            godown = cls.objects.create(branch_id=branch_id, name='Main Store', is_default=True)
+        return godown
+
+
 class Category(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
@@ -91,17 +136,26 @@ class Product(models.Model):
         return f"{self.name} ({self.sku})"
 
 class Stock(models.Model):
+    """How much of one product one godown holds. `branch` is the godown's
+    branch, copied on save, so branch-level totals stay a plain filter."""
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stocks')
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='stocks')
+    godown = models.ForeignKey(Godown, on_delete=models.PROTECT, related_name='stocks', null=True, blank=True)
     quantity = models.IntegerField(default=0)
     low_stock_threshold = models.IntegerField(default=10)
     history = HistoricalRecords()
 
     class Meta:
-        unique_together = ('product', 'branch')
+        constraints = [models.UniqueConstraint(fields=['product', 'godown'], name='unique_stock_per_godown')]
+
+    def save(self, *args, **kwargs):
+        if self.godown_id is None:
+            self.godown = Godown.default_for(self.branch_id)
+        self.branch_id = self.godown.branch_id
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.product.name} - {self.branch.name}: {self.quantity}"
+        return f"{self.product.name} - {self.godown or self.branch.name}: {self.quantity}"
 
 class Supplier(models.Model):
     name = models.CharField(max_length=200)
@@ -173,6 +227,9 @@ class PurchaseOrder(models.Model):
     )
     supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, related_name='purchase_orders')
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='purchase_orders')
+    godown = models.ForeignKey(Godown, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='purchase_orders',
+                               help_text="Where the goods are received (blank: the branch's default godown)")
     order_date = models.DateField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
@@ -454,6 +511,12 @@ class StockTransfer(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     from_branch = models.ForeignKey(Branch, related_name='transfers_out', on_delete=models.CASCADE)
     to_branch = models.ForeignKey(Branch, related_name='transfers_in', on_delete=models.CASCADE)
+    # Between godowns; blank means the branch's default godown. Two godowns of
+    # the same branch is a move inside the branch.
+    from_godown = models.ForeignKey(Godown, related_name='transfers_out', on_delete=models.SET_NULL,
+                                    null=True, blank=True)
+    to_godown = models.ForeignKey(Godown, related_name='transfers_in', on_delete=models.SET_NULL,
+                                  null=True, blank=True)
     quantity = models.PositiveIntegerField()
     date = models.DateTimeField(auto_now_add=True)
 
@@ -471,6 +534,8 @@ class StockAdjustment(models.Model):
     )
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE)
+    godown = models.ForeignKey(Godown, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='adjustments')
     adjustment_type = models.CharField(max_length=20, choices=ADJUSTMENT_TYPES)
     quantity = models.FloatField()
     reason = models.TextField()

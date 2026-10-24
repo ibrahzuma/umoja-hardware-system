@@ -40,6 +40,13 @@
                                 <option value="">Select Branch...</option>
                             </select>
                         </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Godown / shop</label>
+                            <select class="form-select" id="godownSelect">
+                                <option value="">Any in the branch</option>
+                            </select>
+                            <div class="form-text">Ties a seller to one godown or shop at the POS.</div>
+                        </div>
                     </div>
 
                     <div class="d-grid">
@@ -60,11 +67,14 @@
 
         // Populate and Fetch Data
         try {
-            const [branchRes, roleRes, userRes] = await Promise.all([
+            const [branchRes, roleRes, userRes, godownRes] = await Promise.all([
                 fetch('/api/branches/'),
                 fetch('/api/roles/'),
-                fetch(`/api/users/${userId}/`)
+                fetch(`/api/users/${userId}/`),
+                fetch('/api/godowns/?is_active=true')
             ]);
+            const gData = godownRes.ok ? await godownRes.json() : [];
+            const godowns = Array.isArray(gData) ? gData : (gData.results || []);
 
             const branches = await branchRes.json();
             const roles = await roleRes.json();
@@ -73,6 +83,15 @@
             const bSelect = document.getElementById('branchSelect');
             branches.forEach(b => bSelect.add(new Option(b.name, b.id)));
             bSelect.value = user.branch || "";
+            const gSelect = document.getElementById('godownSelect');
+            const fillUserGodowns = () => {
+                const mine = godowns.filter(g => String(g.branch) === String(bSelect.value));
+                gSelect.innerHTML = '<option value="">Any in the branch</option>' +
+                    mine.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+            };
+            fillUserGodowns();
+            gSelect.value = user.godown || "";
+            bSelect.addEventListener('change', fillUserGodowns);
 
             const assigned = new Set((user.groups || []).map(g => String(g)));
             const box = document.getElementById('roleCheckboxes');
@@ -100,6 +119,7 @@
                 username: document.getElementById('username').value,
                 email: document.getElementById('email').value,
                 branch: document.getElementById('branchSelect').value || null,
+                godown: document.getElementById('godownSelect').value || null,
                 groups: Array.from(document.querySelectorAll('.role-check:checked')).map(c => c.value)
             };
 

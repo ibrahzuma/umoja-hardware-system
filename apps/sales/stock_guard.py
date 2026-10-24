@@ -23,35 +23,44 @@ from .models import SaleItem
 COMMITTING_STATUSES = ('pending', 'approved')
 
 
-def on_hand(branch_id, product_ids):
-    """{product_id: quantity} from the Stock rows at this branch."""
+def on_hand(branch_id, product_ids, godown=None):
+    """{product_id: quantity} in this godown — the branch's default godown
+    when none is named, since that is where such a sale is dispatched from."""
+    from apps.inventory.stock import resolve_godown
+    from django.db.models import Sum
+    godown = resolve_godown(branch_id, godown)
     rows = (Stock.objects
-            .filter(branch_id=branch_id, product_id__in=product_ids)
-            .values_list('product_id', 'quantity'))
-    return {pid: qty or 0 for pid, qty in rows}
+            .filter(godown=godown, product_id__in=product_ids)
+            .values('product_id').annotate(q=Sum('quantity')))
+    return {r['product_id']: r['q'] or 0 for r in rows}
 
 
-def committed(branch_id, product_ids, exclude_sale_id=None):
-    """{product_id: quantity} owed to sales taken but not yet dispatched."""
+def committed(branch_id, product_ids, exclude_sale_id=None, godown=None):
+    """{product_id: quantity} owed to sales taken but not yet dispatched from
+    the same godown (a sale naming no godown leaves the default one)."""
+    from apps.inventory.stock import resolve_godown
+    from django.db.models import Q
+    godown = resolve_godown(branch_id, godown)
+    same = Q(sale__godown=godown)
+    if godown.is_default:
+        same |= Q(sale__godown__isnull=True, sale__branch_id=godown.branch_id)
     qs = (SaleItem.objects
-          .filter(sale__branch_id=branch_id,
-                  sale__status__in=COMMITTING_STATUSES,
-                  product_id__in=product_ids))
+          .filter(same, sale__status__in=COMMITTING_STATUSES, product_id__in=product_ids))
     if exclude_sale_id is not None:
         qs = qs.exclude(sale_id=exclude_sale_id)
     rows = qs.values('product_id').annotate(total=Sum('quantity'))
     return {r['product_id']: r['total'] or 0 for r in rows}
 
 
-def available(branch_id, product_ids, exclude_sale_id=None):
+def available(branch_id, product_ids, exclude_sale_id=None, godown=None):
     """{product_id: sellable quantity}. Never negative — an oversold line in
     the past is a problem to fix, not a licence to sell more."""
-    have = on_hand(branch_id, product_ids)
-    owed = committed(branch_id, product_ids, exclude_sale_id)
+    have = on_hand(branch_id, product_ids, godown)
+    owed = committed(branch_id, product_ids, exclude_sale_id, godown)
     return {pid: max(have.get(pid, 0) - owed.get(pid, 0), 0) for pid in product_ids}
 
 
-def check_lines(branch_id, lines, exclude_sale_id=None):
+def check_lines(branch_id, lines, exclude_sale_id=None, godown=None):
     """Refuse a sale that cannot be filled.
 
     `lines` is [(product_id, quantity), ...]; the same product appearing twice
@@ -83,7 +92,9 @@ def check_lines(branch_id, lines, exclude_sale_id=None):
     if not stocked:
         return []
 
-    free = available(branch_id, stocked, exclude_sale_id)
+    free = available(branch_id, stocked, exclude_sale_id, godown)
+    from apps.inventory.stock import resolve_godown
+    where = resolve_godown(branch_id, godown).name
 
     problems = []
     for pid in stocked:
@@ -92,8 +103,8 @@ def check_lines(branch_id, lines, exclude_sale_id=None):
         if want > have:
             name = products[pid].name
             if have <= 0:
-                problems.append(f"{name} is out of stock at this branch.")
+                problems.append(f"{name} is out of stock at {where}.")
             else:
                 problems.append(
-                    f"Only {have} of {name} left at this branch — {want} were ordered.")
+                    f"Only {have} of {name} left at {where} — {want} were ordered.")
     return problems

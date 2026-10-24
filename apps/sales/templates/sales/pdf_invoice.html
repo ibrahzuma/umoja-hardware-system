@@ -229,6 +229,24 @@
                         <td class="meta-label">Due date</td>
                         <td class="meta-value">{{ sale.created_at|date:"d-m-Y" }}</td>
                     </tr>
+                    {% if sale.lp_number %}
+                    <tr>
+                        <td class="meta-label">LP No.</td>
+                        <td class="meta-value">{{ sale.lp_number }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if sale.pi_number %}
+                    <tr>
+                        <td class="meta-label">PI No.</td>
+                        <td class="meta-value">{{ sale.pi_number }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if sale.order_number %}
+                    <tr>
+                        <td class="meta-label">Order No.</td>
+                        <td class="meta-value">{{ sale.order_number }}</td>
+                    </tr>
+                    {% endif %}
                 </table>
             </td>
         </tr>

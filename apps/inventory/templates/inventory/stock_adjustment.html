@@ -16,6 +16,10 @@
                         <select class="form-select" id="branch" required></select>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Godown / shop</label>
+                        <select class="form-select" id="godown"><option value="">Default godown</option></select>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Product</label>
                         <select class="form-select" id="product" required></select>
                     </div>
@@ -86,10 +90,14 @@
 
     async function fetchInitialData() {
         try {
-            const [branchRes, prodRes] = await Promise.all([
+            const [branchRes, prodRes, godownRes] = await Promise.all([
                 fetch('/api/branches/'),
-                fetch('/api/products/')
+                fetch('/api/products/'),
+                fetch('/api/godowns/?is_active=true')
             ]);
+            const gData = godownRes.ok ? await godownRes.json() : [];
+            allGodowns = Array.isArray(gData) ? gData : (gData.results || []);
+            document.getElementById('branch').addEventListener('change', fillGodownSelect);
 
             const branches = await branchRes.json();
             const products = await prodRes.json();
@@ -103,6 +111,17 @@
             });
 
         } catch (error) { console.error(error); }
+    }
+
+    let allGodowns = [];
+    // The godowns of the branch picked; the default one first and preselected.
+    function fillGodownSelect() {
+        const branch = Number(document.getElementById('branch').value);
+        const mine = allGodowns.filter(g => g.branch === branch);
+        const select = document.getElementById('godown');
+        select.innerHTML = mine.length
+            ? mine.map(g => `<option value="${g.id}" ${g.is_default ? 'selected' : ''}>${g.name}${g.is_default ? ' (default)' : ''}</option>`).join('')
+            : '<option value="">Default godown</option>';
     }
 
     function populateSelect(id, items) {
@@ -138,7 +157,7 @@
             tr.innerHTML = `
                 <td class="ps-3 text-muted">${new Date(adj.created_at).toLocaleDateString()}</td>
                 <td class="fw-medium">${adj.product_name}</td>
-                <td>${adj.branch_name}</td>
+                <td>${adj.branch_name}${adj.godown_name ? ' — ' + adj.godown_name : ''}</td>
                 <td><span class="badge bg-${badge}">${adj.adjustment_type}</span></td>
                 <td class="fw-bold">${adj.quantity}</td>
             `;
@@ -150,6 +169,7 @@
         e.preventDefault();
         const data = {
             branch: document.getElementById('branch').value,
+            godown: document.getElementById('godown').value || null,
             product: document.getElementById('product').value,
             adjustment_type: document.getElementById('adjustmentType').value,
             quantity: document.getElementById('quantity').value,

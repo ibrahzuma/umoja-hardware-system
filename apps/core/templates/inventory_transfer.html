@@ -17,8 +17,8 @@
                     <tr>
                         <th class="ps-4">Date</th>
                         <th>Product</th>
-                        <th>From Branch</th>
-                        <th>To Branch</th>
+                        <th>From</th>
+                        <th>To</th>
                         <th>Quantity</th>
                     </tr>
                 </thead>
@@ -50,13 +50,14 @@
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-6">
-                            <label class="form-label">From Branch</label>
+                            <label class="form-label">From godown / shop</label>
                             <select id="tFrom" class="form-select" required>
                                 <option>Loading...</option>
                             </select>
+                            <div class="form-text" id="tFromStock">&nbsp;</div>
                         </div>
                         <div class="col-6">
-                            <label class="form-label">To Branch</label>
+                            <label class="form-label">To godown / shop</label>
                             <select id="tTo" class="form-select" required>
                                 <option>Loading...</option>
                             </select>
@@ -106,44 +107,67 @@
                 <tr>
                     <td class="ps-4 text-muted small">${date}</td>
                     <td class="fw-medium">${t.product_name}</td>
-                    <td>${t.from_branch_name}</td>
-                    <td>${t.to_branch_name}</td>
+                    <td>${t.from_branch_name}${t.from_godown_name ? ' — ' + t.from_godown_name : ''}</td>
+                    <td>${t.to_branch_name}${t.to_godown_name ? ' — ' + t.to_godown_name : ''}</td>
                     <td class="fw-bold">${t.quantity}</td>
                 </tr>
             `;
         });
     }
 
+    let stockRows = [];
     async function loadDropdowns() {
-        const [pResp, bResp] = await Promise.all([
+        const [pResp, bResp, gResp, sResp] = await Promise.all([
             fetch('/api/products/'),
-            fetch('/api/branches/')
+            fetch('/api/branches/'),
+            fetch('/api/godowns/?is_active=true'),
+            fetch('/api/stocks/')
         ]);
-        const products = await pResp.json();
-        const branches = await bResp.json();
-
+        const list = d => Array.isArray(d) ? d : (d.results || []);
+        const products = list(await pResp.json());
+        const branches = list(await bResp.json());
+        const godowns = gResp.ok ? list(await gResp.json()) : [];
+        stockRows = sResp.ok ? list(await sResp.json()) : [];
         const pSelect = document.getElementById('tProduct');
         pSelect.innerHTML = '<option value="">Select Product...</option>' +
             products.map(p => `<option value="${p.id}">${p.name} (${p.sku})</option>`).join('');
+        // Godowns grouped under their branch: a move inside a branch is two
+        // godowns of the same group.
+        const gOpts = '<option value="">Select godown / shop...</option>' + branches.map(b => {
+            const mine = godowns.filter(g => g.branch === b.id);
+            if (!mine.length) return '';
+            return `<optgroup label="${b.name}">` +
+                mine.map(g => `<option value="${g.id}" data-branch="${b.id}">${g.name}${g.kind === 'shop' ? ' (shop)' : ''}</option>`).join('') +
+                '</optgroup>';
+        }).join('');
+        document.getElementById('tFrom').innerHTML = gOpts;
+        document.getElementById('tTo').innerHTML = gOpts;
+        ['tProduct', 'tFrom'].forEach(id => document.getElementById(id).addEventListener('change', showSourceStock));
+    }
 
-        const bOpts = '<option value="">Select Branch...</option>' +
-            branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
-
-        document.getElementById('tFrom').innerHTML = bOpts;
-        document.getElementById('tTo').innerHTML = bOpts;
+    function showSourceStock() {
+        const product = Number(document.getElementById('tProduct').value);
+        const godown = Number(document.getElementById('tFrom').value);
+        const hint = document.getElementById('tFromStock');
+        if (!product || !godown) { hint.innerHTML = '&nbsp;'; return; }
+        const have = stockRows.filter(s => s.product === product && s.godown === godown)
+            .reduce((n, s) => n + Number(s.quantity || 0), 0);
+        hint.textContent = have.toLocaleString() + ' in stock here';
     }
 
     async function handleTransfer(e) {
         e.preventDefault();
+        const from = document.getElementById('tFrom'), to = document.getElementById('tTo');
         const data = {
             product: document.getElementById('tProduct').value,
-            from_branch: document.getElementById('tFrom').value,
-            to_branch: document.getElementById('tTo').value,
+            from_godown: from.value,
+            to_godown: to.value,
+            from_branch: from.selectedOptions[0] ? from.selectedOptions[0].dataset.branch : '',
+            to_branch: to.selectedOptions[0] ? to.selectedOptions[0].dataset.branch : '',
             quantity: document.getElementById('tQty').value
         };
-
-        if (data.from_branch === data.to_branch) {
-            Swal.fire('Error', 'Source and Destination branches must be different', 'error');
+        if (data.from_godown === data.to_godown) {
+            Swal.fire('Error', 'Pick a different godown to move the stock to.', 'error');
             return;
         }
 
@@ -159,7 +183,9 @@
                 Swal.fire('Success', 'Transfer Complete', 'success');
                 fetchTransfers();
             } else {
-                Swal.fire('Error', 'Failed to transfer. Check stock levels.', 'error');
+                let msg = 'Failed to transfer. Check stock levels.';
+                try { const err = await resp.json(); msg = err.detail || Object.values(err).flat().join(' ') || msg; } catch (_) {}
+                Swal.fire('Error', msg, 'error');
             }
         } catch (e) {
             console.error(e);

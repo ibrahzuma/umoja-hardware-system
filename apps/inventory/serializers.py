@@ -1,4 +1,4 @@
-from .models import Branch, Category, Product, Stock, Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DeliveryCheck, DeliveryCheckItem
+from .models import Branch, Godown, Category, Product, Stock,Purchase, Supplier, StockTransfer, PurchaseOrder, PurchaseOrderItem, Truck, TruckAllocation, StockAdjustment, GoodsReceivedNote, GRNItem, Driver, TruckMaintenance, TruckCost, DeliveryCheck, DeliveryCheckItem
 from rest_framework import serializers
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -28,24 +28,55 @@ class ProductSerializer(serializers.ModelSerializer):
         
         product = Product.objects.create(**validated_data)
         
-        # Get or Create default branch
-        branch, _ = Branch.objects.get_or_create(name="Main Branch")
-        
-        # Create or Get Stock
-        Stock.objects.get_or_create(
-            product=product,
-            branch=branch,
-            defaults={
-                'quantity': opening_stock,
-                'low_stock_threshold': low_stock_val
-            }
-        )
+        # Opening stock goes into the first branch's default godown.
+        from .stock import stock_row
+        branch = Branch.objects.order_by('id').first() or Branch.objects.create(name="Main Branch")
+        row = stock_row(product, branch=branch)
+        row.quantity = opening_stock or 0
+        row.low_stock_threshold = low_stock_val
+        row.save()
         return product
+
+class GodownSerializer(serializers.ModelSerializer):
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    kind_display = serializers.CharField(source='get_kind_display', read_only=True)
+    stock_lines = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Godown
+        fields = ['id', 'branch', 'branch_name', 'name', 'kind', 'kind_display', 'is_default',
+                  'is_active', 'stock_lines', 'created_at']
+        read_only_fields = ('created_at',)
+
+    def get_stock_lines(self, obj):
+        """How many products it holds any of."""
+        return obj.stocks.exclude(quantity=0).count()
+
+    def validate(self, attrs):
+        branch = attrs.get('branch') or getattr(self.instance, 'branch', None)
+        name = (attrs.get('name') or getattr(self.instance, 'name', '')).strip()
+        if not name:
+            raise serializers.ValidationError({'name': 'Give the godown a name.'})
+        attrs['name'] = name
+        clash = Godown.objects.filter(branch=branch, name__iexact=name)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError({'name': f'{branch} already has a godown called {name}.'})
+        if self.instance and 'branch' in attrs and attrs['branch'] != self.instance.branch \
+                and self.instance.stocks.exclude(quantity=0).exists():
+            raise serializers.ValidationError(
+                {'branch': 'This godown holds stock; it cannot move to another branch.'})
+        if attrs.get('is_active') is False and (self.instance and self.instance.is_default):
+            raise serializers.ValidationError({'is_active': 'The default godown cannot be switched off.'})
+        return attrs
+
 
 class StockSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     product_sku = serializers.CharField(source='product.sku', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
 
     class Meta:
         model = Stock
@@ -66,6 +97,8 @@ class PurchaseSerializer(serializers.ModelSerializer):
         read_only_fields = ('total_cost',)   # computed from quantity * unit_cost
 
 class StockTransferSerializer(serializers.ModelSerializer):
+    from_godown_name = serializers.CharField(source='from_godown.name', read_only=True, default='')
+    to_godown_name = serializers.CharField(source='to_godown.name', read_only=True, default='')
     product_name = serializers.CharField(source='product.name', read_only=True)
     from_branch_name = serializers.CharField(source='from_branch.name', read_only=True)
     to_branch_name = serializers.CharField(source='to_branch.name', read_only=True)
@@ -77,6 +110,13 @@ class StockTransferSerializer(serializers.ModelSerializer):
 class StockAdjustmentSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
+
+    def validate(self, attrs):
+        godown, branch = attrs.get('godown'), attrs.get('branch')
+        if godown is not None and branch is not None and godown.branch_id != branch.pk:
+            raise serializers.ValidationError({'godown': f'{godown.name} is not in that branch.'})
+        return attrs
     user_name = serializers.CharField(source='user.username', read_only=True)
 
     class Meta:
@@ -129,12 +169,22 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         child=serializers.DictField(), write_only=True, required=False
     )
 
+    godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
+
     class Meta:
         model = PurchaseOrder
         fields = '__all__'
         read_only_fields = ('created_by', 'created_at', 'updated_at', 'total_amount',
                             'checked_by', 'checked_at', 'has_discrepancy', 'store_note',
                             'afisa_comment', 'decided_by', 'decided_at', 'admin_note')
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        godown = attrs.get('godown', getattr(self.instance, 'godown', None))
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        if godown is not None and branch is not None and godown.branch_id != branch.pk:
+            raise serializers.ValidationError({'godown': f'{godown.name} is not in that branch.'})
+        return attrs
 
     def create(self, validated_data):
         from decimal import Decimal

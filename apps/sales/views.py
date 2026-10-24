@@ -134,14 +134,12 @@ class SaleViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         # Restore stock if dispatched
         if instance.status == 'dispatched':
-            from apps.inventory.models import Stock
-            for item in instance.items.all():
-                try:
-                    stock = Stock.objects.get(product=item.product, branch=instance.branch)
-                    stock.quantity += item.quantity
-                    stock.save()
-                except Stock.DoesNotExist:
-                    pass # Should not happen, but safe to ignore if stock record gone
+            # Back into the godown it left from.
+            from apps.inventory.stock import add_stock
+            for item in instance.items.select_related('product'):
+                if item.product.product_type == 'service':
+                    continue
+                add_stock(item.product, item.quantity, branch=instance.branch, godown=instance.godown)
         
         instance.delete()
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, CanApproveSales])
@@ -223,24 +221,27 @@ class SaleViewSet(viewsets.ModelViewSet):
         #    leaves every stock row as it was. During the trial run
         #    (allow_negative_stock) a short line is dispatched anyway and the
         #    stock goes below zero, to be put right when the count is taken.
+        #    The goods leave the sale's godown (else the branch's default).
         from apps.inventory.models import Stock
+        from apps.inventory.stock import resolve_godown
         from apps.core.models import SystemSettings
         from django.db import transaction as db_transaction
         allow_negative = SystemSettings.negative_stock_allowed()
+        godown = resolve_godown(sale.branch_id, sale.godown_id)
         errors = []
         with db_transaction.atomic():
             for item in sale.items.select_related('product'):
                 if item.product.product_type == 'service':
                     continue
                 stock = (Stock.objects.select_for_update()
-                         .filter(product=item.product, branch=sale.branch).first())
+                         .filter(product=item.product, godown=godown).first())
                 if stock is None:
                     if not allow_negative:
-                        errors.append(f"No stock record for {item.product.name} at this branch")
+                        errors.append(f"No stock of {item.product.name} at {godown.name}")
                         continue
-                    stock = Stock(product=item.product, branch=sale.branch, quantity=0)
+                    stock = Stock(product=item.product, godown=godown, branch_id=godown.branch_id, quantity=0)
                 if stock.quantity < item.quantity and not allow_negative:
-                    errors.append(f"Insufficient stock for {item.product.name}")
+                    errors.append(f"Insufficient stock for {item.product.name} at {godown.name}")
                     continue
                 stock.quantity -= item.quantity
                 stock.save()
@@ -366,8 +367,11 @@ class POSView(LoginRequiredMixin, TemplateView):
         from apps.users.permissions import home_branch
         context = super().get_context_data(**kwargs)
         context['allow_negative_stock'] = SystemSettings.negative_stock_allowed()
+        from apps.users.permissions import home_godown
         home = home_branch(self.request.user)
         context['home_branch_id'] = home.pk if home is not None else ''
+        tied = home_godown(self.request.user)
+        context['home_godown_id'] = tied.pk if tied is not None else ''
         return context
 
 class SaleListView(LoginRequiredMixin, TemplateView):

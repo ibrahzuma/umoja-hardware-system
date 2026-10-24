@@ -221,7 +221,7 @@ adding another duplicate will not make two menus spring open at once.
     {% endif %}
 
     {% if user.is_superuser or perms.inventory.view_branch %}
-    <li><a href="{% url 'inventory:branches_list' %}"><i class="bi bi-shop"></i> Branches</a></li>
+    <li><a href="{% url 'inventory:branches_list' %}"><i class="bi bi-shop"></i> Branches &amp; Godowns</a></li>
     {% endif %}
 
     <!-- Commerce -->

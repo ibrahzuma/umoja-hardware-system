@@ -17,12 +17,24 @@ class UserSerializer(serializers.ModelSerializer):
     role_name = serializers.SerializerMethodField(read_only=True)
     role_names = serializers.SerializerMethodField(read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'first_name', 'last_name', 'full_name', 'email', 'role', 'groups', 'branch', 'date_joined', 'password', 'role_name', 'role_names', 'branch_name')
-        read_only_fields = ('role', 'date_joined', 'role_name', 'role_names', 'branch_name')
+        fields = ('id', 'username', 'first_name', 'last_name', 'full_name', 'email', 'role', 'groups', 'branch', 'godown', 'date_joined', 'password', 'role_name', 'role_names', 'branch_name', 'godown_name')
+        read_only_fields = ('role', 'date_joined', 'role_name', 'role_names', 'branch_name', 'godown_name')
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        godown = attrs.get('godown', getattr(self.instance, 'godown', None))
+        if godown is not None and (branch is None or godown.branch_id != branch.pk):
+            if 'branch' in attrs and 'godown' not in attrs:
+                attrs['godown'] = None          # moved branch: the old godown no longer applies
+            else:
+                raise serializers.ValidationError({'godown': 'Pick a godown in the user\'s branch.'})
+        return attrs
 
     def get_full_name(self, obj):
         return obj.get_full_name()

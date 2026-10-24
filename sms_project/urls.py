@@ -11,7 +11,7 @@ ADMIN_URL = os.environ.get('ADMIN_URL', 'admin/' if os.environ.get('DEBUG') == '
 if not ADMIN_URL.endswith('/'):
     ADMIN_URL += '/'
 
-from apps.inventory.views import BranchViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet, PurchaseOrderViewSet, GoodsReceivedNoteViewSet, TruckViewSet, TruckAllocationViewSet, DriverViewSet, StockAdjustmentViewSet, TruckMaintenanceViewSet, TruckCostViewSet
+from apps.inventory.views import BranchViewSet, GodownViewSet, CategoryViewSet, ProductViewSet, StockViewSet, SupplierViewSet, PurchaseViewSet, StockTransferViewSet, PurchaseOrderViewSet, GoodsReceivedNoteViewSet, TruckViewSet, TruckAllocationViewSet, DriverViewSet, StockAdjustmentViewSet, TruckMaintenanceViewSet, TruckCostViewSet
 from apps.sales.views import SaleViewSet, SaleItemViewSet, TransactionViewSet, CustomerViewSet, VehicleViewSet, QuotationViewSet
 from apps.finance.api_accounting import (
     AccountingAuditLogViewSet, AccountingReportViewSet, AccountingSettingsViewSet,
@@ -33,6 +33,7 @@ router = DefaultRouter()
 router.register(r'activities', ActivityViewSet)
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'branches', BranchViewSet)
+router.register(r'godowns', GodownViewSet)
 router.register(r'categories', CategoryViewSet)
 router.register(r'products', ProductViewSet)
 router.register(r'stocks', StockViewSet)

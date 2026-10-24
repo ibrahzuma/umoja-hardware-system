@@ -31,18 +31,24 @@ class Command(BaseCommand):
                 'inventory.view_product', 'inventory.add_product', 'inventory.change_product',
                 'sales.view_sale', 'sales.change_sale', 'sales.delete_sale',
                 'finance.view_paymentreceipt',
+                # Godowns: where stock is kept inside a branch.
+                'inventory.view_godown', 'inventory.add_godown', 'inventory.change_godown', 'inventory.delete_godown',
             ],
             'Afisa Ugavi': [
                 'inventory.view_purchaseorder', 'inventory.add_purchaseorder', 'inventory.change_purchaseorder',
                 'inventory.view_supplier', 'inventory.add_supplier', 'inventory.change_supplier',
                 'inventory.view_truck', 'inventory.add_truck', 'inventory.change_truck',
                 'inventory.view_truckallocation', 'inventory.add_truckallocation', 'inventory.change_truckallocation',
+                # Picks the godown an order is delivered to.
+                'inventory.view_godown',
             ],
             'Stock Controller': [
                 'inventory.view_goodsreceivednote', 'inventory.add_goodsreceivednote', 'inventory.change_goodsreceivednote',
                 'inventory.view_stock', 'inventory.change_stock',
                 'inventory.view_stocktransfer', 'inventory.add_stocktransfer',
                 'inventory.view_product',
+                # Godowns: where stock is kept inside a branch.
+                'inventory.view_godown',
             ],
             'Sales Representative': [
                 'sales.view_sale', 'sales.add_sale',
@@ -50,11 +56,16 @@ class Command(BaseCommand):
                 'sales.view_customer', 'sales.add_customer',
                 'sales.view_vehicle',
                 'inventory.view_product',
+                # Godowns: where stock is kept inside a branch.
+                'inventory.view_godown',
             ],
             'Store Manager': [
                 'inventory.view_driver', 'inventory.add_driver', 'inventory.change_driver',
                 'inventory.view_truckmaintenance', 'inventory.add_truckmaintenance',
                 'inventory.view_stocktransfer', 'inventory.add_stocktransfer',
+                # Runs the godowns: moves stock between them and sets them up.
+                'inventory.view_godown', 'inventory.add_godown', 'inventory.change_godown',
+                'inventory.delete_godown',
                 # Dispatching approved orders is gated on the manager role
                 # (see SaleViewSet.dispatch_order), not a Django permission.
             ],
@@ -112,6 +123,8 @@ class Command(BaseCommand):
             'Store Keeper': [
                 'inventory.view_stock',
                 'sales.view_sale',
+                # Godowns: where stock is kept inside a branch.
+                'inventory.view_godown',
             ],
             'Cashier': [
                 # The cash desk: the float, the catch-all payouts, and paying
@@ -127,6 +140,8 @@ class Command(BaseCommand):
                 'finance.view_bankaccount',
                 'inventory.view_supplier',
                 'inventory.view_branch',
+                # Godowns: where stock is kept inside a branch.
+                'inventory.view_godown',
             ],
             'Sales & Credit Manager': [
                 # Approves orders (gated by role, see CanApproveSales) and tracks

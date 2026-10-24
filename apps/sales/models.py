@@ -63,9 +63,17 @@ class Sale(models.Model):
     
     invoice_number = models.CharField(max_length=50, unique=True)
     branch = models.ForeignKey('inventory.Branch', on_delete=models.CASCADE, related_name='sales')
+    # The godown or shop the goods leave from (blank: the branch's default).
+    godown = models.ForeignKey('inventory.Godown', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='sales')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='sales')
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales')
     customer_name = models.CharField(max_length=100, blank=True, default="Walk-in Customer")
+    # Reference numbers kept against the sale and printed on the invoice. LP is
+    # the loading/picking slip; PI and Order are written on the paper document.
+    lp_number = models.CharField("LP No.", max_length=50, blank=True)
+    pi_number = models.CharField("PI No.", max_length=50, blank=True)
+    order_number = models.CharField("Order No.", max_length=50, blank=True)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     discount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00,

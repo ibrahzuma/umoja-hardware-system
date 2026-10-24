@@ -23,6 +23,16 @@ def home_branch(user):
     return getattr(user, 'branch', None)
 
 
+def home_godown(user):
+    """The godown or shop this user sells from, or None. Only someone tied to
+    a branch can be tied to a godown, and only to one in that branch."""
+    branch = home_branch(user)
+    godown = getattr(user, 'godown', None) if branch is not None else None
+    if godown is None or godown.branch_id != branch.pk or not godown.is_active:
+        return None
+    return godown
+
+
 def is_privileged(user):
     """Top-level access. Django superusers and the in-app 'admin' role can use
     every endpoint — they oversee the whole system. Keep this the single source

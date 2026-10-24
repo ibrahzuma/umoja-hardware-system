@@ -1,96 +1,173 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 class="text-primary fw-bold">Branches</h2>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-0">Branches &amp; Godowns</h2>
+        <div class="text-muted small">Stock is kept per godown or shop; a branch's stock is the sum of its godowns.</div>
+    </div>
     <a href="{% url 'inventory:branch_create' %}" class="btn btn-primary">
         <i class="bi bi-shop"></i> Add Branch
     </a>
 </div>
 
-<div class="card shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light">
-                    <tr>
-                        <th class="ps-4">Branch Name</th>
-                        <th>Address</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="branchTableBody">
-                    <tr>
-                        <td colspan="3" class="text-center py-4">Loading...</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div id="branchCards">
+    <div class="text-center py-5 text-muted">Loading…</div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-        loadBranches();
-    });
+    const CAN_EDIT = {{ perms.inventory.change_godown|yesno:"true,false" }} || {{ user.is_superuser|yesno:"true,false" }};
+    const CAN_ADD = {{ perms.inventory.add_godown|yesno:"true,false" }} || {{ user.is_superuser|yesno:"true,false" }};
+    const CAN_DELETE = {{ perms.inventory.delete_godown|yesno:"true,false" }} || {{ user.is_superuser|yesno:"true,false" }};
+    const headers = { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' };
+    let branches = [], godowns = [], totals = {};
 
-    async function loadBranches() {
+    document.addEventListener('DOMContentLoaded', load);
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    const list = d => Array.isArray(d) ? d : (d.results || []);
+
+    async function load() {
         try {
-            const res = await fetch('/api/branches/');
-            const data = await res.json();
+            const [b, g, s] = await Promise.all([
+                fetch('/api/branches/').then(r => r.json()),
+                fetch('/api/godowns/').then(r => r.ok ? r.json() : []),
+                fetch('/api/stocks/').then(r => r.ok ? r.json() : []),
+            ]);
+            branches = list(b); godowns = list(g);
+            totals = {};
+            list(s).forEach(row => { if (row.godown) totals[row.godown] = (totals[row.godown] || 0) + Number(row.quantity || 0); });
+            render();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('branchCards').innerHTML = '<div class="alert alert-danger">Could not load branches.</div>';
+        }
+    }
 
-            const tbody = document.getElementById('branchTableBody');
-            tbody.innerHTML = '';
-
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-muted">No branches found</td></tr>';
-                return;
-            }
-
-            data.forEach(b => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="ps-4 fw-bold text-primary">${b.name}</td>
-                    <td>${b.address || '-'}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteBranch(${b.id})">
-                            <i class="bi bi-trash"></i>
-                        </button>
+    function render() {
+        const box = document.getElementById('branchCards');
+        if (!branches.length) {
+            box.innerHTML = '<div class="text-center py-5 text-muted">No branches yet.</div>';
+            return;
+        }
+        box.innerHTML = branches.map(b => {
+            const mine = godowns.filter(g => g.branch === b.id);
+            const rows = mine.map(g => `
+                <tr class="${g.is_active ? '' : 'text-muted'}">
+                    <td class="ps-4">
+                        <i class="bi ${g.kind === 'shop' ? 'bi-shop-window' : 'bi-building'} me-2 text-secondary"></i>
+                        <span class="fw-semibold">${escapeHtml(g.name)}</span>
+                        ${g.is_default ? '<span class="badge bg-primary-subtle text-primary ms-2" title="Takes stock that does not name a godown">Default</span>' : ''}
+                        ${g.is_active ? '' : '<span class="badge bg-secondary ms-2">Off</span>'}
                     </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        } catch (e) { console.error(e); }
+                    <td>${escapeHtml(g.kind_display)}</td>
+                    <td class="text-end">${(totals[g.id] || 0).toLocaleString()} <small class="text-muted">units · ${g.stock_lines} items</small></td>
+                    <td class="text-end pe-4 text-nowrap">
+                        ${CAN_EDIT ? `<button class="btn btn-sm btn-outline-primary" title="Rename / change type" onclick="editGodown(${g.id})"><i class="bi bi-pencil"></i></button>` : ''}
+                        ${CAN_EDIT && !g.is_default && g.is_active ? `<button class="btn btn-sm btn-outline-secondary" title="Make default" onclick="makeDefault(${g.id})"><i class="bi bi-star"></i></button>` : ''}
+                        ${CAN_EDIT && !g.is_default ? `<button class="btn btn-sm btn-outline-secondary" title="${g.is_active ? 'Switch off' : 'Switch on'}" onclick="toggleGodown(${g.id})"><i class="bi ${g.is_active ? 'bi-toggle-on' : 'bi-toggle-off'}"></i></button>` : ''}
+                        ${CAN_DELETE ? `<button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteGodown(${g.id})"><i class="bi bi-trash"></i></button>` : ''}
+                    </td>
+                </tr>`).join('');
+            return `
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <span class="fw-bold text-primary fs-6">${escapeHtml(b.name)}</span>
+                        <span class="text-muted small ms-2">${escapeHtml(b.address || '')}</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        ${CAN_ADD ? `<button class="btn btn-sm btn-primary" onclick="addGodown(${b.id})"><i class="bi bi-plus-lg"></i> Add godown / shop</button>` : ''}
+                        <button class="btn btn-sm btn-outline-danger" title="Delete branch" onclick="deleteBranch(${b.id})"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" data-no-paginate>
+                        <thead class="bg-light small"><tr>
+                            <th class="ps-4">Godown / shop</th><th>Type</th><th class="text-end">Stock held</th><th class="text-end pe-4">Actions</th>
+                        </tr></thead>
+                        <tbody>${rows || '<tr><td colspan="4" class="text-center text-muted py-3">No godowns yet — stock goes to a "Main Store" the first time it is needed.</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    async function godownForm(title, g) {
+        const { value } = await Swal.fire({
+            title,
+            html: `<input id="gName" class="form-control mb-2" placeholder="Name, e.g. VOIL or Shop 1" value="${escapeHtml(g ? g.name : '')}">
+                   <select id="gKind" class="form-select">
+                       <option value="godown" ${!g || g.kind === 'godown' ? 'selected' : ''}>Godown (store)</option>
+                       <option value="shop" ${g && g.kind === 'shop' ? 'selected' : ''}>Shop</option>
+                   </select>`,
+            showCancelButton: true,
+            confirmButtonText: 'Save',
+            focusConfirm: false,
+            preConfirm: () => {
+                const name = document.getElementById('gName').value.trim();
+                if (!name) { Swal.showValidationMessage('Give it a name.'); return false; }
+                return { name, kind: document.getElementById('gKind').value };
+            }
+        });
+        return value;
+    }
+
+    async function send(url, method, body) {
+        const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        if (res.ok) return true;
+        let msg = 'That did not work.';
+        try {
+            const err = await res.json();
+            msg = err.detail || Object.values(err).flat().join(' ') || msg;
+        } catch (_) {}
+        Swal.fire('Not saved', res.status === 403 ? "You don't have permission." : msg, 'error');
+        return false;
+    }
+
+    async function addGodown(branchId) {
+        const v = await godownForm('Add godown / shop', null);
+        if (v && await send('/api/godowns/', 'POST', { ...v, branch: branchId })) load();
+    }
+    async function editGodown(id) {
+        const g = godowns.find(x => x.id === id);
+        const v = await godownForm('Edit ' + g.name, g);
+        if (v && await send(`/api/godowns/${id}/`, 'PATCH', v)) load();
+    }
+    async function makeDefault(id) {
+        if (await send(`/api/godowns/${id}/`, 'PATCH', { is_default: true })) load();
+    }
+    async function toggleGodown(id) {
+        const g = godowns.find(x => x.id === id);
+        if (await send(`/api/godowns/${id}/`, 'PATCH', { is_active: !g.is_active })) load();
+    }
+    async function deleteGodown(id) {
+        const g = godowns.find(x => x.id === id);
+        const ok = await Swal.fire({ title: 'Delete ' + g.name + '?', text: 'Only an empty godown can be deleted.',
+                                     icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33',
+                                     confirmButtonText: 'Delete' });
+        if (ok.isConfirmed && await send(`/api/godowns/${id}/`, 'DELETE')) load();
     }
 
     async function deleteBranch(id) {
         const result = await Swal.fire({
             title: 'Are you sure?',
-            text: "This might affect stock records linked to this branch!",
+            text: "Deleting a branch deletes its godowns and the stock records in them!",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#d33',
             cancelButtonColor: '#3085d6',
             confirmButtonText: 'Yes, delete it!'
         });
-
-        if (result.isConfirmed) {
-            try {
-                const res = await fetch(`/api/branches/${id}/`, {
-                    method: 'DELETE',
-                    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-                });
-
-                if (res.ok) {
-                    Swal.fire('Deleted!', 'Branch has been deleted.', 'success');
-                    loadBranches();
-                } else {
-                    Swal.fire('Error', 'Failed to delete branch.', 'error');
-                }
-            } catch (e) { console.error(e); }
+        if (result.isConfirmed && await send(`/api/branches/${id}/`, 'DELETE')) {
+            Swal.fire('Deleted!', 'Branch has been deleted.', 'success');
+            load();
         }
     }
 </script>

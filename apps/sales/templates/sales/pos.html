@@ -19,10 +19,14 @@
                             </button>
                         </div>
                     </div>
-                    <div class="col-12 col-md-4">
+                    <div class="col-6 col-md-2">
                         <select id="branchSelect" class="form-select form-select-lg" title="Branch">
                             <!-- Populated via JS -->
                         </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <!-- The godown or shop the goods leave from -->
+                        <select id="godownSelect" class="form-select form-select-lg" title="Godown / shop"></select>
                     </div>
                 </div>
                 {% if allow_negative_stock %}
@@ -149,33 +153,19 @@
                         <a class="nav-link" href="{% url 'sales:order_management' %}"><i
                                 class="bi bi-diagram-3 me-2"></i>Order Workflow</a>
                         <a class="nav-link" href="{% url 'sales:credit_sales' %}">Credit Sales</a>
-                        <label class="form-label text-muted small fw-bold">Payment Method</label>
+                        <label class="form-label text-muted small fw-bold">Sale Type</label>
                         <div class="row g-2" id="paymentMethods">
                             <div class="col-6">
                                 <input type="radio" class="btn-check" name="payment_method" id="payCash" value="cash"
                                     checked>
                                 <label class="btn btn-outline-secondary w-100 py-3" for="payCash">
-                                    <i class="bi bi-cash fs-4 d-block mb-1"></i> Cash
+                                    <i class="bi bi-cash fs-4 d-block mb-1"></i> Cash Sales
                                 </label>
                             </div>
                             <div class="col-6">
                                 <input type="radio" class="btn-check" name="payment_method" id="payCard" value="credit">
                                 <label class="btn btn-outline-secondary w-100 py-3" for="payCard">
-                                    <i class="bi bi-credit-card fs-4 d-block mb-1"></i> Credit
-                                </label>
-                            </div>
-                            <div class="col-6">
-                                <input type="radio" class="btn-check" name="payment_method" id="payTransfer"
-                                    value="bank">
-                                <label class="btn btn-outline-secondary w-100 py-3" for="payTransfer">
-                                    <i class="bi bi-bank fs-4 d-block mb-1"></i> Bank
-                                </label>
-                            </div>
-                            <div class="col-6">
-                                <input type="radio" class="btn-check" name="payment_method" id="payMobile"
-                                    value="mobile">
-                                <label class="btn btn-outline-secondary w-100 py-3" for="payMobile">
-                                    <i class="bi bi-phone fs-4 d-block mb-1"></i> Mobile
+                                    <i class="bi bi-credit-card fs-4 d-block mb-1"></i> Credit Sales
                                 </label>
                             </div>
                         </div>
@@ -184,7 +174,7 @@
                     <div class="mb-3" id="receivedIntoSection">
                         <label class="form-label text-muted small fw-bold">Received Into</label>
                         <select class="form-select" id="receivedInto"></select>
-                        <div class="form-text">The cash book or bank account the money goes into.</div>
+                        <div class="form-text">The cash book or bank account the money goes into — any cash or bank ledger.</div>
                     </div>
 
                     <!-- Partial deposit (shown only for Credit sales) -->
@@ -193,19 +183,12 @@
                             <div class="card-body p-3">
                                 <label class="form-label text-muted small fw-bold mb-2">Deposit paid now (optional)</label>
                                 <div class="row g-2">
-                                    <div class="col-7">
+                                    <div class="col-12">
                                         <div class="input-group">
                                             <span class="input-group-text">TZS</span>
                                             <input type="number" min="0" step="1" value="0" id="depositAmount"
                                                 class="form-control" inputmode="numeric">
                                         </div>
-                                    </div>
-                                    <div class="col-5">
-                                        <select class="form-select" id="depositMethod">
-                                            <option value="cash">Cash</option>
-                                            <option value="bank">Bank</option>
-                                            <option value="mobile">Mobile</option>
-                                        </select>
                                     </div>
                                 </div>
                                 <div class="d-flex justify-content-between mt-2 small">
@@ -217,19 +200,39 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Customer (Optional)</label>
-                        <!-- Type to filter the customers already on the system; type a
-                             name that is not there and it is registered on submit. -->
-                        <input type="text" class="form-control" id="customerName"
-                               list="customerOptions" autocomplete="off"
-                               placeholder="Type a name — or leave blank for Walk-in Customer">
-                        <datalist id="customerOptions"></datalist>
-                        <div class="form-text" id="customerHint">
-                            Leave blank for a walk-in sale.
+                        <label class="form-label">Customer</label>
+                        <!-- Pick a registered customer from the list. A new one is
+                             added deliberately with the + New button, never by typing. -->
+                        <div class="input-group">
+                            <select class="form-select" id="customerSelect">
+                                <option value="">Walk-in Customer</option>
+                            </select>
+                            <button type="button" class="btn btn-outline-primary" id="addCustomerBtn"
+                                    title="Register a new customer">
+                                <i class="bi bi-plus-lg"></i> New
+                            </button>
                         </div>
-                        <div class="mt-2 d-none" id="newCustomerFields">
-                            <input type="text" class="form-control form-control-sm" id="customerPhone"
-                                   placeholder="Phone number (optional)">
+                        <div class="form-text" id="customerHint">
+                            Leave as Walk-in Customer for a walk-in sale.
+                        </div>
+                    </div>
+
+                    <!-- Document reference numbers kept against the sale. -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <label class="form-label small text-muted mb-1">LP No.</label>
+                            <input type="text" class="form-control form-control-sm" id="lpNumber"
+                                   autocomplete="off" placeholder="LP No.">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small text-muted mb-1">PI No.</label>
+                            <input type="text" class="form-control form-control-sm" id="piNumber"
+                                   autocomplete="off" placeholder="Hand written">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small text-muted mb-1">Order No.</label>
+                            <input type="text" class="form-control form-control-sm" id="orderNumber"
+                                   autocomplete="off" placeholder="Hand written">
                         </div>
                     </div>
 
@@ -254,6 +257,10 @@
     const ALLOW_NEGATIVE_STOCK = {{ allow_negative_stock|yesno:"true,false" }};
     // The seller's own shop when they are tied to one (users.permissions.home_branch).
     const HOME_BRANCH = {{ home_branch_id|default:"null" }};
+    // ...and the godown or shop in it, when they are tied to one.
+    const HOME_GODOWN = {{ home_godown_id|default:"null" }};
+    let godowns = [];
+    let currentGodown = null;
     // --- State ---
     let products = [];
     let cart = [];
@@ -295,19 +302,23 @@
             const end = pickerSearch.value.length;
             pickerSearch.setSelectionRange(end, end);
         });
+        document.getElementById('godownSelect').addEventListener('change', (e) => {
+            currentGodown = parseInt(e.target.value) || null;
+            // Stock is per godown, so the cart starts again.
+            clearCart();
+        });
         branchSelect.addEventListener('change', (e) => {
             currentBranch = parseInt(e.target.value);
+            fillGodowns();
             // Stock is per branch, so the cart starts again.
             clearCart();
             fillReceivedInto();
         });
-        document.getElementById('depositMethod').addEventListener('change', fillReceivedInto);
         document.getElementById('paymentForm').addEventListener('submit', processSale);
         document.getElementById('cartDiscount').addEventListener('input', updateCartUI);
         document.querySelectorAll('input[name="payment_method"]').forEach(r => r.addEventListener('change', toggleDepositSection));
         document.getElementById('depositAmount').addEventListener('input', updateCreditBalance);
-        document.getElementById('customerName').addEventListener('input', onCustomerTyped);
-        document.getElementById('customerName').addEventListener('change', onCustomerTyped);
+        document.getElementById('addCustomerBtn').addEventListener('click', addNewCustomer);
     });
 
     // --- Credit deposit (partial payment now, rest on credit) ---
@@ -339,15 +350,21 @@
         }
         fillReceivedInto();
     }
-    // The method the money actually comes by: on credit, the deposit's.
-    function moneyMethod() {
-        return selectedMethod() === 'credit' ? document.getElementById('depositMethod').value : selectedMethod();
+    // The money ledger the seller picked tells us how it came: a cash book is
+    // a cash payment, a bank ledger a bank one. (Mobile money lives on a bank
+    // ledger, so it reads as 'bank' too.)
+    function receivedIntoKind() {
+        const sel = document.getElementById('receivedInto');
+        const opt = sel && sel.selectedOptions[0];
+        return opt && opt.dataset.kind === 'bank' ? 'bank' : 'cash';
     }
     function fillReceivedInto() {
         const credit = selectedMethod() === 'credit';
         // On credit with no deposit no money moves, so there is nowhere to put it.
         document.getElementById('receivedIntoSection').classList.toggle('d-none', credit && getDeposit() <= 0);
-        MoneyAccounts.fill(document.getElementById('receivedInto'), moneyMethod(), null, currentBranch);
+        // Both sale types offer every cash book and bank — the seller picks where
+        // the money (or the deposit) lands.
+        MoneyAccounts.fill(document.getElementById('receivedInto'), 'all', null, currentBranch);
     }
 
     // --- Money helpers (subtotal / discount / total) ---
@@ -369,13 +386,16 @@
     async function fetchInitialData() {
         try {
             // In a real optimized app, we'd fetch products with current stock for the selected branch only
-            const [prodRes, catRes, branchRes, stockRes, custRes] = await Promise.all([
+            const [prodRes, catRes, branchRes, stockRes, custRes, godownRes] = await Promise.all([
                 fetch('/api/products/'),
                 fetch('/api/categories/'),
                 fetch('/api/branches/'),
                 fetch('/api/stocks/'),
-                fetch('/api/customers/')
+                fetch('/api/customers/'),
+                fetch('/api/godowns/?is_active=true')
             ]);
+            const godownData = godownRes.ok ? await godownRes.json() : [];
+            godowns = (Array.isArray(godownData) ? godownData : godownData.results) || [];
 
             const prodData = await prodRes.json();
             const catData = await catRes.json();
@@ -406,6 +426,7 @@
                 if (idx === 0 && !branches.some(x => x.id === currentBranch)) currentBranch = b.id;
             });
             branchSelect.value = currentBranch;
+            fillGodowns();
 
             // Populate Products with calculated stock
             products = productsList.map(p => {
@@ -431,9 +452,30 @@
     }
 
     // --- Stock at the selected branch ---
+    // Stock in the godown selling — that is what dispatch takes it from.
     function stockOf(product) {
-        const entry = product.stocks.find(s => s.branch === currentBranch);
-        return entry ? entry.quantity : 0;
+        return product.stocks
+            .filter(s => s.godown === currentGodown)
+            .reduce((n, s) => n + Number(s.quantity || 0), 0);
+    }
+
+    function fillGodowns() {
+        const select = document.getElementById('godownSelect');
+        let mine = godowns.filter(g => g.branch === currentBranch);
+        if (HOME_GODOWN && mine.some(g => g.id === HOME_GODOWN)) {
+            mine = mine.filter(g => g.id === HOME_GODOWN);
+            select.disabled = true;
+            select.title = 'You sell from this godown / shop';
+        }
+        select.innerHTML = mine.map(g =>
+            `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('')
+            || '<option value="">Main Store</option>';
+        const keep = mine.find(g => g.id === currentGodown);
+        const pick = keep || mine.find(g => g.is_default) || mine[0];
+        currentGodown = pick ? pick.id : null;
+        select.value = currentGodown || '';
+        // One godown in the branch: nothing to choose.
+        select.closest('div').classList.toggle('d-none', mine.length <= 1 && !HOME_GODOWN);
     }
     function isService(product) {
         return product.product_type === 'service';
@@ -654,91 +696,91 @@
         cart = [];
         const disc = document.getElementById('cartDiscount');
         if (disc) disc.value = 0;
-        const custName = document.getElementById('customerName');
-        if (custName) {
-            custName.value = '';
-            document.getElementById('customerPhone').value = '';
-            onCustomerTyped();
-        }
+        const sel = document.getElementById('customerSelect');
+        if (sel) sel.value = '';
+        ['lpNumber', 'piNumber', 'orderNumber'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
         updateCartUI();
     }
 
     // --- Checkout ---
     function showPaymentModal() {
         document.getElementById('modalTotal').innerText = 'TZS ' + Math.round(getTotal()).toLocaleString();
-        document.getElementById('payCash').checked = true;   // default to Cash
+        document.getElementById('payCash').checked = true;   // default to Cash Sales
         document.getElementById('depositAmount').value = 0;
         toggleDepositSection();                                // hides deposit section
         paymentModal.show();
     }
 
-    // --- Customer box: filter what exists, register what doesn't -----------
+    // --- Customer box: pick from the register; add a new one deliberately ----
 
     function renderCustomerOptions() {
-        const list = document.getElementById('customerOptions');
-        list.innerHTML = '';
-        customers.forEach(c => {
-            const opt = document.createElement('option');
-            // The browser filters on the value as the cashier types, so the value
-            // is the bare name; the phone rides along as the hint on the right.
-            opt.value = c.name;
-            if (c.phone) opt.label = c.phone;
-            list.appendChild(opt);
-        });
+        const sel = document.getElementById('customerSelect');
+        if (!sel) return;
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Walk-in Customer</option>';
+        customers
+            .slice()
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+            .forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.name + (c.phone ? ' · ' + c.phone : '');
+                sel.appendChild(opt);
+            });
+        if (keep && customers.some(c => String(c.id) === String(keep))) sel.value = keep;
     }
 
-    function findCustomerByName(name) {
-        const wanted = (name || '').trim().toLowerCase();
-        if (!wanted) return null;
-        return customers.find(c => (c.name || '').trim().toLowerCase() === wanted) || null;
-    }
-
-    function onCustomerTyped() {
-        const typed = document.getElementById('customerName').value.trim();
-        const hint = document.getElementById('customerHint');
-        const extra = document.getElementById('newCustomerFields');
-        const match = findCustomerByName(typed);
-
-        if (!typed) {
-            hint.textContent = 'Leave blank for a walk-in sale.';
-            hint.className = 'form-text';
-            extra.classList.add('d-none');
-        } else if (match) {
-            hint.textContent = `Existing customer${match.phone ? ' · ' + match.phone : ''}`;
-            hint.className = 'form-text text-success';
-            extra.classList.add('d-none');
-        } else {
-            hint.textContent = 'New customer — will be registered when you confirm the sale.';
-            hint.className = 'form-text text-primary';
-            extra.classList.remove('d-none');
-        }
-    }
-
-    /** Resolve the typed name to a customer id, registering them if new.
-     *  Returns {id, name} — id is null for a walk-in sale. */
-    async function resolveCustomer() {
-        const name = document.getElementById('customerName').value.trim();
-        if (!name) return { id: null, name: 'Walk-in Customer' };
-
-        const match = findCustomerByName(name);
-        if (match) return { id: match.id, name: match.name };
-
-        const phone = (document.getElementById('customerPhone').value || '').trim();
-        const res = await fetch('/api/customers/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-            body: JSON.stringify({ name, phone })
-        });
-        if (!res.ok) {
-            if (res.status === 403) {
-                throw new Error("You do not have permission to add a customer. Pick an existing one, or leave it blank for a walk-in sale.");
+    /** Register a new customer from a small prompt, then select them. */
+    async function addNewCustomer() {
+        const { value: form } = await Swal.fire({
+            title: 'New customer',
+            html:
+                '<input id="swalCustName" class="swal2-input" placeholder="Name">' +
+                '<input id="swalCustPhone" class="swal2-input" placeholder="Phone (optional)">',
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'Add',
+            preConfirm: () => {
+                const name = (document.getElementById('swalCustName').value || '').trim();
+                if (!name) {
+                    Swal.showValidationMessage('A name is required.');
+                    return false;
+                }
+                return { name, phone: (document.getElementById('swalCustPhone').value || '').trim() };
             }
-            throw new Error('Could not register the new customer.');
+        });
+        if (!form) return;
+        try {
+            const res = await fetch('/api/customers/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+                body: JSON.stringify(form)
+            });
+            if (!res.ok) {
+                if (res.status === 403) {
+                    throw new Error('You do not have permission to add a customer.');
+                }
+                throw new Error('Could not register the new customer.');
+            }
+            const created = await res.json();
+            customers.push(created);          // available immediately
+            renderCustomerOptions();
+            document.getElementById('customerSelect').value = created.id;
+        } catch (err) {
+            Swal.fire('Customer', err.message, 'error');
         }
-        const created = await res.json();
-        customers.push(created);          // available immediately for the next sale
-        renderCustomerOptions();
-        return { id: created.id, name: created.name };
+    }
+
+    /** The customer picked from the dropdown. {id, name} — id null for a walk-in. */
+    function resolveCustomer() {
+        const sel = document.getElementById('customerSelect');
+        const id = sel ? sel.value : '';
+        if (!id) return { id: null, name: 'Walk-in Customer' };
+        const c = customers.find(x => String(x.id) === String(id));
+        return c ? { id: c.id, name: c.name } : { id: null, name: 'Walk-in Customer' };
     }
 
     async function processSale(e) {
@@ -755,24 +797,18 @@
         // For a credit sale, an optional deposit is paid now via cash/bank/mobile;
         // the remainder stays on credit. Otherwise the full amount is paid now.
         let payAmount, payMethod;
+        // How the money came is read off the chosen cash/bank ledger: a cash
+        // book is a cash payment, a bank ledger a bank one.
         if (method === 'credit') {
             const deposit = getDeposit();
             payAmount = deposit;
-            payMethod = deposit > 0 ? document.getElementById('depositMethod').value : 'credit';
+            payMethod = deposit > 0 ? receivedIntoKind() : 'credit';
         } else {
             payAmount = total;
-            payMethod = method;
+            payMethod = receivedIntoKind();
         }
 
-        // Registers the customer first if the cashier typed a new name, so the
-        // sale is filed against a real customer record rather than loose text.
-        let customer;
-        try {
-            customer = await resolveCustomer();
-        } catch (err) {
-            Swal.fire('Customer', err.message, 'error');
-            return;
-        }
+        const customer = resolveCustomer();
 
         const account = document.getElementById('receivedInto').value;
         if (payAmount > 0 && !account) {
@@ -782,8 +818,12 @@
 
         const saleData = {
             branch: currentBranch,
+            godown: currentGodown,
             customer: customer.id,
             customer_name: customer.name,
+            lp_number: (document.getElementById('lpNumber').value || '').trim(),
+            pi_number: (document.getElementById('piNumber').value || '').trim(),
+            order_number: (document.getElementById('orderNumber').value || '').trim(),
             discount: getDiscount(),
             items: cart.map(i => ({
                 product: i.id,

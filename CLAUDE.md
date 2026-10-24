@@ -517,7 +517,26 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
   (creating the row if there is none). Dispatch checks every line before it moves any stock, inside one
   transaction, so a refused dispatch leaves the shelves as they were. The Android app still checks stock
   on the phone and does not read the switch.
-- **Several shops (`inventory.Branch`).** Stock, sales, POs/GRNs, expenses, income and petty cash all carry
+- **Godowns: stock is counted per godown, not per branch.** `inventory.Godown` is a place inside a branch
+  where stock is kept — a godown (store) or a shop (`kind`). `Stock` is one row per product per **godown**
+  (`unique_stock_per_godown`); its `branch` is copied from the godown on save, so every branch-level filter
+  and sum still works unchanged. Each branch has exactly one `is_default` godown (the first one made; making
+  another the default moves it), and `Godown.default_for(branch)` makes a "Main Store" when a branch has none.
+  **Write stock only through `apps/inventory/stock.py`** — `resolve_godown(branch, godown)` (the godown
+  named, else the branch's default; refuses a godown from another branch), `stock_row()` and `add_stock()`.
+  A bare `Stock.objects.get_or_create(product=, branch=)` is a bug now: it misses the godown.
+  - Sales name their godown (`Sale.godown`, picked at the POS); the stock guard counts that godown, and a
+    sale naming none counts and dispatches from the default. Dispatch, and restoring stock when a
+    dispatched sale is deleted, use the same godown.
+  - Staff can be tied to one godown (`User.godown`, Users → Edit) inside their branch:
+    `users.permissions.home_godown` locks the POS to it and the serializer refuses any other.
+  - Transfers go godown to godown (`from_godown`/`to_godown`), inside a branch or across, and never move
+    more than the source holds unless the trial run is on. POs carry a "Deliver to" `godown` that
+    `_receive_delivery` and GRN lines credit; adjustments name a godown; opening stock and imports go to
+    the first branch's default godown. The Android app sends no godown, so its sales use the default.
+  - Screens: Inventory → **Branches & Godowns** (`/inventory/branches/`) sets them up; the API is
+    `/api/godowns/` (a godown holding stock cannot be deleted, the default cannot be switched off).
+- **Several shops (`inventory.Branch`).**Stock, sales, POs/GRNs, expenses, income and petty cash all carry
   their shop. Three things make shops separate rather than just labelled:
   - **Staff are tied to their shop** by `users.permissions.home_branch(user)`: anyone with `User.branch` set
     who is not admin/manager/accountant/Sales & Credit Manager. For them the POS opens on that shop with the

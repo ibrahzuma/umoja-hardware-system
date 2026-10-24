@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Umoja Hardware System — User Training Guide</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+body {
+  font-family: "Segoe UI", "Calibri", Arial, sans-serif;
+  color: #141a23; font-size: 11.5pt; line-height: 1.5;
+  max-width: 100%; margin: 0;
+}
+h1 { font-size: 26pt; color: #2d3bb0; margin: 0 0 6pt; line-height: 1.15; }
+h2 {
+  font-size: 18pt; color: #ffffff; background: #141a23;
+  padding: 8pt 12pt; border-radius: 6px; margin: 20pt 0 12pt;
+  page-break-before: always; page-break-after: avoid;
+}
+h2:first-of-type { page-break-before: avoid; }
+h3 {
+  font-size: 14.5pt; color: #2d3bb0; margin: 16pt 0 6pt;
+  border-bottom: 2px solid #e3e7f7; padding-bottom: 3pt;
+  page-break-after: avoid;
+}
+h4 { font-size: 12pt; color: #16a37b; margin: 12pt 0 4pt; page-break-after: avoid; }
+p { margin: 5pt 0; }
+strong { color: #141a23; }
+blockquote {
+  margin: 8pt 0; padding: 6pt 12pt; background: #fff8e6;
+  border-left: 4px solid #e0a423; color: #5a4a18; border-radius: 0 4px 4px 0;
+}
+blockquote p { margin: 2pt 0; }
+code {
+  font-family: "Consolas", "Courier New", monospace; font-size: 9.5pt;
+  background: #f1f3f8; padding: 1px 4px; border-radius: 3px; color: #b5274a;
+}
+pre {
+  background: #1b2230; color: #e6ebf5; padding: 10pt 12pt; border-radius: 6px;
+  font-family: "Consolas", "Courier New", monospace; font-size: 9pt;
+  line-height: 1.35; overflow-x: auto; page-break-inside: avoid;
+  white-space: pre;
+}
+pre code { background: none; color: inherit; padding: 0; font-size: 9pt; }
+ul, ol { margin: 5pt 0 5pt 0; padding-left: 20pt; }
+li { margin: 2pt 0; }
+table {
+  border-collapse: collapse; width: 100%; margin: 10pt 0; font-size: 10pt;
+  page-break-inside: avoid;
+}
+th, td { border: 1px solid #d4dae6; padding: 5pt 8pt; text-align: left; vertical-align: top; }
+th { background: #eef1fb; color: #2d3bb0; font-weight: 600; }
+tr:nth-child(even) td { background: #f8f9fc; }
+img { max-width: 100%; height: auto; border: 1px solid #d4dae6; border-radius: 4px; margin: 4pt 0; page-break-inside: avoid; }
+td img { max-width: 100%; }
+hr { border: none; border-top: 1px solid #d4dae6; margin: 16pt 0; }
+a { color: #2d3bb0; text-decoration: none; }
+</style></head>
+<body><h1>Umoja Hardware System — User Training Guide</h1>
+<p><strong>For trainers and new users</strong> · Production: <a href="https://umoja.ehub.co.tz">https://umoja.ehub.co.tz</a> · Mobile: <em>Umoja Pro</em> (Android) · <em>Edition of 13 September 2026 — covers the cash desk, Sales Accounting, vouchers &amp; the General Ledger, the three statements, bulk import and the CRM register.</em></p>
+<p>This guide is written to be delivered as a training session. Work through it in order:</p>
+<ol>
+<li><strong>Part A — Getting started</strong> (everyone): sign in, find your way around, the golden rule of roles.</li>
+<li><strong>Part B — Your role</strong>: each role has its own chapter — including the <strong>Cashier</strong> and a much longer <strong>Accountant</strong> chapter (the books). Find yours and read it end to end.</li>
+<li><strong>Part C — The big flows</strong>: how a purchase, a sale, money going out, the till reaching the books, and back-dated work move through <em>several</em> roles. This is the part most people get wrong, so spend time here.</li>
+<li><strong>Part D — Mobile app, troubleshooting, and a hands-on checklist</strong> you can run live with trainees.</li>
+</ol>
+<blockquote>
+<p><strong>How to use this in a classroom:</strong> project this file, sign in as each role using the test logins your administrator provides, and have each trainee do the "Try it now" exercise at the end of their chapter on the live system.</p>
+</blockquote>
+<hr />
+<h2>Part A — Getting started (everyone)</h2>
+<h3>A1. Sign in</h3>
+<ol>
+<li>Open <strong>https://umoja.ehub.co.tz</strong> in a web browser (Chrome or Edge recommended).</li>
+<li>Type your <strong>username</strong> and <strong>password</strong>.</li>
+<li>Click <strong>Sign in</strong>.</li>
+</ol>
+<p><img alt="Login screen" src="screens/01_login.png" /></p>
+<blockquote>
+<p>Your administrator creates your account and gives you the first password. Change it from <strong>Profile</strong> after your first login.</p>
+</blockquote>
+<h3>A2. The dashboard and the sidebar</h3>
+<p>After signing in you land on the <strong>Dashboard</strong>. The cards at the top tell you what needs attention <em>right now</em> (today's revenue, low-stock items, orders waiting, pending approvals). The <strong>left sidebar</strong> is your menu.</p>
+<p>Your own work comes first. Under <strong>Overview</strong> the sidebar opens with <strong>My Workspace</strong> — the menu for
+your role — and only then the shared sections (Catalog, Commerce, CRM, Finance, HR, Administration).
+So an Afisa Ugavi finds <em>Purchase Orders</em> at the top of the menu, not buried below stock and sales.
+Opening one menu closes the others.</p>
+<p><img alt="Dashboard" src="screens/02_dashboard.png" /></p>
+<h3>A3. The golden rule: you only see what your role allows</h3>
+<p><strong>The menu changes depending on who you are.</strong> A Sales Rep does not see Finance. An Accountant does not see Dispatch. If a colleague has a button you don't, that's by design — your role doesn't include that permission.</p>
+<blockquote>
+<p><strong>If a menu item or button is missing</strong>, it is almost always a permissions matter, not a bug. Ask your System Administrator to check your role.</p>
+</blockquote>
+<h3>A4. Sessions time out</h3>
+<p>For security, you are signed out after <strong>20 minutes of inactivity</strong>, and always when you close the browser. Just sign in again. Cookies are locked down (HttpOnly/Secure) — this is normal.</p>
+<h3>A5. My attendance (everyone with a linked staff record)</h3>
+<p>Every signed-in user has a <strong>My attendance</strong> link at the top of the sidebar to clock in/out for the day. This only works if your login has been linked to your employee record (your administrator does this). See the HR chapters for the full attendance flow.</p>
+<h3>A6. Every table can be exported, and long tables page themselves</h3>
+<p>Any list with an <strong>Export CSV / Print</strong> bar above it (the cash desk, the vouchers register, the General Ledger,
+supplier accounts…) exports <strong>exactly what the filters show</strong> — including rows the pager has scrolled past — as
+a CSV that opens cleanly in Excel. Long tables show 10 rows at a time with <strong>10 / 25 / 50 / 100</strong> controls
+underneath; a table with ten rows or fewer is left as it is.</p>
+<h3>A7. Notifications</h3>
+<p>The <strong>bell</strong> at the top right is your inbox. The system writes a notification when something needs <em>you</em>: a
+short delivery to explain, a supplier payment approved or rejected, a petty cash request decided, a posted sale
+queried by Accounts. Click one to jump to the screen it is about.</p>
+<h3>A8. My petty cash (everyone)</h3>
+<p>Anyone can ask for petty cash — for a bus fare, a spare part, a courier. <strong>My petty cash</strong> (top of the sidebar)
+shows your own requests and lets you raise a new one: the amount, what it is for, and the branch. It goes
+<strong>Pending → Approved (by an Admin) → Issued (by the Cashier, when the money is in your hand)</strong>, or <strong>Rejected</strong>
+with a reason. You only ever see your own requests; the Admin and the Cashier see everyone's because they act on
+them. The float only moves when the Cashier presses <strong>Done</strong> — a promise is not cash.</p>
+<p><img alt="My petty cash requests" src="screens/35_petty_cash_requests.png" /></p>
+<hr />
+<h2>Part B — Roles at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Who they are</th>
+<th>Main job in the system</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>System Administrator</strong></td>
+<td>Owner / IT lead</td>
+<td>Set up the business; manage users &amp; roles; <strong>decide every approval queue</strong> (deliveries, supplier payments, petty cash); can do everything</td>
+</tr>
+<tr>
+<td><strong>Manager</strong></td>
+<td>General manager</td>
+<td>Oversight of products, sales, and reports</td>
+</tr>
+<tr>
+<td><strong>Procurement Officer</strong> (<em>Afisa Ugavi</em>)</td>
+<td>Buyer</td>
+<td>Manage suppliers, raise Purchase Orders, inbound trucks</td>
+</tr>
+<tr>
+<td><strong>Stock Controller</strong></td>
+<td>Receiving clerk</td>
+<td>Receive goods (GRN) against POs, keep stock balances accurate</td>
+</tr>
+<tr>
+<td><strong>Store Keeper</strong></td>
+<td>Warehouse staff</td>
+<td>Pick goods for dispatch, load the truck</td>
+</tr>
+<tr>
+<td><strong>Sales Representative</strong></td>
+<td>Cashier / salesperson</td>
+<td>Take orders at POS, manage customers &amp; quotations</td>
+</tr>
+<tr>
+<td><strong>Store Manager</strong></td>
+<td>Floor supervisor</td>
+<td>Verify deliveries item by item, run dispatch, move stock between branches</td>
+</tr>
+<tr>
+<td><strong>Sales &amp; Credit Manager</strong></td>
+<td>Sales supervisor</td>
+<td>Approve/decline orders, chase credit customers, record payments received</td>
+</tr>
+<tr>
+<td><strong>Cashier</strong></td>
+<td>Holder of the cash tin</td>
+<td>Petty cash float, hand out approved petty cash, <strong>record</strong> supplier payments and other payouts (the Admin approves them)</td>
+</tr>
+<tr>
+<td><strong>Accountant</strong></td>
+<td>Bookkeeper</td>
+<td>Take sales into the books, post vouchers, run the General Ledger and the three statements, keep the CRM register, expenses, income, taxes</td>
+</tr>
+<tr>
+<td><strong>HR Officer</strong></td>
+<td>HR administrator</td>
+<td>Maintain employee records, leave, attendance, documents</td>
+</tr>
+<tr>
+<td><strong>HR Manager</strong></td>
+<td>Head of HR</td>
+<td>Everything HR Officer does, <strong>plus</strong> payroll, departments, performance &amp; discipline</td>
+</tr>
+<tr>
+<td><strong>Staff</strong></td>
+<td>General employee</td>
+<td>Self-service only (clock in/out, profile, petty cash requests)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Two separate fleets — don't mix them up:</strong> <em>Trucks/Drivers</em> (Inventory) are for goods coming <strong>in</strong> from suppliers. <em>Vehicles</em> (Sales) are for goods going <strong>out</strong> to customers. They are intentionally different lists.</p>
+<p><strong>Three things wait for an Admin.</strong> Short deliveries, supplier payments and petty cash requests are all
+<em>requests</em> until an Administrator says yes. Nobody else can approve their own work, and the queues are on the
+Admin's sidebar under <strong>Administration</strong>.</p>
+</blockquote>
+<hr />
+<h2>Part B — Role chapters</h2>
+<p>Each chapter follows the same shape: <strong>Who you are → What you can do → Your daily flow → Tips → Try it now.</strong></p>
+<hr />
+<h3>1. System Administrator</h3>
+<p><strong>Who you are:</strong> the owner or IT lead who sets the system up and keeps it healthy.</p>
+<p><strong>What you can do:</strong> everything. You configure the business once (branches, categories, users, roles), then mostly watch the dashboard for problems.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li><strong>Sign in</strong> and review the <strong>Admin dashboard</strong> — orders to dispatch, low stock, pending approvals, today's revenue.
+   <img alt="Admin dashboard" src="screens/role_admin_dashboard.png" /></li>
+<li><strong>Create branches</strong> — <em>Inventory → Branches → Add branch</em>. Every stock level and every sale is tied to a branch, so set these up <strong>first</strong>.
+   <img alt="Branches" src="screens/03_branches.png" /></li>
+<li><strong>Create categories</strong> — <em>Inventory → Categories</em>. Each category carries a <strong>commission %</strong> applied to every sale of its products. (Old sales keep their old rate even if you change it later.)
+   <img alt="Categories" src="screens/04_categories.png" /></li>
+<li><strong>Manage users</strong> — <em>Users</em>. Each user gets a <strong>role</strong> that decides their menu and permissions.
+   <img alt="Users" src="screens/role_admin_users_list.png" /></li>
+<li><strong>Manage roles</strong> — <em>Roles</em>. Review which permissions each role grants.
+   <img alt="Roles" src="screens/27_roles.png" /></li>
+<li><strong>Delivery Approvals</strong> — <em>Administration → Delivery Approvals</em>. Short deliveries the Store Manager
+   flagged and Afisa Ugavi has explained wait here for you. <strong>Confirm</strong> takes the goods that did arrive
+   into stock and leaves the balance owing; <strong>Reject</strong> sends it back for a better explanation and banks
+   nothing. Until you decide, none of that delivery is stock. Clear this screen daily — goods sitting
+   here are goods the shop cannot sell.
+   <img alt="Delivery approvals" src="screens/31_delivery_approvals.png" /></li>
+<li><strong>Supplier Payment Approvals</strong> — <em>Administration → Supplier Payment Approvals</em>. Every payment the Cashier
+   records is a <strong>request</strong>. <strong>Approve</strong> makes it paid — only then does the order's balance fall and the money
+   show in the Cash Flow. <strong>Reject</strong> with a decision note sends it back to the Cashier, who amends it and
+   resubmits; your note and their reply stay on the record.
+   <img alt="Supplier payment approvals" src="screens/37_supplier_payment_approvals.png" /></li>
+<li><strong>Petty Cash Approvals</strong> — <em>Administration → Petty Cash Approvals</em>. Requests anyone in the business has
+   raised for petty cash. <strong>Approve</strong> or <strong>Reject</strong> (with a reason). Approving does not move cash — the Cashier
+   hands it over and presses Done, and <em>that</em> is when the float falls.
+   <img alt="Petty cash approvals" src="screens/36_petty_cash_approvals.png" /></li>
+<li><strong>Bank accounts</strong> — <em>Finance → Banks</em>. The accounts payments are made from. Each gets a ledger in the books
+   automatically.</li>
+<li><strong>Company settings</strong> — <em>Settings</em>. Company name, logo, TIN/VRN, currency (TZS), default <strong>tax rate</strong> (the VAT
+    box on Sales/Purchase vouchers uses it) — these appear on receipts and invoices.
+   <img alt="Settings" src="screens/role_admin_settings.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- After installing the system, the administrator runs <code>python manage.py create_roles</code> once to seed all role groups and permissions. Re-run it whenever roles or permissions change.
+- The <strong>Reports</strong> menu shows inventory aging, profitability by category, and commission per sales rep.
+- Secrets (keys, DB password) live only in the server's <code>.env</code> file — never share them.</p>
+<p><strong>Try it now:</strong> create a test branch, a test category with 5% commission, and a test Sales Rep user. Then open
+each of the three approval queues and read what is waiting.</p>
+<hr />
+<h3>2. Manager</h3>
+<p><strong>Who you are:</strong> a general manager who needs oversight without doing the day-to-day data entry.</p>
+<p><strong>What you can do:</strong> view and edit products; view, change and cancel sales; view sales and inventory reports; view/add/edit users.</p>
+<p><strong>Your daily flow</strong>
+1. Review the <strong>dashboard</strong> for the day's numbers and anything flagged.
+2. <strong>Products</strong> — check the catalog, prices, and stock health (<em>Catalog → Products</em>, <em>Inventory</em>).
+3. <strong>Sales</strong> — review the sales list, follow up on anything stuck (<em>Commerce → Sales</em>).
+4. <strong>Reports</strong> — read profitability, aging, and commission reports (<em>Reports</em>).</p>
+<p><strong>Tips</strong>
+- Managers see the <strong>Dispatch Board</strong> and <strong>Vehicles</strong> too — handy for covering for a Store Manager.
+- Use reports for decisions; leave the data entry to the specialist roles.</p>
+<hr />
+<h3>3. Procurement Officer (<em>Afisa Ugavi</em>)</h3>
+<p><strong>Who you are:</strong> the person who orders goods from suppliers.</p>
+<p><strong>What you can do:</strong> manage suppliers; raise and edit Purchase Orders (POs); manage inbound trucks and truck allocations.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li>Open your <strong>dashboard</strong> (scoped to procurement tasks).
+   <img alt="Procurement dashboard" src="screens/role_procurement_dashboard.png" /></li>
+<li><strong>Manage suppliers</strong> — <em>Inventory → Suppliers</em>. Add suppliers with contact info; each PO is tied to one supplier.
+   <img alt="Suppliers" src="screens/role_procurement_suppliers.png" /></li>
+<li><strong>Purchase Orders</strong> — <em>Inventory → Purchase orders</em>. The list shows open, received, and closed POs.
+   <img alt="Purchase orders" src="screens/role_procurement_purchase_orders.png" /></li>
+<li><strong>Raise a new PO</strong> — pick the supplier, add line items (product + quantity + agreed price). The PO is tracked until goods arrive.
+   <img alt="Create PO" src="screens/role_procurement_po_create.png" /></li>
+<li><strong>Confirm the goods arrived</strong> — when the supplier delivers, open the PO and click <strong>Confirm</strong>.
+   The order goes to the Store Manager, who counts it. <em>You are saying "it has turned up", not "it is all here".</em></li>
+<li><strong>Explain a shortfall</strong> — if the Store Manager finds items missing, the order comes back to you marked
+   <strong>Discrepancy</strong> with a <strong>Add Comment</strong> button. Write what happened (supplier short-shipped, damaged in
+   transit, back-ordered). Your comment goes to the <strong>Admin</strong>, who confirms or rejects it.
+   If the Admin rejects it, the order returns marked <strong>Re-comment</strong> with the Admin's reason — answer it properly.</li>
+<li><strong>Confirm the balance</strong> — an order the Admin part-confirmed sits as <strong>Partially Received</strong>, listing exactly
+   what is still owed. When the rest is delivered, click <strong>Confirm Balance</strong> and it goes round again — the
+   Store Manager then checks only the outstanding quantity.</li>
+<li><strong>Supplier credit</strong> — if the Cashier has ever over-paid a supplier, the order form shows the <strong>credit</strong> that
+   supplier holds for us, and the Cashiers are told when you raise an order for them, so the credit gets used.</li>
+<li><strong>Inbound fleet</strong> — <em>Inventory → Trucks</em> (deliveries <strong>from</strong> suppliers), <em>Drivers</em>, <em>Maintenance</em>, and
+   <em>Transport</em> for the cost of each trip.
+   <img alt="Trucks" src="screens/role_procurement_trucks.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- <strong>Trucks here = inbound</strong> from suppliers. <strong>Vehicles (Sales) = outbound</strong> to customers. Don't mix them.
+- Raise the PO <strong>before</strong> the supplier ships — the delivery check matches against it line by line.
+- <strong>Confirming is not receiving.</strong> Nothing becomes stock because you clicked Confirm; the store still has to count it.
+- Chase the <strong>Partially Received</strong> list — those are goods you have paid for or ordered and not yet got.</p>
+<p><strong>Try it now:</strong> add a supplier, raise a PO for two products, and confirm it through to the Store Manager.</p>
+<hr />
+<h3>4. Stock Controller</h3>
+<p><strong>Who you are:</strong> the receiving clerk who books incoming goods into the system.</p>
+<p><strong>What you can do:</strong> create Goods Received Notes (GRNs); view and adjust stock; view products. <strong>Receiving a GRN is the only thing that increases stock.</strong></p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li>Open your <strong>dashboard</strong> (receiving + stock health).
+   <img alt="Stock controller dashboard" src="screens/role_stock_controller_dashboard.png" /></li>
+<li><strong>GRN list</strong> — <em>Inventory → GRNs</em>. One GRN per delivery received.
+   <img alt="GRNs" src="screens/role_stock_controller_grns.png" /></li>
+<li><strong>Receive goods (new GRN)</strong> — <em>Inventory → GRNs → Create</em>. Pick the matching <strong>PO</strong>, then enter the quantities <strong>actually received</strong> per product. Stock is added to your branch the moment you save.
+   <img alt="Create GRN" src="screens/role_stock_controller_grn_create.png" /></li>
+<li><strong>Live stock</strong> — <em>Inventory → Inventory</em>. Current quantity per product per branch. A red badge = at or below the low-stock threshold.
+   <img alt="Inventory" src="screens/role_stock_controller_inventory.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- If you received <strong>less</strong> than the PO quantity, that's fine — the PO stays open for the remainder.
+- Set sensible <strong>low-stock thresholds</strong> on each stock row so dashboard alerts fire <em>before</em> you run out.</p>
+<p><strong>Try it now:</strong> receive a GRN against the PO the Procurement Officer raised, and confirm stock went up.</p>
+<hr />
+<h3>5. Store Keeper</h3>
+<p><strong>Who you are:</strong> warehouse staff who pick goods for dispatch.</p>
+<p><strong>What you can do:</strong> view stock and the sales you've been assigned; help verify GRNs; load goods at dispatch.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li>Open your <strong>dashboard</strong> (minimal — just what you need to pick orders).
+   <img alt="Store keeper dashboard" src="screens/role_store_keeper_dashboard.png" /></li>
+<li><strong>See assignments</strong> — <em>Sales → Dispatch</em>. Filter to orders assigned to you; each row shows the customer, products to pick, and the delivery vehicle.
+   <img alt="Dispatch" src="screens/role_store_keeper_dispatch.png" /></li>
+<li><strong>Cross-check the sale</strong> — <em>Sales → Sales</em>. Confirm customer, products and quantities before picking.
+   <img alt="Sales list" src="screens/role_store_keeper_sales_list.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- If an item is short, tell the <strong>Store Manager before dispatch</strong> — once dispatched, stock is deducted.
+- You can print a delivery note from the sale's actions menu (it has the customer's address).</p>
+<hr />
+<h3>6. Sales Representative</h3>
+<p><strong>Who you are:</strong> the cashier or salesperson at the counter or on the phone.</p>
+<p><strong>What you can do:</strong> take orders at the POS; record payment (cash, mobile money, bank transfer, or credit); manage customers; create quotations. You <strong>submit</strong> orders — your manager approves and dispatches them.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li>Open your <strong>dashboard</strong> (Commerce-focused).
+   <img alt="Sales rep dashboard" src="screens/role_sales_rep_dashboard.png" /></li>
+<li><strong>Open the POS</strong> — <em>Sales → POS</em>. Search products, add to cart, pick a customer, record payment, submit. The sale becomes <strong>Pending approval</strong>.
+   <img alt="POS" src="screens/role_sales_rep_pos.png" />
+   - <strong>No back-orders.</strong> The POS refuses any sale the branch cannot fill. "Available" is the stock on the shelf
+     <strong>minus what is already promised</strong> on other pending and approved sales — so three reps cannot each sell the
+     same last five bags. <strong>Services</strong> are never stock-limited.
+   - <strong>Credit sale with a deposit</strong> — choose <em>Credit</em>, type the deposit taken now; the rest stays as the balance
+     owed and the customer appears in Debtors until it is paid.</li>
+<li><strong>Sales list</strong> — <em>Sales → Sales</em>. Your past sales with status (Pending, Approved, Dispatched, Cancelled) and amount paid vs balance.
+   <img alt="Sales list" src="screens/role_sales_rep_sales_list.png" /></li>
+<li><strong>Customers</strong> — add new customers; each customer's history is one click away.
+   <img alt="Customers" src="screens/role_sales_rep_customers.png" /></li>
+<li><strong>Quotations</strong> — written price estimates that <strong>do not touch stock</strong>. Convert to a sale in one click when the customer commits.
+   <img alt="Quotations" src="screens/role_sales_rep_quotations.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- <strong>Commission is calculated automatically</strong> from the product's category and <strong>frozen</strong> on the sale — later rate changes don't affect it.
+- If a product won't appear in search, it may be <strong>out of stock at your branch</strong>. If the POS refuses the
+  quantity, the stock is there but already promised to another sale — check <em>Order management</em>.
+- Use <strong>Quotations</strong> for big-ticket items the customer wants to think about.</p>
+<p><strong>Try it now:</strong> create a quotation, then convert it into a sale and submit it.</p>
+<hr />
+<h3>7. Store Manager</h3>
+<p><strong>Who you are:</strong> the floor supervisor who approves orders and runs dispatch.</p>
+<p><strong>What you can do:</strong> approve/decline pending orders; dispatch approved orders (assign a picker + vehicle); manage drivers, truck maintenance, and stock transfers between branches.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li>Open your <strong>dashboard</strong> — ready-to-dispatch count, low-stock count, active fleet.
+   <img alt="Store manager dashboard" src="screens/role_store_manager_dashboard.png" /></li>
+<li><strong>Deliveries to Verify</strong> — <em>My Workspace → Deliveries to Verify</em>. Every order Afisa Ugavi has confirmed
+   is listed here. <strong>Open one order at a time</strong> — you cannot check them all on one screen, by design.
+   Inside, work down the items <strong>one by one</strong>: click <strong>All N arrived</strong>, or <strong>Short</strong> and type how many
+   actually came plus a note saying what is missing. The counter shows "2 of 3 items checked" and the
+   <strong>Submit</strong> button stays locked until every item has been counted.
+   - Everything arrived → stock goes up immediately and the order closes.
+   - Anything short → the order goes to Afisa Ugavi to explain, then to the Admin. <strong>Nothing enters stock</strong>
+     in the meantime, so do not tell the shop the goods are available yet.
+   A balance delivery comes back to this screen showing only the items still owed.</li>
+<li><strong>Order Management — approve or decline</strong> — <em>Sales → Order management</em>. Approve only after checking the customer is real and the price is right.
+   <img alt="Order management" src="screens/role_store_manager_order_management.png" /></li>
+<li><strong>Dispatch Board — assign &amp; ship</strong> — <em>Sales → Dispatch board</em>. Pick an approved order → choose a <strong>Store Keeper</strong> to pick → choose a <strong>Vehicle</strong> (or type hired-lorry info) → click <strong>Dispatch</strong>.
+   <img alt="Dispatch board" src="screens/role_store_manager_dispatch_board.png" /></li>
+<li><strong>Track vehicles</strong> — <em>Sales → Vehicles</em>. See Active vs In-transit; mark a returned vehicle <strong>Active</strong> so it can be reused.
+   <img alt="Vehicles" src="screens/role_store_manager_vehicles.png" /></li>
+<li><strong>Move stock between branches</strong> — <em>Inventory → Transfer</em>. Stock leaves the source branch and enters the destination.
+   <img alt="Stock transfer" src="screens/role_store_manager_stock_transfer.png" /></li>
+<li><strong>Stock In vs Out</strong> — <em>Inventory → Reports → Stock movements</em>. For each item, what came in (deliveries, GRNs,
+   transfers in, adjustments) against what went out (dispatches, transfers out) over a period. <strong>Export</strong> the
+   whole report to Excel, or one item alone from its card — the file is named after the item.
+   <img alt="Stock In vs Out" src="screens/50_stock_movement.png" /></li>
+<li><strong>Stock adjustments</strong> — <em>Inventory → Stock adjustment</em>, for counts, damage and write-offs, each with a reason
+   and recorded against the person who made it.</li>
+</ol>
+<p><strong>Tips</strong>
+- <strong>Stock only moves at Dispatch</strong>, <em>not</em> at Approve. Approve just clears the order for shipping.
+- Count the delivery honestly. Marking a short delivery as complete puts stock in the system that is not on
+  the shelf, and every later count will disagree with it.
+- If a vehicle stays "busy" after the driver returns, click <strong>Return</strong> to free it.
+- <strong>Decline quickly</strong> — the customer is usually still on the line.</p>
+<p><strong>Try it now:</strong> approve the Sales Rep's order, then dispatch it and confirm stock dropped.</p>
+<hr />
+<h3>8. Accountant</h3>
+<p><strong>Who you are:</strong> the bookkeeper. The till, the cash desk and the stores generate the numbers; you take them
+<strong>into the books</strong>, keep the ledger straight, and read the statements.</p>
+<p><strong>What you can do:</strong> post every sale into the Sales Accounting ledger; write <strong>vouchers</strong> (Sales, Purchase,
+Receipt, Payment, Contra, Journal) and read the <strong>General Ledger</strong> and trial balance; maintain the <strong>chart of
+accounts</strong>; run the <strong>Profit &amp; Loss</strong>, <strong>Cash Flow</strong> and <strong>Balance Sheet</strong>; keep the <strong>CRM</strong> customer register;
+record expenses (with receipt photos), other income and tax payments; read the debtors list and the reports.
+Everything you post is <em>yours</em>: nobody on the shop floor can touch the ledger, and nothing you post can stop a
+sale being approved or dispatched — the books mirror the business, they do not drive it.</p>
+<p>Your menu is <strong>Accountant</strong> in the sidebar:</p>
+<p><img alt="Accountant menu" src="screens/56_sidebar_accountant.png" /></p>
+<h4>8.1 Sales Accounting — taking the till into the books</h4>
+<p>Every sale made at the till — cash, credit, part-paid — lands here as <strong>Pending</strong>, however it was settled.
+<em>Nothing is revenue until you post it.</em></p>
+<p><img alt="Sales Accounting" src="screens/41_sales_ledger.png" /></p>
+<ol>
+<li><strong>Filter</strong> to <em>Pending</em> (the default) and work down the list. The cards show how many are waiting and their value.</li>
+<li><strong>Post &amp; record payment</strong> — one act does two jobs: it takes the sale into the books (and so into the P&amp;L)
+   <strong>and</strong> records the money as received. The form asks <strong>how it was paid</strong> (cash / bank / mobile / cheque / other)
+   and for the <strong>invoice to be attached</strong>; only the amount you confirm counts as cash. A posted row <strong>freezes</strong> —
+   its cost of sales and commission are fixed, so a later price change cannot move a profit already reported.</li>
+<li><strong>Query</strong> — if a sale does not look right (wrong customer, odd price, no invoice), press Query and type why.
+   The seller is notified and the row shows <em>Queried</em>. It can still be posted once sorted out.</li>
+<li>A sale <strong>cancelled or deleted after posting</strong> does not vanish — it stays, flagged for reversal, so the books
+   never lose a number they once reported.</li>
+</ol>
+<blockquote>
+<p><strong>The till's "paid" is a claim, not a receipt.</strong> Sales Accounting is where money is <em>confirmed</em>. The Cash Flow
+statement and the Balance Sheet read your confirmations, not the till.</p>
+</blockquote>
+<h4>8.2 Vouchers — the double-entry books</h4>
+<p>Everything that is <em>not</em> a till sale enters the books as a <strong>voucher</strong>: a document whose debits equal its credits.
+There are six kinds, and each kind only allows certain ledgers on each side — the dropdowns enforce it:</p>
+<table>
+<thead>
+<tr>
+<th>Voucher</th>
+<th>Debit side offers</th>
+<th>Credit side offers</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sales</strong> (SV-)</td>
+<td>the customer, or a bank account / cash book</td>
+<td>income ledgers and Output VAT</td>
+<td>an invoice we raised — credit sale, cash sale, or part-paid</td>
+</tr>
+<tr>
+<td><strong>Purchase</strong> (PU-)</td>
+<td>purchases / stock / expense ledgers and Input VAT</td>
+<td>the supplier, or a bank account / cash book</td>
+<td>an invoice a supplier gave us</td>
+</tr>
+<tr>
+<td><strong>Receipt</strong> (RV-)</td>
+<td>bank accounts and cash books</td>
+<td>every ledger <em>except</em> bank/cash</td>
+<td>money coming in</td>
+</tr>
+<tr>
+<td><strong>Payment</strong> (PV-)</td>
+<td>every ledger <em>except</em> bank/cash</td>
+<td>bank accounts and cash books</td>
+<td>money going out</td>
+</tr>
+<tr>
+<td><strong>Contra</strong> (CV-)</td>
+<td>bank accounts and cash books</td>
+<td>bank accounts and cash books</td>
+<td>moving our own money (bank ↔ cash, bank ↔ bank)</td>
+</tr>
+<tr>
+<td><strong>Journal</strong> (JV-)</td>
+<td>any ledger</td>
+<td>any ledger</td>
+<td>adjustments, accruals, corrections</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Vouchers register" src="screens/45_vouchers.png" /></p>
+<p><strong>Entering a voucher</strong> — <em>Accountant → Vouchers → New Voucher → (type)</em>:</p>
+<ol>
+<li><strong>Date of Transaction</strong> is required. Description is free text.</li>
+<li>Pick the <strong>debit</strong> ledger and type the <strong>amount</strong>. The moment the two sides differ, <strong>the difference is written
+   into the next empty amount field on the short side</strong> — you only pick its account. Type over it if you want a
+   different split; another line opens for what is left. Keep going until <strong>Difference = 0</strong>.</li>
+<li>Add as many debit and credit lines as you need (<strong>+ Line</strong>). Remove one with ✕.</li>
+<li>The bar at the bottom always shows <strong>Total Debit, Total Credit and the Difference</strong>. <strong>Post Voucher stays
+   disabled until they balance</strong> — and the server checks again, so an unbalanced voucher can never be posted.</li>
+<li>On posting, the voucher gets its <strong>number</strong> (RV-000012 and so on, one sequence per type) and <strong>one General
+   Ledger entry per line</strong> is written at once.</li>
+</ol>
+<p><img alt="Receipt voucher with invoice allocation" src="screens/47_voucher_receipt.png" /></p>
+<p><strong>Allocating to invoices.</strong> When you <strong>credit a customer on a Receipt</strong> (they paid us) or <strong>debit a supplier on a
+Payment</strong> (we paid them), their <strong>outstanding invoices or bills</strong> appear under the line: number, date, original
+amount, what is already paid or allocated, and what is <strong>outstanding</strong>. Type the amount against each one — or
+press <strong>oldest first</strong> — and the invoice's balance falls the moment the voucher posts. You can never allocate more
+than is owed, and never more than the line carries.</p>
+<p><strong>Sales and Purchase vouchers</strong> carry more, because they <em>are</em> the invoice:</p>
+<p><img alt="Sales voucher" src="screens/46_voucher_sales.png" /></p>
+<ul>
+<li><strong>Customer / Supplier</strong> — pick the party. Their ledger lands on the party side for you (a credit sale). For a
+  <strong>cash sale</strong> just pick the bank account or cash book on that line instead. A <strong>deposit</strong> is both: a bank line
+  for what was paid, the customer line for the rest.</li>
+<li><strong>Sales Invoice No.</strong> (or the supplier's <strong>Purchase Invoice No.</strong>) is <strong>required and unique</strong>; the <strong>EFD RCT No.</strong>
+  is a <em>separate</em> field, also unique (per supplier on purchases). Both are searchable in the register, and the
+  invoice number rides on every General Ledger row of the voucher.</li>
+<li><strong>VAT box</strong> — type the <strong>VAT-exclusive</strong> or the <strong>VAT-inclusive</strong> figure (the rate comes from Settings), press
+  <strong>Fill</strong>, and the goods line and the VAT line are written for you; the difference lands on the party side.</li>
+<li><strong>Payment status</strong> — <em>Cash, Bank, Credit</em> or <em>Partly Paid</em> — is <strong>read off your lines</strong>, never typed, and shown
+  live in the totals bar.</li>
+<li>What a Sales voucher leaves on the customer is an open invoice like any till sale: a later <strong>Receipt</strong> is
+  allocated against it (and a Purchase voucher against a <strong>Payment</strong>).</li>
+</ul>
+<blockquote>
+<p><strong>Sales and Purchase vouchers do not create a till sale or a purchase order.</strong> They are the <em>books'</em> record of
+an invoice — for back-dated work, for months before the system, for anything the till never saw.</p>
+</blockquote>
+<p><strong>Wrong voucher?</strong> Vouchers are never edited. Open it and press <strong>Cancel</strong> (with a reason): its entries leave the
+General Ledger, the document stays on record marked <em>Cancelled</em>, and any invoice it had settled is owed again.</p>
+<p><img alt="A posted voucher" src="screens/55_voucher_detail.png" /></p>
+<h4>8.3 Bulk Import — a spreadsheet of vouchers</h4>
+<p>Back-dated work arrives as a spreadsheet, not one voucher at a time. <strong>Vouchers → Bulk Import</strong>:</p>
+<p><img alt="Bulk import" src="screens/54_bulk_import.png" /></p>
+<ol>
+<li><strong>Download the template.</strong> It has four sheets: <strong>Vouchers</strong> (where you type), <strong>Ledgers</strong> (optional), <strong>Ledger
+   List</strong> (your current chart of accounts — copy codes or exact names from it) and <strong>How to fill</strong>.</li>
+<li>On <strong>Vouchers</strong>, one row per voucher <strong>line</strong>. Rows sharing a <strong>Ref</strong> (any text — <code>1</code>, <code>2</code>, or the invoice number)
+   are one voucher, so the debits and credits of a Ref must add up. Columns: Ref, Type, Date, Ledger, Side (Dr/Cr),
+   Amount, Description, <strong>Party</strong>, <strong>Invoice No</strong>, <strong>EFD No</strong>, <strong>Against</strong>, Narration.
+   - On a Sales/Purchase row, write <strong><code>Customer</code></strong> or <strong><code>Supplier</code></strong> in the Ledger column to mean <em>the Party's own
+     ledger</em>.
+   - On a Receipt row crediting a customer (or a Payment row debiting a supplier), <strong>Against</strong> names the invoice or
+     bill it settles — a till invoice number, <code>PO-12</code>, or a Sales/Purchase voucher's invoice number.</li>
+<li>On <strong>Ledgers</strong> (optional), ledgers to <strong>create first</strong>, with <strong>opening balances</strong> and their side — a new bank
+   account, Capital, Motor Vehicles. Customers and suppliers are <em>not</em> created here; name them on a voucher row and
+   tick <strong>Create missing customers and suppliers</strong> if they are new.</li>
+<li><strong>Check file.</strong> Every voucher is run through the same checks as the form; the report lists each one — rows,
+   type, party, invoice, totals — with <strong>ready</strong> or the exact error (<em>row 8: no ledger called "Nowhere Bank"</em>).
+   Nothing is kept.</li>
+<li>When every row reads <em>ready</em>, <strong>Post N vouchers</strong>. <strong>The file lands whole or not at all</strong> — one bad row and
+   nothing posts, so a half-imported month cannot happen. Voucher numbers run in date order.</li>
+</ol>
+<h4>8.4 General Ledger and Ledgers</h4>
+<p><img alt="General Ledger" src="screens/48_general_ledger.png" /></p>
+<ul>
+<li><strong>General Ledger</strong> — pick a ledger for its <strong>statement</strong> with opening balance, every entry (date, voucher,
+  type, invoice, description, debit, credit) and a running balance; or leave it on <strong>Trial balance</strong> for every
+  ledger at once, with opening, movements and closing Dr/Cr. The two closing columns always agree — that is what
+  double entry buys. Date range and This month / Last month / This year / All time are at the top.</li>
+<li><strong>Ledgers</strong> (the chart of accounts) — every ledger has a <strong>kind</strong> (bank, cash book, customer, supplier, income,
+  expense, asset, liability, tax, equity) and that kind is what puts it in the right dropdowns. <strong>Bank accounts,
+  customers and suppliers get their ledger automatically</strong> the moment they exist elsewhere in the system — never
+  create those by hand. Add your own income/expense/asset ledgers here, set <strong>opening balances</strong> (with the side),
+  and <strong>close</strong> a ledger you no longer use rather than deleting it (a ledger with entries cannot be deleted).</li>
+</ul>
+<p><img alt="Ledgers" src="screens/49_chart_of_accounts.png" /></p>
+<h4>8.5 The three statements</h4>
+<table>
+<thead>
+<tr>
+<th>Statement</th>
+<th>What it reads</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Profit &amp; Loss</strong></td>
+<td>Revenue from <strong>posted</strong> sales only, less cost of sales, commission, expenses, petty cash payouts and other payments; plus other income; less tax payments</td>
+<td>Cash confirmed is shown <em>beside</em> revenue, never instead of it</td>
+</tr>
+<tr>
+<td><strong>Cash Flow</strong></td>
+<td>Receipts dated by <strong>when you confirmed them</strong>, supplier payments, petty cash payouts, other payments, taxes</td>
+<td>Supplier payments made <strong>from credit</strong> are excluded — no money moved. Petty cash top-ups are an internal transfer, shown as a note</td>
+</tr>
+<tr>
+<td><strong>Balance Sheet</strong></td>
+<td><strong>Today only.</strong> Stock, debtors (invoices Accounts has not confirmed), cash (derived from the cumulative cash flow), creditors (every live purchase order)</td>
+<td>The system holds no capital, drawings or fixed-asset records, so the gap between net assets and retained earnings is shown as <strong>unrecorded</strong> — that is honest, not a bug</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Profit &amp; Loss" src="screens/42_profit_loss.png" />
+<img alt="Cash Flow" src="screens/43_cash_flow.png" />
+<img alt="Balance Sheet" src="screens/44_balance_sheet.png" /></p>
+<h4>8.6 CRM — the customer register</h4>
+<p><em>CRM → Customer Records</em> is a standalone register of who bought what and what they still owe. <strong>Every till sale
+syncs into it automatically</strong> with its paid / part-paid / credit state, and a payment recorded on the sales side
+updates the same row. You can also <strong>bulk-import</strong> rows from Excel/CSV (download the template on the page),
+<strong>export</strong> the register, and print a <strong>PDF statement</strong> for one customer or for the whole list. Fields people
+maintain — <strong>TIN</strong>, <strong>EFD receipt number</strong>, receipt number — are yours to fill and are never overwritten by the
+sync. Editing a CRM row never changes a sale.</p>
+<p><img alt="CRM" src="screens/33_crm.png" /></p>
+<h4>8.7 Expenses, income, taxes, debtors</h4>
+<ol>
+<li><strong>Expenses</strong> — <em>Finance → Expenses → Add expense</em>. Pick a category, the amount, which bank account it was paid
+   from, and <strong>attach the receipt photo</strong>.
+   <img alt="Record expense" src="screens/role_accountant_expense_create.png" /></li>
+<li><strong>Other income</strong> — <em>Finance → Income</em>, for income that is <strong>not</strong> a product sale (rent, services).</li>
+<li><strong>Tax payments</strong> — <em>Finance → Taxes</em>: type (VAT, PAYE, SDL, …), period, amount, and the <strong>TRA receipt number</strong>.
+   <img alt="Taxes" src="screens/role_accountant_taxes.png" /></li>
+<li><strong>Debtors</strong> — <em>Debtors</em> lists only sales that are <strong>still short</strong>, showing the <strong>outstanding</strong> amount. <strong>View</strong>
+   opens the invoice; <strong>Record Payment</strong> enters money as it arrives.
+   <img alt="Debtors" src="screens/32_debtors.png" /></li>
+<li><strong>Bank accounts</strong> — <em>Finance → Banks</em>: the accounts expenses and payments are paid from. Each one also has a
+   ledger in the books, kept in step automatically.</li>
+<li><strong>Reports</strong> — aging, profitability by category, commission per rep.</li>
+</ol>
+<p><strong>Tips</strong>
+- <strong>Post the till daily.</strong> Until a sale is posted it is not revenue, its money is not cash, and the statements do
+  not know it exists.
+- The <strong>difference bar is your friend</strong>: when the credit side is short, the next credit line opens with the gap
+  already typed in. Pick the account and you are balanced.
+- <strong>Never total supplier payments without filtering to approved</strong> — a recorded payment is a <em>request</em> until the
+  Admin approves it. The screens already do this for you.
+- <strong>One route per fact.</strong> A supplier's bill is either a purchase order (raised by Afisa Ugavi, paid by the
+  Cashier) <em>or</em> a Purchase voucher (typed by you for back-dated work) — not both.
+- The <strong>two documents</strong> that define this module — <em>Voucher Data Entry Requirements</em> and <em>Application Requirements
+  for Back-dated Work</em> — are implemented as written, with one correction: their example puts a 200,000 difference
+  on a new <em>Debit</em> line; the rule (and the system) put it on the <strong>short</strong> side.</p>
+<p><strong>Try it now:</strong> post a Receipt of 1,000,000 into the bank, crediting a customer 800,000 (allocate it to one of
+their invoices) and Sales Revenue for the 200,000 the system carries to the second line. Then open the General
+Ledger, pick the bank, and find the entry.</p>
+<hr />
+<h3>9. Cashier</h3>
+<p><strong>Who you are:</strong> the person who holds the cash tin. Money leaves the business through your hands — but only
+after somebody else has said yes.</p>
+<p><strong>What you can do:</strong> keep the <strong>petty cash float</strong> (top it up, record what goes out); <strong>hand over</strong> petty cash the
+Admin has approved; <strong>record</strong> supplier payments against purchase orders and <strong>resubmit</strong> ones the Admin sent
+back; record <strong>other payments</strong> that are neither a supplier invoice nor a tax; read the <strong>By Supplier</strong> account
+view. You cannot approve anything — every payment you record is a <em>request</em> until an Administrator approves it.</p>
+<p>Your menu is <strong>Cashier</strong> in the sidebar.</p>
+<p><strong>Your daily flow</strong></p>
+<ol>
+<li><strong>Petty Cash</strong> — <em>Cashier → Petty Cash</em>. The cards show the <strong>float balance</strong>, cash in and cash out. <strong>Top Up
+   Float</strong> records money put into the tin; <strong>Record Payment</strong> records a voucher going out (payee, category,
+   branch, what for). Rows are grouped by month; the whole register exports to CSV.
+   <img alt="Petty cash" src="screens/34_petty_cash.png" /></li>
+<li><strong>Hand over approved requests</strong> — the <strong>To Issue</strong> section on the same page lists petty cash requests an
+   Admin has approved. Press <strong>Done</strong> <em>only when the money is in the person's hand</em>. That is the moment the float
+   moves; a request that is approved but not issued has not touched the tin. If issuing would take the float
+   negative the system refuses — <strong>top the float up first</strong>.</li>
+<li><strong>Supplier Payments</strong> — <em>Cashier → Supplier Payment</em>. Pick the <strong>order</strong> being paid (the list is every order
+   with a supplier that still has a balance, drafts included); the supplier comes from the order, never typed.
+   Enter amount, method, reference, date, a note. It is saved <strong>Pending</strong> and goes to the Admin.
+   <img alt="Supplier payments" src="screens/24_supplier_payments.png" />
+   - <strong>Approved</strong> → the balance on the order falls and the money shows in the Cash Flow.
+   - <strong>Rejected</strong> → it comes back to you with the Admin's <strong>decision note</strong>. Open it, <strong>amend</strong> the entry (only
+     pending and rejected rows can be edited), add your reply and <strong>Resubmit</strong> — it goes back as Pending. Both notes
+     stay on the record for the whole loop.
+   - <strong>Supplier credit</strong> — if you ever <em>over</em>-pay an order (10m paid on a 10m order plus another 10m), the supplier
+     holds that money for us. The figure shows on the order form; spend it by recording a payment <strong>from credit</strong>
+     against another of their orders. It draws the credit down and moves no cash.</li>
+<li><strong>By Supplier</strong> — <em>Cashier → By Supplier</em>: for each supplier, what was <strong>ordered</strong>, what is <strong>paid</strong> (approved
+   only), what is <strong>pending</strong> approval and what is <strong>still owed</strong>. Narrow the paid side to a month.
+   <img alt="By supplier" src="screens/38_by_supplier.png" /></li>
+<li><strong>Other Payments</strong> — <em>Cashier → Other Payments</em>: payouts that are neither a supplier invoice nor a tax (a refund,
+   a casual labourer, a licence). Payee, category, method, amount, receipt reference.
+   <img alt="Other payments" src="screens/39_other_payments.png" /></li>
+</ol>
+<p><strong>Tips</strong>
+- <strong>Pending money is not paid money.</strong> Every total on your screens counts approved payments only; the pending
+  figure is shown separately so you can chase it.
+- Petty cash <strong>requests</strong> are raised by the people who need the money (<em>My petty cash</em>), approved by the Admin,
+  and issued by you. Three people, three moments — never short-cut it by recording a payment straight from the tin
+  for something that was meant to be requested.
+- Export a month's petty cash to CSV before the count; it is what the filters show, nothing more.</p>
+<p><strong>Try it now:</strong> top the float up by 100,000, raise a petty cash request as another user, have the Admin approve
+it, press Done on it, and watch the float fall.</p>
+<hr />
+<h3>10. HR Officer</h3>
+<p><strong>Who you are:</strong> the HR administrator who keeps employee records up to date.</p>
+<p><strong>What you can do:</strong> create, view, <strong>edit and delete</strong> employee records; view departments and job positions; manage leave requests; record attendance; upload employee documents; view performance reviews.</p>
+<blockquote>
+<p><em>Payroll, departments setup, performance authoring and disciplinary actions are the </em><em>HR Manager's</em><em> job (next chapter).</em></p>
+</blockquote>
+<p><strong>Your daily flow</strong>
+1. Open <strong>HR → HR Dashboard</strong> for an overview of headcount and pending items.
+2. <strong>Employees</strong> — <em>HR → Employees</em>. Search and filter by status, department, or branch.
+3. <strong>Add an employee</strong> — <em>HR → Add Employee</em>. Fill in identification (Employee #, names, NIDA/TIN/NSSF/NHIF), contact, employment (department, position, branch, hire date), compensation, and bank details. Save.
+4. <strong>Delete an employee</strong> — on the employee list, use the <strong>trash</strong> button.
+   - The system <strong>refuses to delete</strong> an employee who already has payslips and shows a clear message. In that case set their <strong>status to <em>Terminated</em></strong> instead of deleting, so payroll history is preserved.
+5. <strong>Leave requests</strong> — <em>HR → Leave Requests</em>. Record requests; an approver (HR Manager/Admin) approves or rejects.
+6. <strong>Attendance</strong> — <em>HR → Attendance</em>. Record or correct daily attendance for staff.
+7. <strong>Documents</strong> — upload contracts, IDs, certificates against each employee.</p>
+<p><strong>Tips</strong>
+- Prefer <strong>Terminated</strong> over delete for anyone who has ever been paid — it keeps a clean audit trail.
+- Fill in <strong>NIDA / TIN / NSSF / NHIF</strong> at onboarding; payroll relies on them later.
+- An employee can only <strong>clock themselves in/out</strong> (My attendance) if their login is <strong>linked to their employee record</strong> — your administrator sets that link.</p>
+<p><strong>Try it now:</strong> create a test employee, then try to delete one who has a payslip and read the message.</p>
+<hr />
+<h3>11. HR Manager</h3>
+<p><strong>Who you are:</strong> the head of HR — everything the HR Officer does, <strong>plus</strong> the org chart, payroll, performance and discipline.</p>
+<p><strong>What you can do (in addition to HR Officer):</strong> create/edit departments, job positions and leave types; <strong>run payroll</strong>; manage payslips; author performance reviews; record disciplinary actions; approve/reject leave.</p>
+<p><strong>Your daily flow</strong>
+1. <strong>Set up the org chart</strong> (once, then maintain) — <em>HR → Departments</em> and job positions. Assign a department head.
+2. <strong>Leave types &amp; approvals</strong> — define leave types (annual, sick, etc.); approve or reject leave requests. Approving a leave that starts today flips the employee to <strong>On leave</strong>.
+3. <strong>Run payroll</strong> (monthly):
+   1. <em>HR → Payroll</em> → create a <strong>Payroll Period</strong> for the month/year (it starts as <strong>Draft</strong>).
+   2. Open the period → <strong>Generate payslips</strong>. The system creates one payslip per <strong>active</strong> employee and auto-computes Tanzanian statutory amounts: <strong>PAYE</strong> (TRA brackets), <strong>NSSF 10%</strong> (employee + matching employer), <strong>WCF 0.5%</strong>, <strong>SDL 4%</strong>, plus NHIF and other deductions you enter. The period becomes <strong>Processed</strong>.
+   3. Review/adjust individual payslips if needed (e.g. overtime, bonus, advances) — totals recalculate automatically.
+   4. <strong>Mark paid</strong> once salaries are disbursed → the period becomes <strong>Paid</strong>.
+4. <strong>Performance reviews</strong> — <em>HR → Performance</em>. Record period, rating (1–5), strengths, areas to improve, goals.
+5. <strong>Discipline</strong> — <em>HR → Discipline</em>. Record warnings, suspensions, terminations with reason and date.</p>
+<p><strong>Tips</strong>
+- <strong>Generate payslips is idempotent</strong> — re-running it on a period recomputes existing payslips rather than duplicating them. Safe to re-run after fixing salaries.
+- Deleting a <strong>payroll period</strong> removes all its payslips (admin-restricted, with a warning) — only do this on a draft you created in error.
+- PAYE is computed on <strong>gross minus NSSF</strong>, matching TRA's taxable-income definition. Brackets follow FY 2024/2025; update them if the government changes them.</p>
+<p><strong>Try it now:</strong> create a payroll period for the current month, generate payslips, open one and read the PAYE/NSSF breakdown, then mark the period paid.</p>
+<hr />
+<h3>12. Staff (general employee)</h3>
+<p><strong>Who you are:</strong> an employee with a login but no specialist module access.</p>
+<p><strong>What you can do:</strong> self-service only — <strong>My attendance</strong> (clock in/out), <strong>My petty cash</strong> (raise a request and follow it), and <strong>Profile</strong> (update your name/email, change password). Everything else is hidden by design.</p>
+<hr />
+<h2>Part C — The big flows (how roles connect)</h2>
+<p>These cross several roles. In training, run each flow live with a different trainee at each station.</p>
+<h3>C1. Purchase → Delivery check → Stock (stock comes IN)</h3>
+<p>Goods do <strong>not</strong> become stock the moment the lorry arrives. Up to three people sign off first,
+and a short delivery cannot be waved through.</p>
+<pre><code>Afisa Ugavi              Store Manager                Admin
+───────────              ─────────────                ─────
+Raise Purchase Order
+        │
+Goods arrive — confirm ──►  Open THAT order alone,
+                            check each item one by one
+                                    │
+             ┌──────────────────────┴───────────────┐
+             │                                      │
+      everything arrived                     something is short
+             │                                      │
+             ▼                                      ▼
+      STOCK INCREASES                        Explain why it is short
+      Order = Received                              │
+                                                    ▼
+                                          Admin confirms or rejects
+                                                    │
+                             ┌──────────────────────┴────────────┐
+                        CONFIRM                              REJECT
+                             │                                   │
+             stock += only what arrived            nothing enters stock;
+             balance stays owing on the order      back for a better reason
+                             │
+                    Order = Partially Received
+                             │
+              the rest arrives → Afisa Ugavi confirms again → round 2
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th>Action</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Afisa Ugavi</td>
+<td>Raise the PO (supplier, items, quantities, price)</td>
+<td>PO open. <em>Stock NOT moved.</em></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Afisa Ugavi</td>
+<td>Goods turn up → <strong>Confirm</strong></td>
+<td>PO goes to the Store Manager</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Store Manager</td>
+<td><em>Deliveries to Verify</em> → open <strong>one</strong> PO → mark each item <strong>All arrived</strong> or <strong>Short</strong></td>
+<td>Every item must be counted before it can be submitted</td>
+</tr>
+<tr>
+<td>4a</td>
+<td>—</td>
+<td>Everything arrived</td>
+<td><strong>Stock increases.</strong> Order = Received. Admin not involved.</td>
+</tr>
+<tr>
+<td>4b</td>
+<td>Store Manager</td>
+<td>Something is short</td>
+<td>Order flagged. <strong><em>Nothing enters stock yet.</em></strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Afisa Ugavi</td>
+<td>Write the explanation (supplier short-shipped, damaged, etc.)</td>
+<td>Goes to the Admin</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Admin</td>
+<td><em>Delivery Approvals</em> → <strong>Confirm</strong> or <strong>Reject</strong></td>
+<td>Confirm: stock += what arrived, balance stays owing. Reject: back to step 5, nothing banked.</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Afisa Ugavi</td>
+<td>When the balance is delivered, <strong>Confirm Balance</strong></td>
+<td>Round 2 — the Store Manager checks only what is still owed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The rules everyone must remember:</strong>
+- The <strong>PO itself never changes stock.</strong>
+- On a short delivery, <strong>nothing at all enters stock — not even the items that came in full</strong> — until the Admin confirms it.
+- A part-delivered order stays open as <strong>Partially Received</strong>, showing exactly what is still owed. It is never closed early and never re-received twice.
+- Each round keeps its own record: what was counted, who explained the shortfall, what the Admin decided.</p>
+<blockquote>
+<p><strong>Note on GRNs.</strong> The Stock Controller's <strong>Goods Received Note</strong> screens still exist and a GRN
+also raises stock. Use <strong>one</strong> route per delivery — either the Store Manager's delivery check
+<strong>or</strong> a GRN — never both for the same goods, or the quantity is counted twice.</p>
+</blockquote>
+<h3>C2. Sale → Dispatch → Delivery (stock goes OUT)</h3>
+<p>This is the most important flow. Here is one real walk-in sale moving through every station:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th>Action</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Sales Rep</td>
+<td>Open POS, add products, pick customer, take payment, <strong>Submit</strong></td>
+<td>Sale = <strong>Pending</strong>. <em>Stock NOT moved.</em></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Sales Rep</td>
+<td>Sale appears in Sales list as <strong>Pending</strong></td>
+<td>Rep is free to serve the next customer</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Store Manager</td>
+<td><em>Order management</em> shows the order with Approve/Decline</td>
+<td>Manager verifies customer &amp; price</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Store Manager</td>
+<td><strong>Approve</strong></td>
+<td>Order cleared for dispatch. <em>Stock STILL not moved.</em></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Store Manager</td>
+<td><em>Dispatch board</em> → assign Store Keeper + Vehicle</td>
+<td>Order ready to ship</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Store Manager</td>
+<td><strong>Dispatch</strong></td>
+<td><strong>Stock IS deducted now.</strong> Status = <strong>Dispatched</strong>, vehicle = In transit, invoice + delivery note generated</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Store Keeper</td>
+<td>Pull goods, load the assigned truck</td>
+<td>Goods leave the warehouse</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Accountant</td>
+<td>Record the fuel/freight <strong>expense</strong> behind the trip (receipt attached)</td>
+<td>Cost captured against the month</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Accountant</td>
+<td><em>Sales Accounting</em> → <strong>Post &amp; record payment</strong> (method + invoice)</td>
+<td>The sale is now revenue in the P&amp;L and cash in the Cash Flow — see C5</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The two facts everyone must remember:</strong>
+- <strong>Stock moves at Dispatch (step 6), not at Approve (step 4).</strong>
+- <strong>Commission is frozen at sale creation (step 1)</strong> based on the product's category. Changing the category rate later does <strong>not</strong> change historical sales.
+- If a sale is later <strong>deleted</strong>, its stock is <strong>restored</strong> automatically.</p>
+<p>Real captures of this flow:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Rep at POS <img alt="" src="screens/wf_01_salesrep_pos.png" /></td>
+<td>2. Sale pending <img alt="" src="screens/wf_02_salesrep_pending.png" /></td>
+</tr>
+<tr>
+<td>3. Manager sees pending <img alt="" src="screens/wf_03_smgr_orders_pending.png" /></td>
+<td>4. Manager approves <img alt="" src="screens/wf_04_smgr_orders_approved.png" /></td>
+</tr>
+<tr>
+<td>5. Dispatch board <img alt="" src="screens/wf_05_smgr_dispatch_before.png" /></td>
+<td>6. Dispatched (stock deducted) <img alt="" src="screens/wf_06_smgr_dispatch_after.png" /></td>
+</tr>
+<tr>
+<td>7. Sale now dispatched <img alt="" src="screens/wf_07_smgr_sales_dispatched.png" /></td>
+<td>8. Keeper picks <img alt="" src="screens/wf_08_keeper_sales.png" /></td>
+</tr>
+<tr>
+<td>9. Accountant logs expense <img alt="" src="screens/wf_09_accountant_expense_form.png" /></td>
+<td>10. Expense in list <img alt="" src="screens/wf_10_accountant_expenses_list.png" /></td>
+</tr>
+</tbody>
+</table>
+<h3>C3. The HR cycle</h3>
+<pre><code>ONBOARD                LEAVE                  ATTENDANCE             PAYROLL (monthly)
+───────                ─────                  ──────────             ─────────────────
+HR Officer creates     Employee requests      Employee clocks        HR Manager creates period (Draft)
+employee record   ───► leave  ───► HR Mgr ──► in/out (My         ───► Generate payslips (Processed)
+(+ documents)          approves/rejects       attendance) or HR         → review/adjust
+                                              records it                → Mark paid (Paid)
+</code></pre>
+<ul>
+<li>Onboarding: HR Officer adds the employee and uploads documents.</li>
+<li>Leave: a request is raised, then HR Manager/Admin approves or rejects. An approved leave starting today sets the employee to <strong>On leave</strong>.</li>
+<li>Attendance: staff clock themselves in/out (if their login is linked to their employee record), or HR records it.</li>
+<li>Payroll: <strong>Draft → Processed (generate) → Paid (mark paid)</strong>. Statutory deductions are automatic.</li>
+<li>Leaving the company: prefer <strong>Terminated</strong> status over deletion if the person has payslips.</li>
+</ul>
+<h3>C4. Money going out — the two approval loops</h3>
+<p>Nobody pays out of their own say-so. Both loops end at the <strong>Admin</strong>, and the money only counts once the Admin
+has said yes.</p>
+<p><strong>Supplier payment</strong></p>
+<pre><code>Cashier                          Admin                         Cashier
+───────                          ─────                         ───────
+Record payment on a PO  ──►  Approve ──► PAID: order balance falls, Cash Flow shows it
+      (Pending)               │
+                              └─ Reject (with a note) ──►  Amend the entry, reply, Resubmit ──► back to Admin
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th>Action</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Cashier</td>
+<td><em>Supplier Payment</em> → pick the order → amount, method, reference → Save</td>
+<td>Payment = <strong>Pending</strong>. <em>Nothing owed has changed.</em></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Admin</td>
+<td><em>Administration → Supplier Payment Approvals</em> → <strong>Approve</strong></td>
+<td>Payment = <strong>Paid</strong>. Order balance falls; Cash Flow records it</td>
+</tr>
+<tr>
+<td>2b</td>
+<td>Admin</td>
+<td><strong>Reject</strong> with a decision note</td>
+<td>Back to the Cashier as <strong>Rejected</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cashier</td>
+<td>Open it → amend → reply → <strong>Resubmit</strong></td>
+<td>Pending again, both notes kept</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Supplier payment approvals" src="screens/37_supplier_payment_approvals.png" /></p>
+<p><strong>Petty cash</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th>Action</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Anyone</td>
+<td><em>My petty cash</em> → New request (amount, purpose)</td>
+<td>Request = <strong>Pending</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Admin</td>
+<td><em>Administration → Petty Cash Approvals</em> → <strong>Approve</strong> / <strong>Reject</strong></td>
+<td>Approved requests appear on the Cashier's <em>To Issue</em> list</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Cashier</td>
+<td><em>Petty Cash → To Issue</em> → <strong>Done</strong> when the money is handed over</td>
+<td><strong>The float falls now.</strong> Request = Issued</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Petty cash approvals" src="screens/36_petty_cash_approvals.png" /></p>
+<p><strong>The rule everyone must remember:</strong> an approved request is still a <em>promise</em>; the tin only changes when the
+Cashier presses Done, so the float on the screen is always the cash actually in the box.</p>
+<h3>C5. From the till to the books</h3>
+<pre><code>Sales Rep            Store Manager            Accountant                    Statements
+─────────            ─────────────            ──────────                    ──────────
+POS sale  ──►  Approve ──► Dispatch  ──►  Sales Accounting: PENDING  ──►  Post &amp; record payment
+(any way paid)      (stock falls here)        (query it if wrong)        (method + invoice attached)
+                                                                                 │
+                                                             P&amp;L revenue ◄───────┴───────► Cash Flow receipt
+                                                             Balance Sheet: debtor cleared, cash up
+</code></pre>
+<ul>
+<li>The till says a sale is <em>paid</em>; <strong>Accounts confirms it</strong>. Until then the sale is pending in the books, not
+  revenue, and its money is not cash.</li>
+<li>Posting <strong>freezes</strong> the row (cost of sales and commission fixed). A sale cancelled later stays in the books
+  flagged for reversal.</li>
+<li>Nothing Accounts does can stop the shop: a queried sale is still approved and dispatched on its own track.</li>
+</ul>
+<h3>C6. Opening the books, or catching up months — back-dated work</h3>
+<pre><code>Accountant
+──────────
+Download the Bulk Import template
+   │
+Ledgers sheet: new ledgers + opening balances (Capital, bank balances, vehicles…)
+Vouchers sheet: every past Sales / Purchase / Receipt / Payment / Contra / Journal, one row per line
+   │
+Check file ──► fix the rows named in red ──► Check again ──► Post (whole file or nothing)
+   │
+General Ledger → Trial balance (balanced) → P&amp;L / Cash Flow / Balance Sheet
+</code></pre>
+<ul>
+<li><strong>Sales and Purchase vouchers</strong> carry the party, the <strong>invoice number</strong> and the <strong>EFD number</strong>, so the historical
+  invoices are searchable exactly like live ones.</li>
+<li>A past <strong>Receipt</strong> row with <strong>Against</strong> = the invoice number settles that invoice, so the customer's outstanding
+  balance comes out right from day one.</li>
+<li>Because the file posts <strong>whole or not at all</strong>, you can iterate on the spreadsheet without ever leaving half a
+  month in the ledger.</li>
+</ul>
+<hr />
+<h2>Part D — Mobile app, troubleshooting, and exercises</h2>
+<h3>D1. Mobile companion app — <em>Umoja Pro</em> (Android)</h3>
+<p>Umoja Pro signs in with the <strong>same username/password</strong> as the website and shares the <strong>same data</strong>.</p>
+<p><img alt="Mobile login" src="screens/mobile_01_login.png" /></p>
+<ol>
+<li><strong>Sign in</strong> — open Umoja Pro, enter your credentials, tap <strong>Sign in</strong>. The app remembers your token so you stay signed in across launches. Sign out from the profile menu in the app bar.</li>
+<li><strong>Four tabs at the bottom:</strong>
+   - <strong>POS</strong> — open a new sale, search products, take payment.
+   - <strong>Stock</strong> — current stock per branch with low-stock alerts.
+   - <strong>Quotes</strong> — list of quotations; tap to convert to a sale.
+   - <strong>Customers</strong> — directory; add customers; view a customer's sales history.</li>
+<li><strong>Same backend, live updates</strong> — sales created on the phone appear in the Manager's Order Management on the website immediately; stock changes broadcast in real time so other devices update without refreshing.</li>
+</ol>
+<p><strong>Mobile tips</strong>
+- If <strong>Sign in</strong> seems to do nothing, the build is probably pointing at the wrong API. Reinstall a build configured for <code>https://umoja.ehub.co.tz</code>.
+- <strong>Pull down to refresh</strong> any tab.
+- Sign out from the profile menu to clear the saved token.</p>
+<h3>D2. Troubleshooting (give this to every trainee)</h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A menu item or button is missing</td>
+<td>Your role lacks that permission</td>
+<td>Ask the Administrator to check your role</td>
+</tr>
+<tr>
+<td>Signed out unexpectedly</td>
+<td>20-minute inactivity timeout</td>
+<td>Sign in again</td>
+</tr>
+<tr>
+<td>A product won't show in POS search</td>
+<td>Out of stock at your branch</td>
+<td>Check inventory / receive stock</td>
+</tr>
+<tr>
+<td>POS refuses the sale: "not enough stock"</td>
+<td>The branch cannot fill it — stock already promised on other pending/approved sales counts</td>
+<td>Reduce the quantity, sell from another branch, or wait for stock. Back-orders are not allowed</td>
+</tr>
+<tr>
+<td>"Cannot delete employee… has payslips"</td>
+<td>Payroll history is protected</td>
+<td>Set status to <strong>Terminated</strong> instead</td>
+</tr>
+<tr>
+<td>Customer wrongly shows as a debtor</td>
+<td>A cash payment wasn't entered, or Accounts has not posted the sale</td>
+<td>Record the payment on the sale; Accountant posts it in Sales Accounting</td>
+</tr>
+<tr>
+<td>Vehicle stuck as "busy"</td>
+<td>Not marked returned</td>
+<td>Store Manager → Vehicles → <strong>Return</strong></td>
+</tr>
+<tr>
+<td>Live counts look stale</td>
+<td>Lost real-time connection</td>
+<td>Refresh the page (Ctrl+R)</td>
+</tr>
+<tr>
+<td>Post Voucher stays disabled</td>
+<td>Debits ≠ credits, a line has no account, or (Sales/Purchase) no invoice number</td>
+<td>Read the <strong>Difference</strong> bar — the short side is named; fill the account on the highlighted line</td>
+</tr>
+<tr>
+<td>"… cannot be credited on a RV receipt voucher"</td>
+<td>The ledger is not allowed on that side for that type</td>
+<td>Check the table in 8.2; a Journal accepts any ledger</td>
+</tr>
+<tr>
+<td>"Invoice … is already in the books"</td>
+<td>Duplicate invoice or EFD number on a Sales/Purchase voucher</td>
+<td>Find the existing one (search the register by invoice or EFD) — or cancel it if it was wrong</td>
+</tr>
+<tr>
+<td>Bulk import: "Not posted … with errors"</td>
+<td>One or more rows failed — the file posts whole or nothing</td>
+<td>Fix the red rows, <strong>Check file</strong> again, then Post</td>
+</tr>
+<tr>
+<td>Petty cash <strong>Done</strong> refused</td>
+<td>The float would go negative</td>
+<td><strong>Top Up Float</strong> first</td>
+</tr>
+<tr>
+<td>Supplier payment total looks low</td>
+<td>Pending payments are not counted</td>
+<td>Ask the Admin to clear <em>Supplier Payment Approvals</em></td>
+</tr>
+<tr>
+<td>Statements ignore a sale</td>
+<td>It is still <strong>Pending</strong> in Sales Accounting</td>
+<td>Post it (with method and invoice)</td>
+</tr>
+</tbody>
+</table>
+<h3>D3. Trainer checklist — run these live, in this order</h3>
+<p>Set up one trainee (or one shared screen) per role and complete the loop end to end:</p>
+<ul>
+<li>[ ] <strong>Admin:</strong> create a branch, a category (with commission %), and one user per role below.</li>
+<li>[ ] <strong>Procurement:</strong> add a supplier; raise a PO for two products; <strong>Confirm</strong> when the goods "arrive".</li>
+<li>[ ] <strong>Store Manager:</strong> <em>Deliveries to Verify</em> — mark one item short; watch it go to Afisa Ugavi and the Admin.</li>
+<li>[ ] <strong>Admin:</strong> <em>Delivery Approvals</em> — confirm; confirm stock rose by only what arrived.</li>
+<li>[ ] <strong>Sales Rep:</strong> create a quotation; convert it to a sale; submit (status = Pending). Try to sell more than is in stock and read the refusal.</li>
+<li>[ ] <strong>Store Manager:</strong> approve the order; dispatch it (assign keeper + vehicle); confirm stock dropped.</li>
+<li>[ ] <strong>Store Keeper:</strong> find the dispatched order in the dispatch feed.</li>
+<li>[ ] <strong>Cashier:</strong> record a supplier payment on the PO; <strong>Admin:</strong> reject it with a note; <strong>Cashier:</strong> amend and resubmit; <strong>Admin:</strong> approve.</li>
+<li>[ ] <strong>Anyone:</strong> raise a petty cash request; <strong>Admin:</strong> approve; <strong>Cashier:</strong> press Done and watch the float fall.</li>
+<li>[ ] <strong>Accountant:</strong> in <em>Sales Accounting</em>, post the dispatched sale with method + invoice; see it in the P&amp;L and Cash Flow.</li>
+<li>[ ] <strong>Accountant:</strong> post a Receipt voucher allocated to a customer invoice; open the General Ledger for the bank.</li>
+<li>[ ] <strong>Accountant:</strong> post a Sales voucher with VAT for a back-dated invoice; then a Receipt against it.</li>
+<li>[ ] <strong>Accountant:</strong> download the Bulk Import template, fill three vouchers, Check, break one on purpose, fix it, Post.</li>
+<li>[ ] <strong>Accountant:</strong> record an expense with a receipt; open the receipt from the list.</li>
+<li>[ ] <strong>HR Officer:</strong> create an employee; upload a document; try (and fail) to delete a paid employee.</li>
+<li>[ ] <strong>HR Manager:</strong> create a payroll period; generate payslips; open one; mark the period paid.</li>
+<li>[ ] <strong>Everyone:</strong> clock in via <em>My attendance</em>; update your profile password.</li>
+<li>[ ] <strong>Mobile:</strong> sign in to Umoja Pro; create a sale; watch it appear on the web Order Management.</li>
+</ul>
+<hr />
+<h3>Quick reference</h3>
+<ul>
+<li><strong>Web:</strong> https://umoja.ehub.co.tz  ·  <strong>Mobile:</strong> Umoja Pro (Android)</li>
+<li><strong>Session timeout:</strong> 20 minutes of inactivity</li>
+<li><strong>Stock rises:</strong> at GRN / delivery check.  <strong>Stock falls:</strong> at Dispatch.  <strong>No back-orders:</strong> a sale the branch cannot fill is refused at the POS.</li>
+<li><strong>Commission:</strong> auto, frozen at sale creation, by product category.</li>
+<li><strong>Three approval queues (Admin):</strong> Delivery Approvals · Supplier Payment Approvals · Petty Cash Approvals.</li>
+<li><strong>Money counts when:</strong> a supplier payment is <em>approved</em>; petty cash is <em>issued</em> (Done); a sale is <em>posted</em> in Sales Accounting.</li>
+<li><strong>Vouchers:</strong> SV Sales · PU Purchase · RV Receipt · PV Payment · CV Contra · JV Journal — post only when Total Debit = Total Credit; the difference fills the next line on the short side.</li>
+<li><strong>Bulk import:</strong> one row per line, grouped by Ref; whole file or nothing.</li>
+<li><strong>Payroll path:</strong> Draft → Processed (Generate) → Paid (Mark paid).</li>
+<li><strong>Missing a button?</strong> It's your role's permissions — ask the Administrator.</li>
+</ul>
+<p><em>A slide-deck version of the role chapters (with screenshots) is at <code>docs/Umoja_User_Guide.pptx</code>.</em></p></body></html>

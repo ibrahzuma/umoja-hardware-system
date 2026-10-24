@@ -104,7 +104,7 @@
                     <tr>
                         <td class="ps-4 fw-medium">${s.product_name}</td>
                         <td class="font-monospace small">${s.product_sku || '-'}</td>
-                        <td>${s.branch_name}</td>
+                        <td>${s.branch_name}${s.godown_name ? ' — ' + s.godown_name : ''}</td>
                         <td class="fw-bold">${s.quantity}</td>
                         <td class="text-muted">${s.low_stock_threshold}</td>
                         <td>${statusBadge}</td>

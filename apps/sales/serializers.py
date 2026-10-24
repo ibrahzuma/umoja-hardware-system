@@ -58,6 +58,7 @@ class SaleSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='user.username', read_only=True)
     
     vehicle_details = VehicleSerializer(source='vehicle', read_only=True)
+    godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
     vehicle = serializers.PrimaryKeyRelatedField(
         queryset=Vehicle.objects.all(), required=False, allow_null=True
     )
@@ -65,7 +66,8 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = [
-            'id', 'invoice_number', 'status', 'branch', 'user', 'created_by_name', 'customer_name',
+            'id', 'invoice_number', 'status', 'branch', 'godown', 'godown_name', 'user','created_by_name', 'customer_name',
+            'lp_number', 'pi_number', 'order_number',
             'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
             'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name',
             'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper',
@@ -120,11 +122,21 @@ class SaleSerializer(serializers.ModelSerializer):
         branch = attrs.get('branch') or getattr(self.instance, 'branch', None)
         request = self.context.get('request')
         if request is not None and branch is not None:
-            from apps.users.permissions import home_branch
+            from apps.users.permissions import home_branch, home_godown
             home = home_branch(request.user)
             if home is not None and getattr(branch, 'pk', branch) != home.pk:
                 raise serializers.ValidationError(
                     {'branch': f'You sell from {home.name} only.'})
+            # Staff tied to a godown sell from it; others may name any godown
+            # of the branch, or none (the branch's default).
+            tied = home_godown(request.user)
+            if tied is not None:
+                if attrs.get('godown') not in (None, tied):
+                    raise serializers.ValidationError({'godown': f'You sell from {tied.name} only.'})
+                attrs['godown'] = tied
+        godown = attrs.get('godown') or getattr(self.instance, 'godown', None)
+        if godown is not None and branch is not None and godown.branch_id != getattr(branch, 'pk', branch):
+            raise serializers.ValidationError({'godown': f'{godown.name} is not in that branch.'})
         if not items or branch is None:
             return attrs
 
@@ -132,6 +144,7 @@ class SaleSerializer(serializers.ModelSerializer):
             branch.pk if hasattr(branch, 'pk') else branch,
             [(i.get('product'), i.get('quantity')) for i in items],
             exclude_sale_id=self.instance.pk if self.instance else None,
+            godown=godown,
         )
         if problems:
             raise serializers.ValidationError({'items': problems})

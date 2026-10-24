@@ -242,7 +242,7 @@
             lines.push([
                 getProductName(item.product),
                 getProductSku(item.product),
-                getBranchName(item.branch),
+                getBranchName(item.branch) + (item.godown_name ? ' — ' + item.godown_name : ''),
                 item.quantity,
                 item.low_stock_threshold,
                 item.quantity <= item.low_stock_threshold ? 'Low stock' : 'In stock'
@@ -299,7 +299,7 @@
             // Need to map IDs to names if serializer doesn't provide depth
             const productName = getProductName(item.product);
             const productSku = getProductSku(item.product);
-            const branchName = getBranchName(item.branch);
+            const branchName = getBranchName(item.branch) + (item.godown_name ? ' — ' + item.godown_name : '');
 
             const isLow = item.quantity <= item.low_stock_threshold;
 
