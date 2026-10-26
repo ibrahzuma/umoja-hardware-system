@@ -66,7 +66,8 @@ class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
         fields = [
-            'id', 'invoice_number', 'status', 'branch', 'godown', 'godown_name', 'user','created_by_name', 'customer_name',
+            'id', 'invoice_number', 'status', 'branch', 'godown', 'godown_name', 'user','created_by_name',
+            'customer', 'customer_name',
             'lp_number', 'pi_number', 'order_number',
             'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
             'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name',
@@ -159,7 +160,20 @@ class SaleSerializer(serializers.ModelSerializer):
         import uuid
         validated_data['invoice_number'] = str(uuid.uuid4())[:8].upper()
         validated_data['status'] = 'pending'
-        
+
+        # A walk-in sale may carry a typed name instead of a picked customer.
+        # Turn that name into a real customer so the sale is linked and the
+        # customer is put on file — and, through the ledger signal, onto the
+        # chart of accounts (kind=customer). A blank name, or the generic
+        # "Walk-in Customer" placeholder, stays an anonymous walk-in.
+        if not validated_data.get('customer'):
+            name = (validated_data.get('customer_name') or '').strip()
+            if name and name.lower() != 'walk-in customer':
+                customer = (Customer.objects.filter(name__iexact=name).first()
+                            or Customer.objects.create(name=name[:200]))
+                validated_data['customer'] = customer
+                validated_data['customer_name'] = customer.name
+
         sale = Sale.objects.create(**validated_data)
 
         # Handle Subtotals ONLY (No stock deduction here anymore)

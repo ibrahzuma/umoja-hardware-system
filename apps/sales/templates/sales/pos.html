@@ -201,8 +201,9 @@
 
                     <div class="mb-3">
                         <label class="form-label">Customer</label>
-                        <!-- Pick a registered customer from the list. A new one is
-                             added deliberately with the + New button, never by typing. -->
+                        <!-- Pick a registered customer, add one with + New, or type a
+                             walk-in's name below — a typed name is put on file as a
+                             customer (and onto the chart of accounts) when the sale is made. -->
                         <div class="input-group">
                             <select class="form-select" id="customerSelect">
                                 <option value="">Walk-in Customer</option>
@@ -212,8 +213,10 @@
                                 <i class="bi bi-plus-lg"></i> New
                             </button>
                         </div>
+                        <input type="text" class="form-control mt-2" id="walkinName"
+                               autocomplete="off" placeholder="Walk-in customer name (optional)">
                         <div class="form-text" id="customerHint">
-                            Leave as Walk-in Customer for a walk-in sale.
+                            Type the walk-in's name to put them on file, or leave it blank for an anonymous walk-in.
                         </div>
                     </div>
 
@@ -319,7 +322,19 @@
         document.querySelectorAll('input[name="payment_method"]').forEach(r => r.addEventListener('change', toggleDepositSection));
         document.getElementById('depositAmount').addEventListener('input', updateCreditBalance);
         document.getElementById('addCustomerBtn').addEventListener('click', addNewCustomer);
+        document.getElementById('customerSelect').addEventListener('change', toggleWalkinName);
+        toggleWalkinName();
     });
+
+    /** The walk-in name box only matters when no registered customer is picked. */
+    function toggleWalkinName() {
+        const sel = document.getElementById('customerSelect');
+        const box = document.getElementById('walkinName');
+        if (!sel || !box) return;
+        const walkin = !sel.value;
+        box.classList.toggle('d-none', !walkin);
+        if (!walkin) box.value = '';
+    }
 
     // --- Credit deposit (partial payment now, rest on credit) ---
     function selectedMethod() {
@@ -698,10 +713,11 @@
         if (disc) disc.value = 0;
         const sel = document.getElementById('customerSelect');
         if (sel) sel.value = '';
-        ['lpNumber', 'piNumber', 'orderNumber'].forEach(id => {
+        ['lpNumber', 'piNumber', 'orderNumber', 'walkinName'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
+        toggleWalkinName();
         updateCartUI();
     }
 
@@ -769,16 +785,21 @@
             customers.push(created);          // available immediately
             renderCustomerOptions();
             document.getElementById('customerSelect').value = created.id;
+            toggleWalkinName();
         } catch (err) {
             Swal.fire('Customer', err.message, 'error');
         }
     }
 
-    /** The customer picked from the dropdown. {id, name} — id null for a walk-in. */
+    /** The customer for the sale. {id, name} — id null for a walk-in. A walk-in
+     *  may carry a typed name, which the server puts on file as a customer. */
     function resolveCustomer() {
         const sel = document.getElementById('customerSelect');
         const id = sel ? sel.value : '';
-        if (!id) return { id: null, name: 'Walk-in Customer' };
+        if (!id) {
+            const typed = (document.getElementById('walkinName').value || '').trim();
+            return { id: null, name: typed || 'Walk-in Customer' };
+        }
         const c = customers.find(x => String(x.id) === String(id));
         return c ? { id: c.id, name: c.name } : { id: null, name: 'Walk-in Customer' };
     }

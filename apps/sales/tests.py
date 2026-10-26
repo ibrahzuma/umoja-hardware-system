@@ -227,3 +227,59 @@ class TillChangesTest(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, 'id="itemPicker"')
         self.assertContains(res, 'id="receivedInto"')
+        self.assertContains(res, 'id="walkinName"')
+
+
+class WalkinNameBecomesACustomerTest(TestCase):
+    """A name typed for a walk-in at the till is put on file as a customer — and,
+    through the ledger signal, onto the chart of accounts. A picked customer is
+    linked to the sale; an anonymous walk-in creates nobody."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=50)
+        self.rep = User.objects.create_user(username='till_rep', password='pw', role='sales_rep')
+        self.rep.groups.add(Group.objects.get(name='Sales Representative'))
+        self.client.force_login(self.rep)
+
+    def sell(self, **extra):
+        body = {'branch': self.branch.id,
+                'items': [{'product': self.cement.id, 'quantity': 1}], **extra}
+        return self.client.post('/api/sales/', body, content_type='application/json')
+
+    def test_a_typed_walkin_name_is_put_on_file(self):
+        from apps.finance.models import LedgerAccount
+        res = self.sell(customer_name='Juma Mason')
+        self.assertEqual(res.status_code, 201, res.content)
+        customer = Customer.objects.get(name='Juma Mason')
+        sale = Sale.objects.get(id=res.json()['id'])
+        self.assertEqual(sale.customer, customer)               # linked to the sale
+        self.assertTrue(LedgerAccount.objects.filter(               # on the chart of accounts
+            kind='customer', customer=customer).exists())
+
+    def test_an_anonymous_walkin_creates_nobody(self):
+        before = Customer.objects.count()
+        res = self.sell(customer_name='Walk-in Customer')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Customer.objects.count(), before)
+        self.assertIsNone(Sale.objects.get(id=res.json()['id']).customer)
+
+    def test_a_typed_name_matching_an_existing_customer_reuses_it(self):
+        existing = Customer.objects.create(name='Existing Co')
+        res = self.sell(customer_name='existing co')            # case-insensitive match
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Customer.objects.filter(name__iexact='existing co').count(), 1)
+        self.assertEqual(Sale.objects.get(id=res.json()['id']).customer, existing)
+
+    def test_a_picked_customer_is_linked_to_the_sale(self):
+        picked = Customer.objects.create(name='Picked Ltd')
+        res = self.sell(customer=picked.id, customer_name='Picked Ltd')
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Sale.objects.get(id=res.json()['id']).customer, picked)

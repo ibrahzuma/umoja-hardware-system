@@ -127,6 +127,9 @@
                 <table class="meta">
                     <tr><td class="m-l">{{ doc.number_label }}</td><td class="m-v">{{ doc.number }}</td></tr>
                     <tr><td class="m-l">Date</td><td class="m-v">{{ doc.date|date:'d.m.Y' }}</td></tr>
+                    {% if doc.lp_number %}<tr><td class="m-l">LP No.</td><td class="m-v">{{ doc.lp_number }}</td></tr>{% endif %}
+                    {% if doc.pi_number %}<tr><td class="m-l">PI No.</td><td class="m-v">{{ doc.pi_number }}</td></tr>{% endif %}
+                    {% if doc.order_number %}<tr><td class="m-l">Order No.</td><td class="m-v">{{ doc.order_number }}</td></tr>{% endif %}
                     {% if doc.valid_until %}<tr><td class="m-l">Valid Until</td><td class="m-v">{{ doc.valid_until|date:'d.m.Y' }}</td></tr>{% endif %}
                     <tr><td class="m-l">Page</td><td class="m-v">{{ doc.page }}</td></tr>
                     <tr><td class="m-l">Branch</td><td class="m-v">{{ doc.branch }}</td></tr>

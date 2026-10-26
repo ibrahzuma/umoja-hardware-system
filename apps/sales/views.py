@@ -298,6 +298,8 @@ class SaleViewSet(viewsets.ModelViewSet):
             'doc': {
                 'type': 'TAX INVOICE', 'number_label': 'Invoice No.',
                 'number': sale.invoice_number, 'date': sale.created_at,
+                'lp_number': sale.lp_number, 'pi_number': sale.pi_number,
+                'order_number': sale.order_number,
                 'valid_until': None, 'page': '1/1',
                 'branch': sale.branch.name if sale.branch else '',
                 'contact': _person(sale.user),
