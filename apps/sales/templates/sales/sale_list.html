@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -35,6 +36,69 @@
     </div>
 </div>
 
+<!-- Edit Payment Modal (convert cash <-> credit) -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Edit Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Invoice</span>
+                        <span class="fw-bold" id="payInvoice">—</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Customer</span>
+                        <span id="payCustomer">—</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Total</span>
+                        <span id="payTotal">—</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Currently</span>
+                        <span id="payNow">—</span>
+                    </div>
+                </div>
+
+                <label class="form-label fw-semibold">Change this sale to</label>
+                <select class="form-select mb-3" id="payMode" onchange="onPayModeChange()">
+                    <option value="paid">Paid — cash / bank received</option>
+                    <option value="credit">Credit — money still owed</option>
+                </select>
+
+                <div id="paidFields">
+                    <div class="mb-3">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" id="payMethod" onchange="fillPayAccounts()">
+                            <option value="cash">Cash</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="mobile">Mobile Money</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Received into</label>
+                        <select class="form-select" id="payAccount"></select>
+                    </div>
+                    <p class="text-muted small mb-0">Records the outstanding balance as received.</p>
+                </div>
+
+                <div id="creditNote" class="alert alert-warning small d-none">
+                    This reverses the money recorded against the sale and leaves the full
+                    amount owed. Use it when a sale was marked paid by mistake, or is now on credit.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="paySaveBtn" onclick="savePayment()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Receipt Modal (Simple View) -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -58,9 +122,12 @@
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{% static 'js/money_accounts.js' %}"></script>
 <script>
     let sales = [];
     const receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
+    const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+    let payingSale = null;
 
     document.addEventListener('DOMContentLoaded', fetchSales);
 
@@ -113,6 +180,9 @@
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt(${s.id})">
                         <i class="bi bi-eye"></i> View
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary ms-1" onclick="editPayment(${s.id})">
+                        <i class="bi bi-pencil-square"></i> Edit
                     </button>
                     <!-- Only show delete for dispatched orders if logic permits, or generally allow deleting history if authorized -->
                     <!-- Assuming 'dispatched' status orders are final but deletable by admin -->
@@ -185,6 +255,75 @@
 
     function printReceipt() {
         window.print();
+    }
+
+    // --- Edit payment: convert a saved sale between cash/bank and credit ---
+    function editPayment(id) {
+        const sale = sales.find(s => s.id === id);
+        if (!sale) return;
+        payingSale = sale;
+
+        document.getElementById('payInvoice').textContent = sale.invoice_number;
+        document.getElementById('payCustomer').textContent = sale.customer_name || '—';
+        document.getElementById('payTotal').textContent =
+            'TZS ' + Math.round(Number(sale.total_amount)).toLocaleString();
+        const status = sale.payment_status || 'Paid';
+        const badge = status === 'Paid' ? 'success' : (status === 'Partial' ? 'warning text-dark' : 'danger');
+        document.getElementById('payNow').innerHTML =
+            `<span class="badge bg-${badge}">${status}</span>` +
+            ` &middot; Balance TZS ${Math.round(Number(sale.balance || 0)).toLocaleString()}`;
+
+        // Default the dropdown to the opposite of where the sale is now.
+        document.getElementById('payMode').value = status === 'Paid' ? 'credit' : 'paid';
+        document.getElementById('payMethod').value = 'cash';
+        onPayModeChange();
+        paymentModal.show();
+    }
+
+    function onPayModeChange() {
+        const mode = document.getElementById('payMode').value;
+        const paid = mode === 'paid';
+        document.getElementById('paidFields').classList.toggle('d-none', !paid);
+        document.getElementById('creditNote').classList.toggle('d-none', paid);
+        if (paid) fillPayAccounts();
+    }
+
+    function fillPayAccounts() {
+        const method = document.getElementById('payMethod').value;
+        const branchId = payingSale ? payingSale.branch : '';
+        MoneyAccounts.fill(document.getElementById('payAccount'), method, null, branchId);
+    }
+
+    async function savePayment() {
+        if (!payingSale) return;
+        const mode = document.getElementById('payMode').value;
+        const body = { mode };
+        if (mode === 'paid') {
+            body.method = document.getElementById('payMethod').value;
+            body.account = document.getElementById('payAccount').value || null;
+        }
+        const btn = document.getElementById('paySaveBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/sales/${payingSale.id}/set_payment/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                paymentModal.hide();
+                Swal.fire('Saved', data.message || 'Payment updated.', 'success');
+                fetchSales();
+            } else {
+                Swal.fire('Not changed', data.error || 'Could not update the payment.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not update the payment.', 'error');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     async function deleteSale(id) {

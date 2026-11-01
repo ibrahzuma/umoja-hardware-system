@@ -202,8 +202,9 @@
                     <div class="mb-3">
                         <label class="form-label">Customer</label>
                         <!-- Pick a registered customer, add one with + New, or type a
-                             walk-in's name below — a typed name is put on file as a
-                             customer (and onto the chart of accounts) when the sale is made. -->
+                             walk-in's name below. A typed name is a reference on the
+                             sale only — it is not saved as a customer or put on the
+                             chart of accounts. Register the customer (+ New) to bill them. -->
                         <div class="input-group">
                             <select class="form-select" id="customerSelect">
                                 <option value="">Walk-in Customer</option>
@@ -216,7 +217,7 @@
                         <input type="text" class="form-control mt-2" id="walkinName"
                                autocomplete="off" placeholder="Walk-in customer name (optional)">
                         <div class="form-text" id="customerHint">
-                            Type the walk-in's name to put them on file, or leave it blank for an anonymous walk-in.
+                            Type the walk-in's name for the invoice (reference only), or leave it blank for an anonymous walk-in.
                         </div>
                     </div>
 

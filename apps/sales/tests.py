@@ -230,10 +230,10 @@ class TillChangesTest(TestCase):
         self.assertContains(res, 'id="walkinName"')
 
 
-class WalkinNameBecomesACustomerTest(TestCase):
-    """A name typed for a walk-in at the till is put on file as a customer — and,
-    through the ledger signal, onto the chart of accounts. A picked customer is
-    linked to the sale; an anonymous walk-in creates nobody."""
+class WalkinNameIsReferenceOnlyTest(TestCase):
+    """A name typed for a walk-in at the till is a reference on the sale only. It
+    is NOT turned into a sales.Customer and so never reaches the chart of
+    accounts. Only a customer the seller actually picks is linked and on file."""
 
     @classmethod
     def setUpTestData(cls):
@@ -254,15 +254,17 @@ class WalkinNameBecomesACustomerTest(TestCase):
                 'items': [{'product': self.cement.id, 'quantity': 1}], **extra}
         return self.client.post('/api/sales/', body, content_type='application/json')
 
-    def test_a_typed_walkin_name_is_put_on_file(self):
+    def test_a_typed_walkin_name_stays_a_reference(self):
         from apps.finance.models import LedgerAccount
+        before = Customer.objects.count()
         res = self.sell(customer_name='Juma Mason')
         self.assertEqual(res.status_code, 201, res.content)
-        customer = Customer.objects.get(name='Juma Mason')
         sale = Sale.objects.get(id=res.json()['id'])
-        self.assertEqual(sale.customer, customer)               # linked to the sale
-        self.assertTrue(LedgerAccount.objects.filter(               # on the chart of accounts
-            kind='customer', customer=customer).exists())
+        self.assertEqual(sale.customer_name, 'Juma Mason')          # kept on the sale
+        self.assertIsNone(sale.customer)                            # but not a Customer
+        self.assertEqual(Customer.objects.count(), before)         # nobody created
+        self.assertFalse(LedgerAccount.objects.filter(             # not on the chart of accounts
+            kind='customer', name__iexact='Juma Mason').exists())
 
     def test_an_anonymous_walkin_creates_nobody(self):
         before = Customer.objects.count()
@@ -271,15 +273,80 @@ class WalkinNameBecomesACustomerTest(TestCase):
         self.assertEqual(Customer.objects.count(), before)
         self.assertIsNone(Sale.objects.get(id=res.json()['id']).customer)
 
-    def test_a_typed_name_matching_an_existing_customer_reuses_it(self):
-        existing = Customer.objects.create(name='Existing Co')
-        res = self.sell(customer_name='existing co')            # case-insensitive match
+    def test_a_typed_name_is_not_linked_even_if_it_matches_a_customer(self):
+        # Reference only: a typed name never auto-links. To bill a known
+        # customer the seller picks them (see the next test).
+        Customer.objects.create(name='Existing Co')
+        res = self.sell(customer_name='existing co')
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(Customer.objects.filter(name__iexact='existing co').count(), 1)
-        self.assertEqual(Sale.objects.get(id=res.json()['id']).customer, existing)
+        self.assertIsNone(Sale.objects.get(id=res.json()['id']).customer)
 
     def test_a_picked_customer_is_linked_to_the_sale(self):
         picked = Customer.objects.create(name='Picked Ltd')
         res = self.sell(customer=picked.id, customer_name='Picked Ltd')
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(Sale.objects.get(id=res.json()['id']).customer, picked)
+
+
+class ConvertPaymentTest(TestCase):
+    """A saved sale can be moved between paid (cash/bank) and credit from the
+    sales list, by adding or removing its payments."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=50)
+        self.mgr = User.objects.create_user(username='boss', password='pw', role='admin', is_superuser=True)
+        self.client.force_login(self.mgr)
+
+    def _make_sale(self, paid=False):
+        body = {'branch': self.branch.id, 'customer_name': 'Walk-in Customer',
+                'items': [{'product': self.cement.id, 'quantity': 1}]}
+        if paid:
+            body['payment_details'] = {'amount': '20000', 'method': 'cash'}
+        res = self.client.post('/api/sales/', body, content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        return Sale.objects.get(id=res.json()['id'])
+
+    def test_cash_sale_can_be_moved_to_credit(self):
+        sale = self._make_sale(paid=True)
+        self.assertTrue(sale.transactions.exists())
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'credit'}, content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(sale.transactions.exists())           # money reversed
+
+    def test_credit_sale_can_be_marked_paid(self):
+        sale = self._make_sale(paid=False)
+        self.assertEqual(sale.transactions.count(), 0)
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'paid', 'method': 'cash'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        paid = sum(t.amount for t in sale.transactions.all())
+        self.assertEqual(paid, sale.total_amount)              # balance recorded
+
+    def test_marking_an_already_paid_sale_paid_adds_nothing(self):
+        sale = self._make_sale(paid=True)
+        before = sale.transactions.count()
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'paid', 'method': 'cash'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(sale.transactions.count(), before)
+
+    def test_a_sales_rep_cannot_convert(self):
+        sale = self._make_sale(paid=True)
+        rep = User.objects.create_user(username='rep2', password='pw', role='sales_rep')
+        rep.groups.add(Group.objects.get(name='Sales Representative'))
+        self.client.force_login(rep)
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'credit'}, content_type='application/json')
+        self.assertEqual(res.status_code, 403, res.content)

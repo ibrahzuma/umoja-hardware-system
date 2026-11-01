@@ -278,6 +278,72 @@ class SaleViewSet(viewsets.ModelViewSet):
             "delivery_note_url": f"/api/sales/{sale.id}/delivery_note/"
         })
 
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated])
+    def set_payment(self, request, pk=None):
+        """Convert a saved sale between paid (cash/bank/mobile) and credit.
+
+        A sale is cash or credit by whether it carries payments, not a flag, so
+        converting means adding or removing them:
+          * ``mode='credit'`` reverses the sale's till payments, leaving the
+            whole amount outstanding.
+          * ``mode='paid'`` (or ``cash``/``bank``/``mobile``) records one
+            payment for the outstanding balance into the chosen cash book or
+            bank (``account``).
+        The CRM register and Sales Accounting follow through the Transaction
+        signals. A sale Accounts have already **posted** is frozen in the books
+        — reverse it in Sales Accounting rather than changing it here.
+        """
+        from rest_framework.response import Response
+        from rest_framework import status as http
+        u = request.user
+        if not (u.is_superuser or u.is_admin_role or u.is_manager
+                or u.is_sales_manager or u.is_accountant or u.is_cashier):
+            return Response({"error": "You cannot change how a sale was paid."},
+                            status=http.HTTP_403_FORBIDDEN)
+
+        sale = self.get_object()
+
+        from apps.finance.sales_ledger import SalesLedgerEntry
+        if (sale.invoice_number and SalesLedgerEntry.objects
+                .filter(invoice_number=sale.invoice_number, status='posted').exists()):
+            return Response(
+                {"error": "Accounts have already posted this sale to the books. "
+                          "Reverse it in Sales Accounting before changing it here."},
+                status=http.HTTP_400_BAD_REQUEST)
+
+        mode = (request.data.get('mode') or '').strip().lower()
+
+        if mode == 'credit':
+            removed = sale.transactions.filter(transaction_type='income').count()
+            sale.transactions.filter(transaction_type='income').delete()
+            return Response({
+                "message": f"Sale #{sale.invoice_number} moved to credit.",
+                "payment_status": "Credit", "removed": removed,
+            })
+
+        if mode in ('paid', 'cash', 'bank', 'mobile'):
+            from .serializers import money_account
+            paid = sum(t.amount for t in sale.transactions.all())
+            balance = (sale.total_amount or Decimal('0')) - paid
+            if balance <= 0:
+                return Response({"message": "This sale is already paid in full.",
+                                 "payment_status": "Paid"})
+            method = 'cash' if mode in ('paid', 'cash') else mode
+            account = money_account(request.data.get('account'), 'account')
+            Transaction.objects.create(
+                sale=sale, amount=balance, payment_method=method,
+                deposit_to=account, transaction_type='income',
+                reference=str(request.data.get('reference') or '')[:100],
+            )
+            return Response({
+                "message": f"Sale #{sale.invoice_number} marked paid "
+                           f"({dict(Transaction.PAYMENT_METHODS).get(method, method)}).",
+                "payment_status": "Paid",
+            })
+
+        return Response({"error": "mode must be 'credit' or 'paid'."},
+                        status=http.HTTP_400_BAD_REQUEST)
+
     @action(detail=True, methods=['GET'])
     def receipt(self, request, pk=None):
         sale = self.get_object()

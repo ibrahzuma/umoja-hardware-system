@@ -162,17 +162,11 @@ class SaleSerializer(serializers.ModelSerializer):
         validated_data['status'] = 'pending'
 
         # A walk-in sale may carry a typed name instead of a picked customer.
-        # Turn that name into a real customer so the sale is linked and the
-        # customer is put on file — and, through the ledger signal, onto the
-        # chart of accounts (kind=customer). A blank name, or the generic
-        # "Walk-in Customer" placeholder, stays an anonymous walk-in.
-        if not validated_data.get('customer'):
-            name = (validated_data.get('customer_name') or '').strip()
-            if name and name.lower() != 'walk-in customer':
-                customer = (Customer.objects.filter(name__iexact=name).first()
-                            or Customer.objects.create(name=name[:200]))
-                validated_data['customer'] = customer
-                validated_data['customer_name'] = customer.name
+        # That name is kept on the sale as a reference only (`customer_name`) —
+        # it is NOT turned into a sales.Customer and so never reaches the chart
+        # of accounts. Only a customer the seller actually picks is linked and
+        # put on file. To put a walk-in on the books, register them as a
+        # customer first, then pick them.
 
         sale = Sale.objects.create(**validated_data)
 
