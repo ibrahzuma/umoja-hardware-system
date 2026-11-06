@@ -311,6 +311,19 @@ class SaleViewSet(viewsets.ModelViewSet):
                           "Reverse it in Sales Accounting before changing it here."},
                 status=http.HTTP_400_BAD_REQUEST)
 
+        # A customer may be assigned while editing — a credit sale is owed by
+        # someone, so the seller can pin a reference-only walk-in to a real
+        # customer on file here. Picking one links it and copies its name.
+        cust_id = request.data.get('customer')
+        if cust_id not in (None, ''):
+            customer = Customer.objects.filter(pk=cust_id).first()
+            if customer is None:
+                return Response({"error": "That customer was not found."},
+                                status=http.HTTP_400_BAD_REQUEST)
+            sale.customer = customer
+            sale.customer_name = customer.name
+            sale.save(update_fields=['customer', 'customer_name'])
+
         mode = (request.data.get('mode') or '').strip().lower()
 
         if mode == 'credit':

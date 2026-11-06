@@ -342,6 +342,26 @@ class ConvertPaymentTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         self.assertEqual(sale.transactions.count(), before)
 
+    def test_converting_to_credit_can_assign_a_customer(self):
+        sale = self._make_sale(paid=True)
+        self.assertIsNone(sale.customer)                       # a walk-in reference
+        debtor = Customer.objects.create(name='Abdul Hardware')
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'credit', 'customer': debtor.id},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.customer, debtor)                # pinned to a real debtor
+        self.assertEqual(sale.customer_name, 'Abdul Hardware')
+        self.assertFalse(sale.transactions.exists())
+
+    def test_an_unknown_customer_is_refused(self):
+        sale = self._make_sale(paid=True)
+        res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
+                               {'mode': 'credit', 'customer': 999999},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 400, res.content)
+
     def test_a_sales_rep_cannot_convert(self):
         sale = self._make_sale(paid=True)
         rep = User.objects.create_user(username='rep2', password='pw', role='sales_rep')

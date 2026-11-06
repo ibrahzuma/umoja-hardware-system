@@ -86,9 +86,18 @@
                     <p class="text-muted small mb-0">Records the outstanding balance as received.</p>
                 </div>
 
-                <div id="creditNote" class="alert alert-warning small d-none">
-                    This reverses the money recorded against the sale and leaves the full
-                    amount owed. Use it when a sale was marked paid by mistake, or is now on credit.
+                <div id="creditFields" class="d-none">
+                    <div class="mb-3">
+                        <label class="form-label">Customer <span class="text-muted">(the debtor who owes this)</span></label>
+                        <select class="form-select" id="payCustomerSelect">
+                            <option value="">— Keep as is —</option>
+                        </select>
+                        <div class="form-text">A credit sale is owed by someone — pick the customer it is on.</div>
+                    </div>
+                    <div class="alert alert-warning small mb-0">
+                        This reverses the money recorded against the sale and leaves the full
+                        amount owed. Use it when a sale was marked paid by mistake, or is now on credit.
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -258,6 +267,36 @@
     }
 
     // --- Edit payment: convert a saved sale between cash/bank and credit ---
+    let custList = null;
+
+    async function loadCustomers() {
+        if (custList) return custList;
+        try {
+            const r = await fetch('/api/customers/', { credentials: 'same-origin' });
+            const data = r.ok ? await r.json() : [];
+            custList = (Array.isArray(data) ? data : data.results) || [];
+        } catch (e) {
+            custList = [];
+        }
+        return custList;
+    }
+
+    async function fillCustomerSelect(selectedId) {
+        const sel = document.getElementById('payCustomerSelect');
+        const rows = await loadCustomers();
+        rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        sel.innerHTML = '<option value="">— Keep as is —</option>';
+        rows.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = c.name;
+            sel.appendChild(opt);
+        });
+        if (selectedId != null && rows.some(c => String(c.id) === String(selectedId))) {
+            sel.value = String(selectedId);
+        }
+    }
+
     function editPayment(id) {
         const sale = sales.find(s => s.id === id);
         if (!sale) return;
@@ -276,6 +315,8 @@
         // Default the dropdown to the opposite of where the sale is now.
         document.getElementById('payMode').value = status === 'Paid' ? 'credit' : 'paid';
         document.getElementById('payMethod').value = 'cash';
+        // Offer the customers list, pre-picking the one the sale is already on.
+        fillCustomerSelect(sale.customer);
         onPayModeChange();
         paymentModal.show();
     }
@@ -284,7 +325,7 @@
         const mode = document.getElementById('payMode').value;
         const paid = mode === 'paid';
         document.getElementById('paidFields').classList.toggle('d-none', !paid);
-        document.getElementById('creditNote').classList.toggle('d-none', paid);
+        document.getElementById('creditFields').classList.toggle('d-none', paid);
         if (paid) fillPayAccounts();
     }
 
@@ -301,6 +342,9 @@
         if (mode === 'paid') {
             body.method = document.getElementById('payMethod').value;
             body.account = document.getElementById('payAccount').value || null;
+        } else if (mode === 'credit') {
+            const cust = document.getElementById('payCustomerSelect').value;
+            if (cust) body.customer = cust;
         }
         const btn = document.getElementById('paySaveBtn');
         btn.disabled = true;
