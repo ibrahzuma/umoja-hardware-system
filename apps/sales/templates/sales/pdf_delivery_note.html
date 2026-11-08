@@ -111,6 +111,9 @@
                 <table class="meta">
                     <tr><td class="m-l">{{ doc.number_label }}</td><td class="m-v">{{ doc.number }}</td></tr>
                     {% if doc.invoice_ref %}<tr><td class="m-l">Invoice Ref</td><td class="m-v">{{ doc.invoice_ref }}</td></tr>{% endif %}
+                    {% if doc.lp_number %}<tr><td class="m-l">LP No.</td><td class="m-v">{{ doc.lp_number }}</td></tr>{% endif %}
+                    {% if doc.pi_number %}<tr><td class="m-l">PI No.</td><td class="m-v">{{ doc.pi_number }}</td></tr>{% endif %}
+                    {% if doc.order_number %}<tr><td class="m-l">Order No.</td><td class="m-v">{{ doc.order_number }}</td></tr>{% endif %}
                     <tr><td class="m-l">Dispatch Date</td><td class="m-v">{{ doc.date|date:'d.m.Y' }}</td></tr>
                     <tr><td class="m-l">Page</td><td class="m-v">{{ doc.page }}</td></tr>
                     <tr><td class="m-l">Branch</td><td class="m-v">{{ doc.branch }}</td></tr>

@@ -421,6 +421,8 @@ class SaleViewSet(viewsets.ModelViewSet):
             'doc': {
                 'type': 'DELIVERY NOTE', 'number_label': 'Delivery No.',
                 'number': sale.invoice_number, 'invoice_ref': sale.invoice_number,
+                'lp_number': sale.lp_number, 'pi_number': sale.pi_number,
+                'order_number': sale.order_number,
                 'date': timezone.now(), 'page': '1/1',
                 'branch': sale.branch.name if sale.branch else '',
                 'contact': _person(sale.user), 'status': sale.status,

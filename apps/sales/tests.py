@@ -372,6 +372,36 @@ class ConvertPaymentTest(TestCase):
         self.assertEqual(res.status_code, 403, res.content)
 
 
+class DeliveryNoteShowsReferenceNumbersTest(TestCase):
+    """The delivery note prints LP No., PI No. and Order No. when the sale
+    carries them — the same references the invoice shows."""
+
+    def test_the_numbers_render_when_present(self):
+        from django.template.loader import render_to_string
+        from django.utils import timezone
+        html = render_to_string('sales/pdf_delivery_note.html', {
+            'doc': {'type': 'DELIVERY NOTE', 'number_label': 'Delivery No.',
+                    'number': 'INV1', 'invoice_ref': 'INV1',
+                    'lp_number': 'LP-7', 'pi_number': 'PI-9', 'order_number': 'ORD-3',
+                    'date': timezone.now(), 'page': '1/1'},
+            'company': {}, 'customer': {}, 'items': [], 'currency': 'TZS',
+        })
+        for label, value in [('LP No.', 'LP-7'), ('PI No.', 'PI-9'), ('Order No.', 'ORD-3')]:
+            self.assertIn(label, html)
+            self.assertIn(value, html)
+
+    def test_the_rows_are_hidden_when_blank(self):
+        from django.template.loader import render_to_string
+        from django.utils import timezone
+        html = render_to_string('sales/pdf_delivery_note.html', {
+            'doc': {'type': 'DELIVERY NOTE', 'number_label': 'Delivery No.',
+                    'number': 'INV1', 'date': timezone.now(), 'page': '1/1'},
+            'company': {}, 'customer': {}, 'items': [], 'currency': 'TZS',
+        })
+        self.assertNotIn('LP No.', html)
+        self.assertNotIn('PI No.', html)
+
+
 class StoreKeeperDispatchTest(TestCase):
     """A store keeper can open the dispatch board and dispatch an approved
     order — the loading-out job is theirs."""
