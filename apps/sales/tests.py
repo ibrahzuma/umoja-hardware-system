@@ -370,3 +370,54 @@ class ConvertPaymentTest(TestCase):
         res = self.client.post(f'/api/sales/{sale.id}/set_payment/',
                                {'mode': 'credit'}, content_type='application/json')
         self.assertEqual(res.status_code, 403, res.content)
+
+
+class StoreKeeperDispatchTest(TestCase):
+    """A store keeper can open the dispatch board and dispatch an approved
+    order — the loading-out job is theirs."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=50)
+        self.keeper = User.objects.create_user(username='keeper', password='pw', role='store_keeper')
+        self.keeper.groups.add(Group.objects.get(name='Store Keeper'))
+
+    def _approved_sale(self):
+        sale = Sale.objects.create(branch=self.branch, customer_name='Walk-in Customer',
+                                   invoice_number='DISP1', status='approved', total_amount=20000)
+        from apps.sales.models import SaleItem
+        SaleItem.objects.create(sale=sale, product=self.cement, quantity=1,
+                                price_at_sale=20000, subtotal=20000)
+        return sale
+
+    def test_store_keeper_sees_the_dispatch_board(self):
+        self.client.force_login(self.keeper)
+        res = self.client.get('/sales/dispatch/')
+        self.assertEqual(res.status_code, 200)
+
+    def test_store_keeper_can_dispatch_an_approved_order(self):
+        sale = self._approved_sale()
+        self.client.force_login(self.keeper)
+        res = self.client.post(f'/api/sales/{sale.id}/dispatch_order/',
+                               {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 123 ABC'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'dispatched')
+
+    def test_a_sales_rep_still_cannot_dispatch(self):
+        sale = self._approved_sale()
+        rep = User.objects.create_user(username='rep3', password='pw', role='sales_rep')
+        rep.groups.add(Group.objects.get(name='Sales Representative'))
+        self.client.force_login(rep)
+        res = self.client.post(f'/api/sales/{sale.id}/dispatch_order/',
+                               {'store_keeper': rep.id, 'lorry_info': 'TZ 123 ABC'},
+                               content_type='application/json')
+        self.assertEqual(res.status_code, 403, res.content)

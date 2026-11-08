@@ -181,7 +181,8 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated])
     def dispatch_order(self, request, pk=None):
-        if not (request.user.is_superuser or request.user.is_manager or request.user.is_admin_role):
+        u = request.user
+        if not (u.is_superuser or u.is_manager or u.is_admin_role or u.is_store_keeper):
              from rest_framework.response import Response
              from rest_framework import status
              return Response({"error": "You do not have permission to dispatch orders"}, status=status.HTTP_403_FORBIDDEN)
@@ -528,7 +529,10 @@ class DispatchDashboardView(LoginRequiredMixin, UserPassesTestMixin, TemplateVie
     template_name = 'sales/dispatch_dashboard.html'
 
     def test_func(self):
-        return self.request.user.is_superuser or self.request.user.is_manager or self.request.user.is_admin_role
+        u = self.request.user
+        # The dispatch board is for whoever loads the goods out: admins,
+        # managers, and the store keeper who physically dispatches.
+        return u.is_superuser or u.is_manager or u.is_admin_role or u.is_store_keeper
 
 class SaleItemViewSet(viewsets.ModelViewSet):
     queryset = SaleItem.objects.all()
