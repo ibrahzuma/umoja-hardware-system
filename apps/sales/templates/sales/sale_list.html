@@ -108,6 +108,68 @@
     </div>
 </div>
 
+<!-- Edit Order Items Modal (change goods / quantities -> admin approval) -->
+<div class="modal fade" id="editOrderModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Edit Order Items</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Invoice <span class="fw-bold" id="eoInvoice">—</span>.
+                    <span id="eoStatusNote"></span>
+                </p>
+                <div class="row g-2 mb-3 align-items-end">
+                    <div class="col-7">
+                        <label class="form-label small mb-1">Product</label>
+                        <select class="form-select" id="eoProduct"></select>
+                    </div>
+                    <div class="col-3">
+                        <label class="form-label small mb-1">Qty</label>
+                        <input type="number" class="form-control" id="eoQty" min="1" value="1">
+                    </div>
+                    <div class="col-2">
+                        <button type="button" class="btn btn-outline-primary w-100" onclick="eoAddLine()">
+                            <i class="bi bi-plus-lg"></i> Add
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle" data-no-paginate>
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th style="width:90px">Qty</th>
+                                <th style="width:130px">Price</th>
+                                <th class="text-end" style="width:130px">Subtotal</th>
+                                <th style="width:40px"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="eoCart">
+                            <tr><td colspan="5" class="text-center text-muted py-3">No items</td></tr>
+                        </tbody>
+                        <tfoot>
+                            <tr class="border-top">
+                                <th colspan="3">Total</th>
+                                <th class="text-end" id="eoTotal">TZS 0</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="eoSaveBtn" onclick="saveOrderItems()">
+                    Save &amp; send for approval
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Receipt Modal (Simple View) -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -136,7 +198,12 @@
     let sales = [];
     const receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+    const editOrderModal = new bootstrap.Modal(document.getElementById('editOrderModal'));
     let payingSale = null;
+
+    // Who may reshape an order's goods (the roles that raise/approve sales).
+    // The server enforces this too; this only decides whether to show the button.
+    const CAN_EDIT_ITEMS = {% if user.is_superuser or user.is_admin_role or user.is_manager or user.is_sales_manager or user.is_sales_rep %}true{% else %}false{% endif %};
 
     document.addEventListener('DOMContentLoaded', fetchSales);
 
@@ -190,8 +257,12 @@
                     <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt(${s.id})">
                         <i class="bi bi-eye"></i> View
                     </button>
+                    ${(CAN_EDIT_ITEMS && (s.status === 'pending' || s.status === 'approved')) ? `
+                    <button class="btn btn-sm btn-outline-dark ms-1" onclick="editOrderItems(${s.id})">
+                        <i class="bi bi-box-seam"></i> Items
+                    </button>` : ''}
                     <button class="btn btn-sm btn-outline-secondary ms-1" onclick="editPayment(${s.id})">
-                        <i class="bi bi-pencil-square"></i> Edit
+                        <i class="bi bi-cash-coin"></i> Payment
                     </button>
                     <!-- Only show delete for dispatched orders if logic permits, or generally allow deleting history if authorized -->
                     <!-- Assuming 'dispatched' status orders are final but deletable by admin -->
@@ -365,6 +436,141 @@
         } catch (e) {
             console.error(e);
             Swal.fire('Error', 'Could not update the payment.', 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // --- Edit order items: change goods / quantities, then admin re-approves ---
+    let eoProducts = null;      // [{id, name, price}]
+    let eoCart = [];            // [{product, name, quantity, price}]
+    let eoSale = null;
+
+    async function loadProducts() {
+        if (eoProducts) return eoProducts;
+        try {
+            const r = await fetch('/api/products/', { credentials: 'same-origin' });
+            const data = r.ok ? await r.json() : [];
+            const rows = (Array.isArray(data) ? data : data.results) || [];
+            eoProducts = rows.map(p => ({ id: p.id, name: p.name, price: Number(p.price) || 0 }));
+        } catch (e) { eoProducts = []; }
+        return eoProducts;
+    }
+
+    async function editOrderItems(id) {
+        const sale = sales.find(s => s.id === id);
+        if (!sale) return;
+        if (sale.status !== 'pending' && sale.status !== 'approved') {
+            Swal.fire('Cannot edit', 'Only a pending or approved order can be edited.', 'info');
+            return;
+        }
+        eoSale = sale;
+        await loadProducts();
+
+        const sel = document.getElementById('eoProduct');
+        sel.innerHTML = eoProducts.map(p =>
+            `<option value="${p.id}">${p.name}</option>`).join('')
+            || '<option value="">No products</option>';
+
+        // Seed the cart from the order's current lines.
+        eoCart = (sale.items_response || []).map(it => ({
+            product: it.product,
+            name: it.product_name || ('#' + it.product),
+            quantity: Number(it.quantity) || 1,
+            price: Number(it.price_at_sale) || 0,
+        }));
+
+        document.getElementById('eoInvoice').textContent = sale.invoice_number;
+        document.getElementById('eoStatusNote').textContent =
+            sale.status === 'approved'
+                ? 'Saving changes sends it back to Pending for an admin to approve.'
+                : 'It stays Pending for approval.';
+        document.getElementById('eoQty').value = 1;
+        renderEoCart();
+        editOrderModal.show();
+    }
+
+    function renderEoCart() {
+        const tbody = document.getElementById('eoCart');
+        if (!eoCart.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No items</td></tr>';
+            document.getElementById('eoTotal').textContent = 'TZS 0';
+            return;
+        }
+        tbody.innerHTML = '';
+        let total = 0;
+        eoCart.forEach((line, idx) => {
+            const sub = line.quantity * line.price;
+            total += sub;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${line.name}</td>
+                <td><input type="number" min="1" class="form-control form-control-sm"
+                           value="${line.quantity}" onchange="eoSetQty(${idx}, this.value)"></td>
+                <td><input type="number" min="0" class="form-control form-control-sm"
+                           value="${line.price}" onchange="eoSetPrice(${idx}, this.value)"></td>
+                <td class="text-end">TZS ${Math.round(sub).toLocaleString()}</td>
+                <td><button class="btn btn-sm btn-outline-danger" onclick="eoRemove(${idx})">
+                    <i class="bi bi-x"></i></button></td>`;
+            tbody.appendChild(tr);
+        });
+        document.getElementById('eoTotal').textContent = 'TZS ' + Math.round(total).toLocaleString();
+    }
+
+    function eoAddLine() {
+        const sel = document.getElementById('eoProduct');
+        const pid = Number(sel.value);
+        const qty = Math.max(1, parseInt(document.getElementById('eoQty').value, 10) || 1);
+        const prod = (eoProducts || []).find(p => p.id === pid);
+        if (!prod) return;
+        const existing = eoCart.find(l => l.product === pid);
+        if (existing) existing.quantity += qty;
+        else eoCart.push({ product: pid, name: prod.name, quantity: qty, price: prod.price });
+        document.getElementById('eoQty').value = 1;
+        renderEoCart();
+    }
+
+    function eoSetQty(idx, val) {
+        eoCart[idx].quantity = Math.max(1, parseInt(val, 10) || 1);
+        renderEoCart();
+    }
+    function eoSetPrice(idx, val) {
+        eoCart[idx].price = Math.max(0, Number(val) || 0);
+        renderEoCart();
+    }
+    function eoRemove(idx) { eoCart.splice(idx, 1); renderEoCart(); }
+
+    async function saveOrderItems() {
+        if (!eoSale) return;
+        if (!eoCart.length) {
+            Swal.fire('Add items', 'An order needs at least one line.', 'info');
+            return;
+        }
+        const body = {
+            items: eoCart.map(l => ({
+                product: l.product, quantity: l.quantity, price_at_sale: l.price,
+            })),
+        };
+        const btn = document.getElementById('eoSaveBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/sales/${eoSale.id}/amend/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                editOrderModal.hide();
+                Swal.fire('Saved', data.message || 'Order updated.', 'success');
+                fetchSales();
+            } else {
+                const err = Array.isArray(data.error) ? data.error.join('\n') : (data.error || 'Could not update the order.');
+                Swal.fire('Not changed', err, 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not update the order.', 'error');
         } finally {
             btn.disabled = false;
         }

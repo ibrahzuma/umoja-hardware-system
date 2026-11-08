@@ -358,6 +358,108 @@ class SaleViewSet(viewsets.ModelViewSet):
         return Response({"error": "mode must be 'credit' or 'paid'."},
                         status=http.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated])
+    def amend(self, request, pk=None):
+        """Change the goods and quantities on an order the customer wants
+        altered, then send it for approval.
+
+        Only a **pending** or **approved** order can be amended — a dispatched
+        one has already left the shelf. Amending an approved order sends it
+        back to **pending**, so an admin re-approves it in Order Management
+        before it can be dispatched again. The new lines are stock-checked the
+        same way a new sale is (this order's own old lines excluded), so a rep
+        cannot promise goods the branch does not have.
+        """
+        from rest_framework.response import Response
+        from rest_framework import status as http
+        from django.db import transaction as db_transaction
+        from apps.inventory.models import Product
+        from .stock_guard import check_lines
+
+        u = request.user
+        # The people who raise and approve sales may amend one; the cash desk
+        # and back office may not reshape an order.
+        if not (u.is_superuser or u.is_admin_role or u.is_manager
+                or u.is_sales_manager or u.is_sales_rep):
+            return Response({"error": "You cannot edit the goods on an order."},
+                            status=http.HTTP_403_FORBIDDEN)
+
+        sale = self.get_object()
+
+        if sale.status not in ('pending', 'approved'):
+            return Response(
+                {"error": f"Only a pending or approved order can be edited; "
+                          f"this one is {sale.get_status_display().lower()}."},
+                status=http.HTTP_400_BAD_REQUEST)
+
+        from apps.finance.sales_ledger import SalesLedgerEntry
+        if (sale.invoice_number and SalesLedgerEntry.objects
+                .filter(invoice_number=sale.invoice_number, status='posted').exists()):
+            return Response(
+                {"error": "Accounts have already posted this sale to the books. "
+                          "Reverse it in Sales Accounting before editing it."},
+                status=http.HTTP_400_BAD_REQUEST)
+
+        items = request.data.get('items') or []
+        if not items:
+            return Response({"error": "An order needs at least one line."},
+                            status=http.HTTP_400_BAD_REQUEST)
+
+        # Prices: never below nothing (the same rule the serializer enforces).
+        for line in items:
+            if line.get('price_at_sale') not in (None, ''):
+                try:
+                    if float(line['price_at_sale']) < 0:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    return Response({"error": "A price cannot be negative."},
+                                    status=http.HTTP_400_BAD_REQUEST)
+
+        # Stock: can the branch fill the new lines? This order's current lines
+        # are excluded so swapping them out does not count against the new ones.
+        problems = check_lines(
+            sale.branch_id,
+            [(i.get('product'), i.get('quantity')) for i in items],
+            exclude_sale_id=sale.pk, godown=sale.godown,
+        )
+        if problems:
+            return Response({"error": problems}, status=http.HTTP_400_BAD_REQUEST)
+
+        with db_transaction.atomic():
+            sale.items.all().delete()
+            total = Decimal('0.00')
+            for i in items:
+                product = Product.objects.get(id=i['product'])
+                qty = int(i['quantity'])
+                price = Decimal(str(i.get('price_at_sale', product.price)))
+                subtotal = price * qty
+                SaleItem.objects.create(sale=sale, product=product, quantity=qty,
+                                        price_at_sale=price, subtotal=subtotal)
+                total += subtotal
+
+            discount = request.data.get('discount', sale.discount)
+            discount = Decimal(str(discount or '0.00'))
+            if discount < 0:
+                discount = Decimal('0.00')
+            if discount > total:
+                discount = total
+            sale.discount = discount
+            sale.total_amount = total - discount
+
+            went_back = sale.status == 'approved'
+            if went_back:
+                # Back to the approval queue — the change needs an admin's nod.
+                sale.status = 'pending'
+                sale.approved_by = None
+                sale.approved_at = None
+            sale.save()
+
+        msg = (f"Order #{sale.invoice_number} updated and sent back for approval."
+               if went_back else
+               f"Order #{sale.invoice_number} updated.")
+        return Response({"message": msg, "status": sale.status,
+                         "total_amount": str(sale.total_amount)})
+
     @action(detail=True, methods=['GET'])
     def receipt(self, request, pk=None):
         sale = self.get_object()

@@ -402,6 +402,84 @@ class DeliveryNoteShowsReferenceNumbersTest(TestCase):
         self.assertNotIn('PI No.', html)
 
 
+class AmendOrderTest(TestCase):
+    """A sales rep edits the goods/quantities on a pending or approved order;
+    an edit to an approved order sends it back to pending for admin approval."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        self.nails = Product.objects.create(name='NAILS', category=cat, cost=1000, price=2000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=50)
+        Stock.objects.create(product=self.nails, branch=self.branch, quantity=50)
+        self.rep = User.objects.create_user(username='till_rep', password='pw', role='sales_rep')
+        self.rep.groups.add(Group.objects.get(name='Sales Representative'))
+        self.client.force_login(self.rep)
+
+    def _sale(self, status='pending', approver=None):
+        from apps.sales.models import SaleItem
+        sale = Sale.objects.create(branch=self.branch, customer_name='Walk-in Customer',
+                                   invoice_number=f'AMEND{status}', status=status,
+                                   approved_by=approver, total_amount=40000)
+        SaleItem.objects.create(sale=sale, product=self.cement, quantity=2,
+                                price_at_sale=20000, subtotal=40000)
+        return sale
+
+    def _amend(self, sale, items):
+        return self.client.post(f'/api/sales/{sale.id}/amend/',
+                                {'items': items}, content_type='application/json')
+
+    def test_rep_changes_goods_on_a_pending_order(self):
+        sale = self._sale('pending')
+        res = self._amend(sale, [{'product': self.nails.id, 'quantity': 3}])
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'pending')
+        self.assertEqual(sale.items.count(), 1)
+        line = sale.items.first()
+        self.assertEqual(line.product, self.nails)
+        self.assertEqual(line.quantity, 3)
+        self.assertEqual(sale.total_amount, 6000)       # 3 x 2000
+
+    def test_editing_an_approved_order_sends_it_back_for_approval(self):
+        admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        sale = self._sale('approved', approver=admin)
+        res = self._amend(sale, [{'product': self.cement.id, 'quantity': 1}])
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'pending')        # back to the queue
+        self.assertIsNone(sale.approved_by)
+
+    def test_a_dispatched_order_cannot_be_edited(self):
+        sale = self._sale('dispatched')
+        res = self._amend(sale, [{'product': self.nails.id, 'quantity': 1}])
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_goods_the_branch_cannot_fill_are_refused(self):
+        sale = self._sale('pending')
+        res = self._amend(sale, [{'product': self.cement.id, 'quantity': 999}])
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_an_empty_order_is_refused(self):
+        sale = self._sale('pending')
+        res = self._amend(sale, [])
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_a_cashier_cannot_edit_goods(self):
+        sale = self._sale('pending')
+        cashier = User.objects.create_user(username='till', password='pw', role='cashier')
+        cashier.groups.add(Group.objects.get(name='Cashier'))
+        self.client.force_login(cashier)
+        res = self._amend(sale, [{'product': self.nails.id, 'quantity': 1}])
+        self.assertEqual(res.status_code, 403, res.content)
+
+
 class StoreKeeperDispatchTest(TestCase):
     """A store keeper can open the dispatch board and dispatch an approved
     order — the loading-out job is theirs."""
