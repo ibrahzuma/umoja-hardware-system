@@ -2040,3 +2040,24 @@ class AccountingHomeFlagsSalesGoneFromTheTillTest(SalesAccountingPostsToTheBooks
         # Only Accounts may answer.
         self.client.force_login(self.cashier)
         self.assertEqual(self.client.post(reverse('finance:sales_entry_keep', args=[entry.pk])).status_code, 403)
+
+
+class CustomerDetailOutstandingMatchesBooksTest(LedgerTestCase):
+    """The accounting customer card's "Outstanding invoices" figure is the
+    books' figure — the posted register invoices listed beside it — not the
+    shop floor's unposted till sales. So an unpaid till credit sale that
+    Accounts have not yet posted reads 0 here, matching the table, the current
+    balance and the statement, instead of the card alone showing a big number.
+    """
+
+    def test_unposted_till_sale_is_not_counted_on_the_books_card(self):
+        # A real, unpaid credit sale at the till — owed in fact, but never
+        # posted to the books, so the customer ledger is still flat.
+        self.invoice(total=Decimal('8576000.84'), paid=0, number='TILL-1')
+        self.client.force_login(self.accountant)
+        res = self.client.get(reverse('finance:customer_detail', args=[self.customer.pk]))
+        self.assertEqual(res.status_code, 200)
+        # Card total agrees with the (empty) register table and the GL balance.
+        self.assertEqual(res.context['outstanding_total'], Decimal('0.00'))
+        self.assertEqual(list(res.context['outstanding_invoices']), [])
+        self.assertEqual(res.context['balance'], Decimal('0.00'))

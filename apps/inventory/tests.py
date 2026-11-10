@@ -311,8 +311,9 @@ class StockMovementReportTest(TestCase):
         self.sale = Sale.objects.create(
             invoice_number='INV-0001', branch=self.branch, status='dispatched',
             customer_name='Juma Builders', total_amount=540000, user=self.rep)
+        # A dispatched sale has delivered its full quantity (stock already left).
         SaleItem.objects.create(
-            sale=self.sale, product=self.cement, quantity=30,
+            sale=self.sale, product=self.cement, quantity=30, delivered_quantity=30,
             price_at_sale=18000, subtotal=540000)
 
         Stock.objects.create(product=self.cement, branch=self.branch, quantity=70)

@@ -1548,14 +1548,20 @@ class _PartyDetailView(AccountingMixin, DetailView):
         if self.party_field == 'supplier':
             ctx['balance'] = -ctx['balance']
 
-        open_items = (engine.outstanding_invoices(party) if self.party_field == 'customer'
-                      else engine.outstanding_bills(party))
-        ctx['open_items'] = open_items
-        ctx['outstanding_total'] = sum(
-            (Decimal(row['outstanding']) for row in open_items), ZERO)
-        ctx['outstanding_invoices'] = (
+        # The "Outstanding invoices" figure on this card is the books' figure:
+        # the same posted register invoices listed in the table beside it and
+        # summed in the statement. Earlier it summed engine.outstanding_invoices,
+        # which also pulls in unposted till sales — so the card could read, say,
+        # 8.5m while the table, the current balance and the statement all showed
+        # 0 for a credit sale Accounts had not yet posted. Those till debts live
+        # on the shop-floor Debtors/CRM screens and are flagged for posting in
+        # Sales Accounting; the books view shows them once they are posted.
+        outstanding_qs = (
             Invoice.objects.filter(**{self.party_field: party}).outstanding()
             .select_related('voucher').order_by('invoice_date', 'id'))
+        ctx['outstanding_invoices'] = outstanding_qs
+        ctx['outstanding_total'] = sum(
+            (inv.outstanding_amount for inv in outstanding_qs), ZERO)
 
         live = {self.party_field: party, 'status__in': Voucher.LIVE_STATUSES}
         ctx['sales'] = (Voucher.objects.filter(voucher_type=self.sale_type, **live)

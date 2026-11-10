@@ -147,10 +147,10 @@
         <thead>
             <tr>
                 <th width="14%">Code</th>
-                <th width="40%">Description</th>
-                <th width="14%" class="r">Ordered Qty</th>
+                <th width="38%">Description</th>
+                <th width="16%" class="r">Ordered Qty</th>
                 <th width="16%" class="c">Delivered Qty</th>
-                <th width="16%">Remarks</th>
+                <th width="16%" class="c">Remaining</th>
             </tr>
         </thead>
         <tbody>
@@ -159,8 +159,8 @@
                 <td>{{ it.code }}</td>
                 <td>{{ it.description }}</td>
                 <td class="r">{{ it.qty|floatformat:0|intcomma }} {{ it.uom }}</td>
-                <td class="c fill">&nbsp;</td>
-                <td class="fill">&nbsp;</td>
+                <td class="c">{{ it.delivered|floatformat:0|intcomma }} {{ it.uom }}</td>
+                <td class="c {% if it.remaining %}accent{% endif %}">{{ it.remaining|floatformat:0|intcomma }} {{ it.uom }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="5" style="text-align:center; color:#9aa1ab;">No items</td></tr>
@@ -168,7 +168,14 @@
         </tbody>
     </table>
 
-    {% if doc.status == 'approved' or doc.status == 'dispatched' %}
+    {% if doc.any_remaining %}
+    <div class="confirm" style="margin-top:10px;">
+        <span class="confirm-label">Partial delivery</span>
+        <p class="confirm-note">The quantities under <b>Remaining</b> have not been delivered on this note and are to be collected later.</p>
+    </div>
+    {% endif %}
+
+    {% if doc.status == 'approved' or doc.status == 'dispatched' or doc.status == 'partial' %}
     <div class="stamp">
         <span class="approved-badge">DISPATCHED &nbsp;&middot;&nbsp; {{ doc.date|date:'d M Y'|upper }}</span>
     </div>

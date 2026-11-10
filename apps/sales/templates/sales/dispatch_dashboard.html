@@ -57,6 +57,7 @@
                         <thead class="bg-light">
                             <tr>
                                 <th class="ps-4">Invoice #</th>
+                                <th>PI No.</th>
                                 <th>Customer</th>
                                 <th>Seller</th>
                                 <th>Amount</th>
@@ -67,7 +68,7 @@
                         </thead>
                         <tbody id="ordersTableBody">
                             <tr>
-                                <td colspan="6" class="text-center py-5 text-muted">Loading orders...</td>
+                                <td colspan="8" class="text-center py-5 text-muted">Loading orders...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -107,6 +108,30 @@
             <form id="dispatchForm">
                 <div class="modal-body p-4">
                     <input type="hidden" id="dispatchSaleId">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Items to deliver now</label>
+                        <p class="text-muted small mb-2">
+                            Enter how many of each item go out on this delivery. Leave the
+                            full amount to send everything, or less to deliver part now and
+                            the rest later.
+                        </p>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0" data-no-paginate>
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Item</th>
+                                        <th class="text-center" style="width:80px">Ordered</th>
+                                        <th class="text-center" style="width:80px">Done</th>
+                                        <th class="text-center" style="width:110px">Deliver now</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dispatchItemsBody">
+                                    <tr><td colspan="4" class="text-center text-muted py-2">—</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-bold">Assign Store Keeper</label>
@@ -158,13 +183,17 @@
         }, 30000);
     });
 
+    let ordersById = {};
+
     async function loadOrders() {
         try {
             const data = await api.get('/api/sales/');
             const orders = Array.isArray(data) ? data : data.results;
+            ordersById = {};
+            orders.forEach(o => { ordersById[o.id] = o; });
 
-            // Only care about Approved and Dispatched
-            const approved = orders.filter(o => o.status === 'approved');
+            // Ready for dispatch: approved OR partly delivered (still owes items).
+            const approved = orders.filter(o => o.status === 'approved' || o.status === 'partial');
             const dispatched = orders.filter(o => o.status === 'dispatched');
 
             // Update Counts
@@ -177,7 +206,7 @@
             renderTable([...approved, ...dispatched]);
         } catch (e) {
             console.error(e);
-            document.getElementById('ordersTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Failed to load orders</td></tr>`;
+            document.getElementById('ordersTableBody').innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Failed to load orders</td></tr>`;
         }
     }
 
@@ -185,15 +214,16 @@
         const tbody = document.getElementById('ordersTableBody');
         tbody.innerHTML = '';
 
-        // Filter: Show Approved first, then Dispatched
+        // Show those still needing dispatch (approved / partial) first.
+        const pending = s => (s === 'approved' || s === 'partial');
         orders.sort((a, b) => {
-            if (a.status === 'approved' && b.status !== 'approved') return -1;
-            if (a.status !== 'approved' && b.status === 'approved') return 1;
+            if (pending(a.status) && !pending(b.status)) return -1;
+            if (!pending(a.status) && pending(b.status)) return 1;
             return new Date(b.created_at) - new Date(a.created_at);
         });
 
         if (orders.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-5 text-muted">No active dispatch tasks found</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted">No active dispatch tasks found</td></tr>`;
             return;
         }
 
@@ -201,6 +231,7 @@
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="ps-4 fw-bold">#${o.invoice_number}</td>
+                <td>${o.pi_number ? o.pi_number : '<span class="text-muted">—</span>'}</td>
                 <td>${o.customer_name}</td>
                 <td><small class="text-muted">${o.created_by_name || 'System'}</small></td>
                 <td>TZS ${Math.round(Number(o.total_amount)).toLocaleString()}</td>
@@ -216,18 +247,20 @@
 
     function getStatusBadge(status) {
         if (status === 'approved') return '<span class="badge bg-primary">Ready for Dispatch</span>';
+        if (status === 'partial') return '<span class="badge bg-warning text-dark">Partly Delivered</span>';
         if (status === 'dispatched') return '<span class="badge bg-success">Dispatched</span>';
         return `<span class="badge bg-secondary">${status}</span>`;
     }
 
     function getActionButtons(o) {
-        if (o.status === 'approved') {
+        if (o.status === 'approved' || o.status === 'partial') {
+            const label = o.status === 'partial' ? 'Deliver more' : 'Dispatch';
             return `
                 <a href="/api/sales/${o.id}/receipt/" target="_blank" class="btn btn-sm btn-outline-primary me-1">
                     <i class="bi bi-file-pdf"></i> View Invoice
                 </a>
                 <button class="btn btn-sm btn-primary" onclick="openDispatchModal(${o.id})">
-                    <i class="bi bi-truck"></i> Dispatch
+                    <i class="bi bi-truck"></i> ${label}
                 </button>
             `;
         } else if (o.status === 'dispatched') {
@@ -273,6 +306,33 @@
         document.getElementById('lorryInfo').value = '';
         document.getElementById('vehicleSelect').value = '';
         document.getElementById('storeKeeperSelect').value = '';
+
+        // Build the per-item "deliver now" rows from the order's lines. The
+        // outstanding quantity (ordered minus already delivered) is pre-filled.
+        const order = ordersById[id];
+        const body = document.getElementById('dispatchItemsBody');
+        const lines = (order && order.items_response) ? order.items_response : [];
+        if (!lines.length) {
+            body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-2">No items</td></tr>';
+        } else {
+            body.innerHTML = lines.map(it => {
+                const ordered = Number(it.quantity) || 0;
+                const done = Number(it.delivered_quantity) || 0;
+                const left = Math.max(ordered - done, 0);
+                const unit = it.product_unit || '';
+                return `
+                    <tr>
+                        <td>${it.product_name || ('#' + it.product)} <small class="text-muted">${unit}</small></td>
+                        <td class="text-center">${ordered}</td>
+                        <td class="text-center">${done}</td>
+                        <td class="text-center">
+                            <input type="number" class="form-control form-control-sm dispatch-qty text-center"
+                                   data-item="${it.id}" min="0" max="${left}" value="${left}"
+                                   ${left === 0 ? 'disabled' : ''}>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
         dispatchModal.show();
     }
 
@@ -292,14 +352,33 @@
             return;
         }
 
+        // Collect the per-item quantities to deliver this round.
+        const deliveries = [];
+        let totalNow = 0;
+        document.querySelectorAll('#dispatchItemsBody .dispatch-qty').forEach(inp => {
+            const qty = Math.max(0, parseInt(inp.value, 10) || 0);
+            const max = parseInt(inp.max, 10) || 0;
+            const clamped = Math.min(qty, max);
+            totalNow += clamped;
+            deliveries.push({ item: Number(inp.dataset.item), quantity: clamped });
+        });
+        if (deliveries.length && totalNow <= 0) {
+            Swal.fire('Error', 'Enter a quantity for at least one item to deliver.', 'warning');
+            return;
+        }
+
         try {
-            await api.post(`/api/sales/${id}/dispatch_order/`, {
+            const res = await api.post(`/api/sales/${id}/dispatch_order/`, {
                 store_keeper: keeperId,
                 vehicle_id: vehicleId,
-                lorry_info: lorryInfo
+                lorry_info: lorryInfo,
+                deliveries: deliveries
             });
             dispatchModal.hide();
-            Swal.fire('Dispatched!', 'Order has been marked as dispatched.', 'success');
+            const full = !res || res.fully_delivered !== false;
+            Swal.fire(full ? 'Dispatched!' : 'Partly delivered',
+                      (res && res.message) || 'Order has been dispatched.',
+                      full ? 'success' : 'info');
             loadOrders();
             loadVehicles();
             loadInTransitVehicles();

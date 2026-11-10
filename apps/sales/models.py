@@ -46,6 +46,7 @@ class Sale(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending Approval'),
         ('approved', 'Approved'),
+        ('partial', 'Partly Delivered'),
         ('dispatched', 'Dispatched'),
         ('cancelled', 'Cancelled'),
     )
@@ -114,9 +115,20 @@ class SaleItem(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey('inventory.Product', on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
+    # How much of this line has actually gone out. A sale may be delivered in
+    # rounds (deliver a few items now, the rest collected later): each dispatch
+    # round adds to this, stock leaves only for what is delivered, and the sale
+    # is fully `dispatched` only once every line is complete. Stays 0 until the
+    # first dispatch; equals `quantity` for a sale delivered in full.
+    delivered_quantity = models.PositiveIntegerField(default=0)
     price_at_sale = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=12, decimal_places=2)
     commission_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
+    @property
+    def outstanding_quantity(self):
+        """Still to be delivered on this line (never below zero)."""
+        return max((self.quantity or 0) - (self.delivered_quantity or 0), 0)
 
     def save(self, *args, **kwargs):
         self.subtotal = self.quantity * self.price_at_sale

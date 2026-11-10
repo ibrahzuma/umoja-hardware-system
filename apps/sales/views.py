@@ -132,15 +132,19 @@ class SaleViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
     def perform_destroy(self, instance):
-        # Restore stock if dispatched
-        if instance.status == 'dispatched':
+        # Put back whatever actually left the shelf. A fully dispatched sale has
+        # delivered_quantity == quantity on every line; a partly delivered one
+        # only sent some, so we restore the delivered amount, not the ordered.
+        if instance.status in ('dispatched', 'partial'):
             # Back into the godown it left from.
             from apps.inventory.stock import add_stock
             for item in instance.items.select_related('product'):
                 if item.product.product_type == 'service':
                     continue
-                add_stock(item.product, item.quantity, branch=instance.branch, godown=instance.godown)
-        
+                qty = item.delivered_quantity or 0
+                if qty:
+                    add_stock(item.product, qty, branch=instance.branch, godown=instance.godown)
+
         instance.delete()
     @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated, CanApproveSales])
     def approve(self, request, pk=None):
@@ -188,11 +192,11 @@ class SaleViewSet(viewsets.ModelViewSet):
              return Response({"error": "You do not have permission to dispatch orders"}, status=status.HTTP_403_FORBIDDEN)
 
         sale = self.get_object()
-        if sale.status != 'approved':
+        if sale.status not in ('approved', 'partial'):
             from rest_framework.response import Response
             from rest_framework import status
             return Response({"error": "Only approved orders can be dispatched"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         store_keeper_id = request.data.get('store_keeper')
         vehicle_id = request.data.get('vehicle_id')
         lorry_info = request.data.get('lorry_info')
@@ -216,11 +220,37 @@ class SaleViewSet(viewsets.ModelViewSet):
             from rest_framework import status
             return Response({"error": "Invalid store keeper"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Deduct Stock. Services are not on any shelf, so they are skipped —
-        #    otherwise a sale with a fitting charge on it could never leave.
-        #    Checked in full before anything moves, so a refused dispatch
-        #    leaves every stock row as it was. During the trial run
-        #    (allow_negative_stock) a short line is dispatched anyway and the
+        # A delivery may be partial: the caller can send `deliveries` as a list
+        # of {item, quantity} saying how many of each line go out this round.
+        # A line left out, or the whole list omitted, delivers everything still
+        # outstanding on it — so an ordinary "dispatch all" sends no list and
+        # behaves exactly as before. Quantities are clamped to what is left.
+        raw = request.data.get('deliveries') or []
+        requested = {}
+        for d in raw:
+            try:
+                requested[int(d.get('item'))] = max(0, int(d.get('quantity')))
+            except (TypeError, ValueError):
+                continue
+
+        items = list(sale.items.select_related('product'))
+        deliver_now = {}      # SaleItem -> quantity to send this round
+        for item in items:
+            outstanding = item.outstanding_quantity
+            want = requested.get(item.id, outstanding) if requested else outstanding
+            deliver_now[item] = max(0, min(want, outstanding))
+
+        if sum(deliver_now.values()) <= 0:
+            from rest_framework.response import Response
+            from rest_framework import status
+            return Response({"error": "Nothing to deliver — enter a quantity for at least one item."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Deduct Stock for what is leaving this round. Services are not on any
+        #    shelf, so they are skipped — otherwise a sale with a fitting charge
+        #    on it could never leave. Checked in full before anything moves, so a
+        #    refused dispatch leaves every stock row as it was. During the trial
+        #    run (allow_negative_stock) a short line is dispatched anyway and the
         #    stock goes below zero, to be put right when the count is taken.
         #    The goods leave the sale's godown (else the branch's default).
         from apps.inventory.models import Stock
@@ -231,8 +261,9 @@ class SaleViewSet(viewsets.ModelViewSet):
         godown = resolve_godown(sale.branch_id, sale.godown_id)
         errors = []
         with db_transaction.atomic():
-            for item in sale.items.select_related('product'):
-                if item.product.product_type == 'service':
+            for item in items:
+                qty = deliver_now[item]
+                if qty <= 0 or item.product.product_type == 'service':
                     continue
                 stock = (Stock.objects.select_for_update()
                          .filter(product=item.product, godown=godown).first())
@@ -241,10 +272,10 @@ class SaleViewSet(viewsets.ModelViewSet):
                         errors.append(f"No stock of {item.product.name} at {godown.name}")
                         continue
                     stock = Stock(product=item.product, godown=godown, branch_id=godown.branch_id, quantity=0)
-                if stock.quantity < item.quantity and not allow_negative:
+                if stock.quantity < qty and not allow_negative:
                     errors.append(f"Insufficient stock for {item.product.name} at {godown.name}")
                     continue
-                stock.quantity -= item.quantity
+                stock.quantity -= qty
                 stock.save()
             if errors:
                 db_transaction.set_rollback(True)
@@ -254,8 +285,16 @@ class SaleViewSet(viewsets.ModelViewSet):
             from rest_framework import status
             return Response({"error": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Record what went out, then decide if the order is complete.
+        for item in items:
+            qty = deliver_now[item]
+            if qty:
+                item.delivered_quantity = (item.delivered_quantity or 0) + qty
+                item.save(update_fields=['delivered_quantity'])
+        fully_delivered = all(i.outstanding_quantity == 0 for i in items)
+
         # 2. Update Sale Status
-        sale.status = 'dispatched'
+        sale.status = 'dispatched' if fully_delivered else 'partial'
         sale.store_keeper = store_keeper
         if vehicle_id:
             sale.vehicle_id = vehicle_id
@@ -270,11 +309,19 @@ class SaleViewSet(viewsets.ModelViewSet):
         else:
             sale.lorry_info = lorry_info
         sale.save()
-        
-        # 3. Generate PDF (Mock for now, will implement utility next)
+
         from rest_framework.response import Response
+        if fully_delivered:
+            message = "Order dispatched in full and stock deducted."
+        else:
+            left = sum(i.outstanding_quantity for i in items)
+            message = (f"Part of the order was delivered and stock deducted; "
+                       f"{left} item(s) are still to collect. Dispatch again when "
+                       f"the rest goes out.")
         return Response({
-            "message": "Order dispatched successfully and stock deducted",
+            "message": message,
+            "status": sale.status,
+            "fully_delivered": fully_delivered,
             "invoice_url": f"/api/sales/{sale.id}/receipt/",
             "delivery_note_url": f"/api/sales/{sale.id}/delivery_note/"
         })
@@ -515,8 +562,11 @@ class SaleViewSet(viewsets.ModelViewSet):
             'code': getattr(it.product, 'sku', '') or '',
             'description': it.product.name,
             'qty': it.quantity,
+            'delivered': it.delivered_quantity or 0,
+            'remaining': it.outstanding_quantity,
             'uom': _uom(it.product),
         } for it in sale.items.all()]
+        any_remaining = any(it['remaining'] > 0 for it in items)
         from .models import load_of
         total_weight, unweighed = load_of(sale.items.all())
         ctx = {
@@ -533,6 +583,7 @@ class SaleViewSet(viewsets.ModelViewSet):
                 'store_keeper': _person(sale.store_keeper),
                 'total_weight': total_weight,
                 'unweighed': unweighed,
+                'any_remaining': any_remaining,
             },
             'company': company,
             'customer': {

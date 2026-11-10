@@ -146,8 +146,12 @@ def _adjustments(product_ids=None, branch_id=None, date_from=None, date_to=None,
 def _sale_items(product_ids=None, branch_id=None, date_from=None, date_to=None):
     from apps.sales.models import SaleItem  # sales imports inventory
 
-    qs = SaleItem.objects.filter(sale__status='dispatched').select_related(
-        'sale__branch', 'sale__customer')
+    # Goods leave the shelf as they are dispatched. A fully dispatched sale has
+    # delivered_quantity == quantity; a partly delivered one has sent only some,
+    # so both are counted and the quantity that moved is delivered_quantity.
+    qs = (SaleItem.objects
+          .filter(sale__status__in=('dispatched', 'partial'), delivered_quantity__gt=0)
+          .select_related('sale__branch', 'sale__customer'))
     if product_ids is not None:
         qs = qs.filter(product_id__in=product_ids)
     if branch_id:
@@ -298,7 +302,7 @@ def collect_movements(product_ids, branch_id=None):
             detail=customer,
             branch=sale.branch.name,
             product_id=item.product_id,
-            qty_out=item.quantity,
+            qty_out=item.delivered_quantity,
         ))
 
     return rows
