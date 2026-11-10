@@ -182,6 +182,7 @@ class SalesLedgerEntrySerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True, default='')
     sold_by_name = serializers.SerializerMethodField()
+    pi_number = serializers.SerializerMethodField()
     posted_by_name = serializers.CharField(source='posted_by.username', read_only=True, default='')
     balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     voucher = serializers.SerializerMethodField()
@@ -208,6 +209,11 @@ class SalesLedgerEntrySerializer(serializers.ModelSerializer):
         if not u:
             return ''
         return u.get_full_name() or u.username
+
+    def get_pi_number(self, obj):
+        """The store keeper's reference (PI No.), read off the linked sale. A
+        sale deleted after posting leaves the entry without one."""
+        return getattr(obj.sale, 'pi_number', '') or ''
 
     class Meta:
         model = SalesLedgerEntry

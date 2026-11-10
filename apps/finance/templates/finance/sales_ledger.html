@@ -58,7 +58,7 @@
         <div class="row g-2">
             <div class="col-md-3">
                 <input type="text" id="searchInput" class="form-control"
-                    placeholder="Search invoice, customer or seller..." onkeyup="render()">
+                    placeholder="Search invoice, PI No., customer or seller..." onkeyup="render()">
             </div>
             <div class="col-md-2">
                 <select id="statusFilter" class="form-select" onchange="render()">
@@ -113,6 +113,7 @@
                     <tr>
                         <th class="ps-4">Date</th>
                         <th>Invoice</th>
+                        <th>PI No.</th>
                         <th>Customer</th>
                         <th>Sold By</th>
                         <th>Settlement</th>
@@ -126,7 +127,7 @@
                 </thead>
                 <tbody id="tableBody">
                     <tr>
-                        <td colspan="11" class="text-center py-4">Loading sales...</td>
+                        <td colspan="12" class="text-center py-4">Loading sales...</td>
                     </tr>
                 </tbody>
             </table>
@@ -251,7 +252,7 @@
         } catch (e) {
             console.error(e);
             document.getElementById('tableBody').innerHTML =
-                '<tr><td colspan="11" class="text-center py-4 text-danger">Could not load the sales ledger.</td></tr>';
+                '<tr><td colspan="12" class="text-center py-4 text-danger">Could not load the sales ledger.</td></tr>';
         }
     }
 
@@ -284,7 +285,7 @@
         const payment = document.getElementById('paymentFilter').value;
 
         return entries.filter(e => {
-            const haystack = [e.invoice_number, e.customer_name, e.sold_by_name, e.methods]
+            const haystack = [e.invoice_number, e.pi_number, e.customer_name, e.sold_by_name, e.methods]
                 .map(v => (v || '').toLowerCase()).join(' ');
             return haystack.includes(term)
                 && (status ? e.status === status : true)
@@ -304,7 +305,7 @@
 
         tbody.innerHTML = '';
         if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No sales found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center py-4 text-muted">No sales found</td></tr>';
             return;
         }
 
@@ -315,7 +316,7 @@
             const head = document.createElement('tr');
             head.className = 'table-light';
             head.innerHTML = `
-                <td class="ps-4 fw-bold" colspan="5">
+                <td class="ps-4 fw-bold" colspan="6">
                     <i class="bi bi-calendar3 me-1"></i>${escapeHtml(g.label)}
                     <span class="text-muted fw-normal ms-2">${g.rows.length}
                         sale${g.rows.length === 1 ? '' : 's'}</span>
@@ -330,6 +331,7 @@
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td class="ps-4"></td>
+                        <td></td>
                         <td></td>
                         <td></td>
                         <td class="fw-medium">${escapeHtml(t.name || 'Unknown')}</td>
@@ -353,6 +355,7 @@
             <td><span class="badge bg-light text-dark border">${escapeHtml(e.invoice_number)}</span>
                 ${e.sale_status && e.sale_status !== 'dispatched' && e.sale_status !== 'approved'
                 ? '<div><small class="text-muted">sale: ' + escapeHtml(e.sale_status) + '</small></div>' : ''}</td>
+            <td>${e.pi_number ? escapeHtml(e.pi_number) : '<span class="text-muted">—</span>'}</td>
             <td class="fw-medium">${escapeHtml(e.customer_name)}</td>
             <td><small class="text-muted">${escapeHtml(e.sold_by_name || '-')}</small></td>
             <td><span class="badge ${SETTLEMENT_BADGE[e.settlement] || 'bg-secondary'}">
