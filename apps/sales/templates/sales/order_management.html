@@ -298,14 +298,18 @@
 
             // Update counts
             document.getElementById('countPending').innerText = orders.filter(o => o.status === 'pending').length;
-            document.getElementById('countApproved').innerText = orders.filter(o => o.status === 'approved').length;
+            document.getElementById('countApproved').innerText = orders.filter(o => o.status === 'approved' || o.status === 'partial').length;
             document.getElementById('countDispatched').innerText = orders.filter(o => {
                 const today = new Date().toDateString();
                 const od = new Date(o.created_at).toDateString();
                 return o.status === 'dispatched' && today === od;
             }).length;
 
-            renderTable(orders.filter(o => o.status === currentFilter));
+            // The Approved tab also carries partly delivered orders — they are
+            // past approval and still waiting to finish dispatching.
+            renderTable(orders.filter(o =>
+                o.status === currentFilter ||
+                (currentFilter === 'approved' && o.status === 'partial')));
         } catch (e) {
             console.error(e);
             document.getElementById('ordersTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Failed to load orders</td></tr>`;
@@ -342,6 +346,7 @@
         const configs = {
             'pending': 'bg-warning text-dark',
             'approved': 'bg-primary',
+            'partial': 'bg-warning text-dark',
             'dispatched': 'bg-success',
             'cancelled': 'bg-danger'
         };
@@ -361,14 +366,19 @@
                     <i class="bi bi-x-lg"></i> Decline
                 </button>
             `;
-        } else if (o.status === 'approved') {
+        } else if (o.status === 'approved' || o.status === 'partial') {
+            const label = o.status === 'partial' ? 'Deliver more' : 'Dispatch';
             return `
                 <button class="btn btn-sm btn-primary" onclick="openDispatchModal(${o.id})">
-                    <i class="bi bi-truck"></i> Dispatch
+                    <i class="bi bi-truck"></i> ${label}
                 </button>
                 <a href="/api/sales/${o.id}/receipt/" target="_blank" class="btn btn-sm btn-outline-primary ms-1">
                     <i class="bi bi-file-pdf"></i> Invoice
                 </a>
+                ${o.status === 'partial' ? `
+                <a href="/api/sales/${o.id}/delivery_note/" target="_blank" class="btn btn-sm btn-outline-secondary ms-1">
+                    <i class="bi bi-truck-flatbed"></i> Delivery Note
+                </a>` : ''}
             `;
         } else if (o.status === 'dispatched') {
             return `

@@ -19,8 +19,10 @@ from django.db.models import Sum
 from apps.inventory.models import Product, Stock
 from .models import SaleItem
 
-# Sales that hold goods without having taken them off the shelf yet.
-COMMITTING_STATUSES = ('pending', 'approved')
+# Sales that hold goods without having taken them off the shelf yet. A partly
+# delivered sale still holds its *undelivered* lines (the delivered ones have
+# already left stock), so it commits its outstanding quantity, not the whole.
+COMMITTING_STATUSES = ('pending', 'approved', 'partial')
 
 
 def on_hand(branch_id, product_ids, godown=None):
@@ -39,7 +41,7 @@ def committed(branch_id, product_ids, exclude_sale_id=None, godown=None):
     """{product_id: quantity} owed to sales taken but not yet dispatched from
     the same godown (a sale naming no godown leaves the default one)."""
     from apps.inventory.stock import resolve_godown
-    from django.db.models import Q
+    from django.db.models import Q, F
     godown = resolve_godown(branch_id, godown)
     same = Q(sale__godown=godown)
     if godown.is_default:
@@ -48,7 +50,10 @@ def committed(branch_id, product_ids, exclude_sale_id=None, godown=None):
           .filter(same, sale__status__in=COMMITTING_STATUSES, product_id__in=product_ids))
     if exclude_sale_id is not None:
         qs = qs.exclude(sale_id=exclude_sale_id)
-    rows = qs.values('product_id').annotate(total=Sum('quantity'))
+    # Only the part not yet delivered still ties up stock. For pending/approved
+    # sales delivered_quantity is 0, so this is the whole line as before.
+    rows = (qs.values('product_id')
+            .annotate(total=Sum(F('quantity') - F('delivered_quantity'))))
     return {r['product_id']: r['total'] or 0 for r in rows}
 
 

@@ -529,3 +529,129 @@ class StoreKeeperDispatchTest(TestCase):
                                {'store_keeper': rep.id, 'lorry_info': 'TZ 123 ABC'},
                                content_type='application/json')
         self.assertEqual(res.status_code, 403, res.content)
+
+
+class PartialDeliveryTest(TestCase):
+    """A sale may be delivered in rounds: send a few items now, the rest later.
+    Stock leaves only for what goes out, the order stays open as 'partial', and
+    it is fully 'dispatched' only once every line is complete."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='METAL')
+        self.rod = Product.objects.create(name='NONDO 16MM', category=cat, cost=40000, price=50000)
+        self.wire = Product.objects.create(name='H/S 2X2', category=cat, cost=10000, price=12000)
+        self.rod_stock = Stock.objects.create(product=self.rod, branch=self.branch, quantity=100)
+        self.wire_stock = Stock.objects.create(product=self.wire, branch=self.branch, quantity=100)
+        self.keeper = User.objects.create_user(username='keeper', password='pw', role='store_keeper')
+        self.keeper.groups.add(Group.objects.get(name='Store Keeper'))
+        self.client.force_login(self.keeper)
+
+    def _sale(self):
+        from apps.sales.models import SaleItem
+        sale = Sale.objects.create(branch=self.branch, customer_name='KOJAS BUILDERS',
+                                   invoice_number='PD1', status='approved', total_amount=620000)
+        self.rod_item = SaleItem.objects.create(sale=sale, product=self.rod, quantity=10,
+                                                price_at_sale=50000, subtotal=500000)
+        self.wire_item = SaleItem.objects.create(sale=sale, product=self.wire, quantity=10,
+                                                 price_at_sale=12000, subtotal=120000)
+        return sale
+
+    def test_partial_dispatch_marks_order_partial_and_deducts_only_delivered(self):
+        sale = self._sale()
+        res = self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 4},
+                            {'item': self.wire_item.id, 'quantity': 10}]},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'partial')
+        self.assertFalse(res.json()['fully_delivered'])
+        self.rod_item.refresh_from_db(); self.wire_item.refresh_from_db()
+        self.assertEqual(self.rod_item.delivered_quantity, 4)
+        self.assertEqual(self.wire_item.delivered_quantity, 10)
+        # Only the delivered quantities left the shelf.
+        self.rod_stock.refresh_from_db(); self.wire_stock.refresh_from_db()
+        self.assertEqual(self.rod_stock.quantity, 96)
+        self.assertEqual(self.wire_stock.quantity, 90)
+
+    def test_second_round_completes_the_order(self):
+        sale = self._sale()
+        self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 4},
+                            {'item': self.wire_item.id, 'quantity': 10}]},
+            content_type='application/json')
+        # Deliver the remaining 6 rods; wire is already complete.
+        res = self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 6}]},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.json()['fully_delivered'])
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'dispatched')
+        self.rod_stock.refresh_from_db()
+        self.assertEqual(self.rod_stock.quantity, 90)
+
+    def test_dispatch_with_no_deliveries_sends_everything(self):
+        sale = self._sale()
+        res = self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1'},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 200, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'dispatched')
+        self.rod_stock.refresh_from_db(); self.wire_stock.refresh_from_db()
+        self.assertEqual(self.rod_stock.quantity, 90)
+        self.assertEqual(self.wire_stock.quantity, 90)
+
+    def test_dispatching_zero_is_refused(self):
+        sale = self._sale()
+        res = self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 0},
+                            {'item': self.wire_item.id, 'quantity': 0}]},
+            content_type='application/json')
+        self.assertEqual(res.status_code, 400, res.content)
+        sale.refresh_from_db()
+        self.assertEqual(sale.status, 'approved')
+
+    def test_a_partly_delivered_sale_only_commits_its_remainder(self):
+        from apps.sales.stock_guard import available
+        sale = self._sale()
+        self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 4}]},
+            content_type='application/json')
+        # 100 on hand - 4 already delivered (gone) = 96 on shelf; 6 rods still
+        # committed to this partial sale => 90 available to a new sale.
+        free = available(self.branch.id, [self.rod.id])
+        self.assertEqual(free[self.rod.id], 90)
+
+    def test_deleting_a_partial_sale_restores_only_what_was_delivered(self):
+        sale = self._sale()
+        self.client.post(
+            f'/api/sales/{sale.id}/dispatch_order/',
+            {'store_keeper': self.keeper.id, 'lorry_info': 'TZ 1',
+             'deliveries': [{'item': self.rod_item.id, 'quantity': 4}]},
+            content_type='application/json')
+        admin = User.objects.create_user(username='boss', password='pw', role='admin', is_superuser=True)
+        self.client.force_login(admin)
+        res = self.client.delete(f'/api/sales/{sale.id}/')
+        self.assertIn(res.status_code, (200, 204), res.content)
+        self.rod_stock.refresh_from_db()
+        # 96 left on shelf after the 4 went out; deleting restores those 4 → 100.
+        self.assertEqual(self.rod_stock.quantity, 100)

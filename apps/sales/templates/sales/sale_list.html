@@ -122,13 +122,21 @@
                     <span id="eoStatusNote"></span>
                 </p>
                 <div class="row g-2 mb-3 align-items-end">
-                    <div class="col-7">
+                    <div class="col-5">
                         <label class="form-label small mb-1">Product</label>
-                        <select class="form-select" id="eoProduct"></select>
+                        <input type="text" class="form-control" id="eoProduct" list="eoProductList"
+                               placeholder="Type to search..." autocomplete="off"
+                               oninput="eoProductPicked()">
+                        <datalist id="eoProductList"></datalist>
                     </div>
-                    <div class="col-3">
+                    <div class="col-2">
                         <label class="form-label small mb-1">Qty</label>
                         <input type="number" class="form-control" id="eoQty" min="1" value="1">
+                    </div>
+                    <div class="col-3">
+                        <label class="form-label small mb-1">Price</label>
+                        <input type="number" class="form-control" id="eoPrice" min="0" step="any"
+                               placeholder="Auto" oninput="this.dataset.auto=''">
                     </div>
                     <div class="col-2">
                         <button type="button" class="btn btn-outline-primary w-100" onclick="eoAddLine()">
@@ -238,6 +246,7 @@
 
             let deliveryBadge = '<span class="badge bg-secondary">Pending</span>';
             if (s.status === 'approved') deliveryBadge = '<span class="badge bg-info text-dark">Approved</span>';
+            else if (s.status === 'partial') deliveryBadge = '<span class="badge bg-warning text-dark">Partly Delivered</span>';
             else if (s.status === 'dispatched') deliveryBadge = '<span class="badge bg-primary">Dispatched</span>';
             else if (s.status === 'cancelled') deliveryBadge = '<span class="badge bg-dark">Cancelled</span>';
 
@@ -467,10 +476,12 @@
         eoSale = sale;
         await loadProducts();
 
-        const sel = document.getElementById('eoProduct');
-        sel.innerHTML = eoProducts.map(p =>
-            `<option value="${p.id}">${p.name}</option>`).join('')
-            || '<option value="">No products</option>';
+        // Fill the searchable product list (datalist) by name.
+        const dl = document.getElementById('eoProductList');
+        dl.innerHTML = eoProducts.map(p =>
+            `<option value="${p.name.replace(/"/g, '&quot;')}"></option>`).join('');
+        document.getElementById('eoProduct').value = '';
+        document.getElementById('eoPrice').value = '';
 
         // Seed the cart from the order's current lines.
         eoCart = (sale.items_response || []).map(it => ({
@@ -517,16 +528,41 @@
         document.getElementById('eoTotal').textContent = 'TZS ' + Math.round(total).toLocaleString();
     }
 
+    // Match the typed text to a product (exact name, case-insensitive).
+    function eoFindTypedProduct() {
+        const typed = (document.getElementById('eoProduct').value || '').trim().toLowerCase();
+        if (!typed) return null;
+        return (eoProducts || []).find(p => p.name.toLowerCase() === typed) || null;
+    }
+
+    // When a product is picked/typed, pre-fill its list price (unless the user
+    // has already typed a price of their own).
+    function eoProductPicked() {
+        const prod = eoFindTypedProduct();
+        const priceInput = document.getElementById('eoPrice');
+        if (prod && (priceInput.value === '' || priceInput.dataset.auto === '1')) {
+            priceInput.value = prod.price;
+            priceInput.dataset.auto = '1';
+        }
+    }
+
     function eoAddLine() {
-        const sel = document.getElementById('eoProduct');
-        const pid = Number(sel.value);
+        const prod = eoFindTypedProduct();
+        if (!prod) {
+            Swal.fire('Pick a product', 'Choose a product from the list first.', 'info');
+            return;
+        }
         const qty = Math.max(1, parseInt(document.getElementById('eoQty').value, 10) || 1);
-        const prod = (eoProducts || []).find(p => p.id === pid);
-        if (!prod) return;
-        const existing = eoCart.find(l => l.product === pid);
+        const priceVal = document.getElementById('eoPrice').value;
+        const price = priceVal === '' ? prod.price : Math.max(0, Number(priceVal) || 0);
+        const existing = eoCart.find(l => l.product === prod.id);
         if (existing) existing.quantity += qty;
-        else eoCart.push({ product: pid, name: prod.name, quantity: qty, price: prod.price });
+        else eoCart.push({ product: prod.id, name: prod.name, quantity: qty, price: price });
+        document.getElementById('eoProduct').value = '';
         document.getElementById('eoQty').value = 1;
+        const priceInput = document.getElementById('eoPrice');
+        priceInput.value = '';
+        delete priceInput.dataset.auto;
         renderEoCart();
     }
 
