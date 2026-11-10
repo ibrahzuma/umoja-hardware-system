@@ -655,3 +655,44 @@ class PartialDeliveryTest(TestCase):
         self.rod_stock.refresh_from_db()
         # 96 left on shelf after the 4 went out; deleting restores those 4 → 100.
         self.assertEqual(self.rod_stock.quantity, 100)
+
+
+class SaleListPrintSlipDataTest(TestCase):
+    """The Sales History row carries the PI No. and the cash/bank book the
+    money went into, so the rep can print a slip of just that."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('create_roles', verbosity=0)
+
+    def setUp(self):
+        from apps.inventory.models import Stock
+        self.branch = Branch.objects.create(name='Main Branch')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, cost=15000, price=20000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=50)
+        self.user = User.objects.create_user(username='boss', password='pw', role='admin', is_superuser=True)
+        self.client.force_login(self.user)
+
+    def _make_sale(self, paid=False, pi=''):
+        body = {'branch': self.branch.id, 'customer_name': 'Walk-in Customer',
+                'pi_number': pi, 'items': [{'product': self.cement.id, 'quantity': 1}]}
+        if paid:
+            body['payment_details'] = {'amount': '20000', 'method': 'cash'}
+        res = self.client.post('/api/sales/', body, content_type='application/json')
+        self.assertEqual(res.status_code, 201, res.content)
+        return res.json()['id']
+
+    def test_api_carries_pi_number_and_money_accounts_for_a_paid_sale(self):
+        sid = self._make_sale(paid=True, pi='PI-77')
+        row = self.client.get(f'/api/sales/{sid}/').json()
+        self.assertEqual(row['pi_number'], 'PI-77')
+        self.assertEqual(len(row['money_accounts']), 1)
+        self.assertEqual(row['money_accounts'][0]['method'], 'Cash')
+        self.assertEqual(row['money_accounts'][0]['amount'], '20000.00')
+
+    def test_a_credit_sale_has_no_money_accounts(self):
+        sid = self._make_sale(paid=False, pi='PI-78')
+        row = self.client.get(f'/api/sales/{sid}/').json()
+        self.assertEqual(row['pi_number'], 'PI-78')
+        self.assertEqual(row['money_accounts'], [])

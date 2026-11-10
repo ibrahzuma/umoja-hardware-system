@@ -49,6 +49,7 @@ class SaleSerializer(serializers.ModelSerializer):
     amount_paid = serializers.SerializerMethodField()
     balance = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
+    money_accounts = serializers.SerializerMethodField()
     total_weight = serializers.SerializerMethodField()
     unweighed_items = serializers.SerializerMethodField()
     
@@ -70,7 +71,7 @@ class SaleSerializer(serializers.ModelSerializer):
             'customer', 'customer_name',
             'lp_number', 'pi_number', 'order_number',
             'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
-            'amount_paid', 'balance', 'payment_status', 'approved_by', 'approved_by_name',
+            'amount_paid', 'balance', 'payment_status', 'money_accounts', 'approved_by', 'approved_by_name',
             'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper',
             'store_keeper_name', 'lorry_info', 'vehicle', 'vehicle_details'
         ]
@@ -89,6 +90,21 @@ class SaleSerializer(serializers.ModelSerializer):
         elif paid > 0:
             return 'Partial'
         return 'Credit'
+
+    def get_money_accounts(self, obj):
+        """Where the money was taken in: each income payment's method (Cash,
+        Bank Transfer, …) and the cash book or bank ledger it went into
+        (`deposit_to`). Empty for a pure credit sale. Used by the print slip."""
+        out = []
+        for t in obj.transactions.all():
+            if t.transaction_type != 'income':
+                continue
+            out.append({
+                'method': t.get_payment_method_display(),
+                'account': t.deposit_to.name if t.deposit_to else '',
+                'amount': str(t.amount),
+            })
+        return out
 
     def get_total_weight(self, obj):
         """kg of every line whose weight is known (see `load_of`)."""
