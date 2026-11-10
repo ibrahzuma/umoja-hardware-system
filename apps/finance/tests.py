@@ -1741,6 +1741,19 @@ class SalesAccountingPostsToTheBooksTest(LedgerTestCase):
         return {(e.account_id, e.debit, e.credit)
                 for e in GeneralLedgerEntry.objects.filter(voucher=voucher)}
 
+    def test_sales_ledger_row_carries_the_pi_number(self):
+        # The store keeper's PI No. is kept on the sale; Sales Accounting shows
+        # it so the accountant can match a row to the paperwork.
+        Sale.objects.create(invoice_number='PI-SALE', branch=self.branch,
+                            customer=self.customer, customer_name=self.customer.name,
+                            total_amount=Decimal('100000'), status='approved',
+                            pi_number='PI-00123')
+        entry = SalesLedgerEntry.objects.get(invoice_number='PI-SALE')
+        self.client.force_login(self.accountant)
+        res = self.client.get(f'/api/sales-ledger/{entry.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()['pi_number'], 'PI-00123')
+
     def test_posting_a_paid_sale_writes_a_sales_voucher(self):
         entry = self.make_sale('PS-1', 300000)
         res = self.post_entry(entry)
