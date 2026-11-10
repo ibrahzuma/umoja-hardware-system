@@ -18,6 +18,7 @@
                     <tr>
                         <th class="ps-4">Date</th>
                         <th>Invoice #</th>
+                        <th>PI No.</th>
                         <th>Customer</th>
                         <th>Branch</th>
                         <th>Created By</th>
@@ -28,7 +29,7 @@
                 </thead>
                 <tbody id="salesTableBody">
                     <tr>
-                        <td colspan="7" class="text-center py-4">Loading sales data...</td>
+                        <td colspan="8" class="text-center py-4">Loading sales data...</td>
                     </tr>
                 </tbody>
             </table>
@@ -230,7 +231,7 @@
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No sales found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No sales found</td></tr>';
             return;
         }
 
@@ -254,6 +255,7 @@
             tr.innerHTML = `
                 <td class="ps-4 text-muted">${new Date(s.created_at).toLocaleString()}</td>
                 <td class="fw-bold text-primary">${s.invoice_number}</td>
+                <td>${s.pi_number ? s.pi_number : '<span class="text-muted">—</span>'}</td>
                 <td>${s.customer_name}</td>
                 <td><span class="badge bg-light text-dark border">Branch ${s.branch}</span></td>
                 <td><small class="text-muted">${s.created_by_name || 'System'}</small></td>
@@ -265,6 +267,10 @@
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary" onclick="viewReceipt(${s.id})">
                         <i class="bi bi-eye"></i> View
+                    </button>
+                    <button class="btn btn-sm btn-outline-success ms-1" onclick="printSlip(${s.id})"
+                            title="Print PI No. and cash/bank book">
+                        <i class="bi bi-printer"></i> Print
                     </button>
                     ${(CAN_EDIT_ITEMS && (s.status === 'pending' || s.status === 'approved')) ? `
                     <button class="btn btn-sm btn-outline-dark ms-1" onclick="editOrderItems(${s.id})">
@@ -344,6 +350,58 @@
 
     function printReceipt() {
         window.print();
+    }
+
+    // A small slip with just the PI No. and the cash book / bank book the money
+    // went into — opened in its own window so only this prints, not the screen.
+    function printSlip(id) {
+        const s = sales.find(x => x.id === id);
+        if (!s) return;
+        const esc = v => String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const fmt = n => 'TZS ' + Math.round(Number(n || 0)).toLocaleString();
+        const money = s.money_accounts || [];
+        const moneyRows = money.length
+            ? money.map(m => `<tr><td>${esc(m.method)}${m.account ? ' &middot; ' + esc(m.account) : ''}</td>`
+                + `<td class="r">${fmt(m.amount)}</td></tr>`).join('')
+            : '<tr><td colspan="2" class="credit">Credit sale — no cash/bank payment recorded.</td></tr>';
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Slip ${esc(s.invoice_number)}</title>
+            <style>
+              body{font-family:Arial,Helvetica,sans-serif;color:#1f2a37;margin:18px;font-size:13px;}
+              h1{font-size:16px;margin:0 0 2px;} .sub{color:#6b7280;font-size:11px;margin-bottom:12px;}
+              table{width:100%;border-collapse:collapse;margin-top:6px;}
+              td{padding:5px 2px;border-bottom:1px solid #e7e4db;}
+              .r{text-align:right;} .k{color:#6b7280;width:40%;}
+              .pi{font-size:15px;font-weight:bold;}
+              .sec{margin-top:14px;font-weight:bold;border-left:4px solid #C8932B;padding-left:6px;}
+              .credit{color:#b00020;} .tot td{font-weight:bold;border-top:2px solid #1f2a37;border-bottom:none;}
+            </style></head><body>
+            <h1>UMOJA HARDWARE</h1>
+            <div class="sub">Payment slip &middot; Branch ${esc(s.branch)}</div>
+            <table>
+              <tr><td class="k">Invoice</td><td class="r">${esc(s.invoice_number)}</td></tr>
+              <tr><td class="k">PI No.</td><td class="r pi">${s.pi_number ? esc(s.pi_number) : '—'}</td></tr>
+              <tr><td class="k">Date</td><td class="r">${new Date(s.created_at).toLocaleString()}</td></tr>
+              <tr><td class="k">Customer</td><td class="r">${esc(s.customer_name)}</td></tr>
+              <tr><td class="k">Seller</td><td class="r">${esc(s.created_by_name || '')}</td></tr>
+            </table>
+            <div class="sec">Cash Book / Bank Book</div>
+            <table>
+              ${moneyRows}
+              <tr class="tot"><td>Total paid</td><td class="r">${fmt(s.amount_paid)}</td></tr>
+              <tr><td class="k">Balance</td><td class="r">${fmt(s.balance)}</td></tr>
+            </table>
+            </body></html>`;
+        const w = window.open('', '_blank', 'width=430,height=620');
+        if (!w) { Swal.fire('Allow pop-ups', 'Please allow pop-ups to print the slip.', 'info'); return; }
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        let printed = false;
+        const go = () => { if (printed) return; printed = true; try { w.print(); } catch (e) {} };
+        w.onload = go;
+        // Fallback if onload already fired (content is inline, so it may).
+        setTimeout(go, 400);
     }
 
     // --- Edit payment: convert a saved sale between cash/bank and credit ---
