@@ -307,6 +307,10 @@ small, .small { font-size: 0.82rem; }
 #content {
     position: relative;
     width: 100%;
+    /* A flex item defaults to min-width:auto, so a wide table would stretch
+       #content past the screen and .wrapper would clip it. min-width:0 keeps
+       the page at screen width and lets .table-responsive scroll instead. */
+    min-width: 0;
     min-height: 100vh;
     background-color: var(--slate-50);
     display: flex;
@@ -676,7 +680,10 @@ small, .small { font-size: 0.82rem; }
     border-radius: var(--radius-lg);
     border: 1px solid var(--slate-200);
     background: var(--slate-0);
-    overflow: hidden;
+    /* Scroll sideways, never clip: hidden here used to cut off the right-hand
+       columns (action buttons) of every wide table. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 .card > .table-responsive { border: none; border-radius: 0; }
 
