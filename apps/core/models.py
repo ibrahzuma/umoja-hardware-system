@@ -64,3 +64,78 @@ class SystemSettings(models.Model):
     def __str__(self):
         return "System Configuration"
 
+
+
+class SmsSettings(models.Model):
+    """eHub SMS gateway settings — a singleton, edited on /sms-notifications/.
+
+    The API key and secret come from eHub's dashboard (Developer -> API Keys).
+    They can also be supplied as EHUB_SMS_API_KEY / EHUB_SMS_API_SECRET in the
+    environment; a value saved here wins over the environment.
+    """
+    enabled = models.BooleanField(default=False, help_text="Master switch: no SMS leaves while this is off.")
+    api_key = models.CharField(max_length=255, blank=True)
+    api_secret = models.CharField(max_length=255, blank=True)
+    sender_name = models.CharField(max_length=11, default="ehub",
+                                   help_text="The approved sender ID as it shows on the phone.")
+    # eHub sends by the sender ID's UUID; resolved from sender_name and cached.
+    sender_uuid = models.CharField(max_length=64, blank=True)
+    notify_pending_sale = models.BooleanField(
+        default=True, help_text="Text the approvers when a sale is waiting for approval.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def load(cls):
+        obj = cls.objects.first()
+        return obj or cls.objects.create()
+
+    def save(self, *args, **kwargs):
+        if not self.pk and SmsSettings.objects.exists():
+            self.pk = SmsSettings.objects.first().pk
+        return super().save(*args, **kwargs)
+
+    @property
+    def key(self):
+        import os
+        return self.api_key or os.getenv('EHUB_SMS_API_KEY', '')
+
+    @property
+    def secret(self):
+        import os
+        return self.api_secret or os.getenv('EHUB_SMS_API_SECRET', '')
+
+    @property
+    def has_credentials(self):
+        return bool(self.key and self.secret)
+
+    def __str__(self):
+        return "SMS Settings"
+
+
+class SmsRecipient(models.Model):
+    """The phone an approver receives SMS alerts on. One row per user."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name='sms_recipient')
+    phone = models.CharField(max_length=20, blank=True)
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.user} ({self.phone})"
+
+
+class SmsLog(models.Model):
+    """Every SMS the system tried to send, and what the gateway said."""
+    STATUS_CHOICES = (('sent', 'Sent'), ('failed', 'Failed'))
+    to = models.CharField(max_length=20)
+    message = models.TextField()
+    event = models.CharField(max_length=40, blank=True)  # e.g. 'sale_pending', 'test'
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    message_id = models.CharField(max_length=64, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f"{self.to} [{self.status}]"

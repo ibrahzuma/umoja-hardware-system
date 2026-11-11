@@ -129,7 +129,13 @@ class SaleViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        sale = serializer.save(user=self.request.user)
+        # Text the approvers (SMS Notifications page). Queued here rather than in
+        # a post_save signal because the total is only known once the items are
+        # in; it is sent after commit, off the request, and never fails the sale.
+        if sale.status == 'pending':
+            from apps.core.sms import queue_pending_sale_alert
+            queue_pending_sale_alert(sale.pk)
 
     def perform_destroy(self, instance):
         # Put back whatever actually left the shelf. A fully dispatched sale has
