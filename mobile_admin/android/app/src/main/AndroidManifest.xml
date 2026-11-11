@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need this explicitly; Flutter only adds it to the
+         debug/profile manifests, so without it the app cannot reach the API. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Umoja Approvals"
         android:name="${applicationName}"
