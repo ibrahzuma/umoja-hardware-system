@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = 'https://sms.ehub.co.tz'
 API_PREFIX = '/api/v1'
 TIMEOUT = 15
+USER_AGENT = 'UmojaHardware-SMS/1.0'
 
 
 class SmsError(Exception):
@@ -57,6 +58,9 @@ class EhubClient:
             'X-Signature': sig,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
+            # eHub's firewall drops the default "python-requests/x" agent
+            # without a response ("Remote end closed connection").
+            'User-Agent': USER_AGENT,
         }
 
     def request(self, method, endpoint, data=None):

@@ -53,6 +53,7 @@ class SigningTest(TestCase):
         expected = hmac.new(b's', payload.encode(), hashlib.sha256).hexdigest()
         self.assertEqual(headers['X-Signature'], expected)
         self.assertEqual(headers['Authorization'], 'Bearer k')
+        self.assertNotIn('python-requests', headers['User-Agent'])
         self.assertEqual(json.loads(body)['sender_id'], 'uuid-ehub')
 
 
