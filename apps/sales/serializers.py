@@ -50,6 +50,7 @@ class SaleSerializer(serializers.ModelSerializer):
     balance = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
     money_accounts = serializers.SerializerMethodField()
+    accounts = serializers.SerializerMethodField()
     total_weight = serializers.SerializerMethodField()
     unweighed_items = serializers.SerializerMethodField()
     
@@ -71,7 +72,7 @@ class SaleSerializer(serializers.ModelSerializer):
             'customer', 'customer_name',
             'lp_number', 'pi_number', 'order_number',
             'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
-            'amount_paid', 'balance', 'payment_status', 'money_accounts', 'approved_by', 'approved_by_name',
+            'amount_paid', 'balance', 'payment_status', 'money_accounts', 'accounts', 'approved_by', 'approved_by_name',
             'approved_at', 'dispatch_manager', 'dispatch_manager_name', 'store_keeper',
             'store_keeper_name', 'lorry_info', 'vehicle', 'vehicle_details'
         ]
@@ -105,6 +106,28 @@ class SaleSerializer(serializers.ModelSerializer):
                 'amount': str(t.amount),
             })
         return out
+
+    def get_accounts(self, obj):
+        """What Accounts has done with this sale (Sales Accounting). The till's
+        "Paid" is only the seller's claim; money is in a cash book or bank only
+        once the accountant posts it. Read off the prefetched ledger entry."""
+        entry = next(iter(obj.ledger_entries.all()), None)
+        if entry is None:
+            return {'status': 'none'}
+        voucher = next((v.number for v in entry.vouchers.all() if v.status == 'posted'), '')
+        who = entry.posted_by
+        return {
+            'status': entry.status,                     # pending / queried / posted
+            'payment_status': entry.payment_status,     # awaiting / confirmed
+            'confirmed_amount': str(entry.confirmed_amount),
+            'method': entry.get_confirmed_method_display() if entry.confirmed_method else '',
+            'account': entry.confirmed_account.name if entry.confirmed_account else '',
+            'reference': entry.confirmed_reference,
+            'voucher': voucher,
+            'posted_at': entry.posted_at.isoformat() if entry.posted_at else None,
+            'posted_by': (who.get_full_name() or who.username) if who else '',
+            'note': entry.note,
+        }
 
     def get_total_weight(self, obj):
         """kg of every line whose weight is known (see `load_of`)."""

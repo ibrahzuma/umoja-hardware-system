@@ -244,6 +244,7 @@
             if (pStatus === 'Paid') paymentBadge = '<span class="badge bg-success">Paid</span>';
             else if (pStatus === 'Partial') paymentBadge = '<span class="badge bg-warning text-dark">Partial</span>';
             else paymentBadge = '<span class="badge bg-danger">Credit</span>';
+            const acctLine = accountsLine(s);
 
             let deliveryBadge = '<span class="badge bg-secondary">Pending</span>';
             if (s.status === 'approved') deliveryBadge = '<span class="badge bg-info text-dark">Approved</span>';
@@ -262,6 +263,7 @@
                 <td class="fw-bold">TZS ${Math.round(Number(s.total_amount)).toLocaleString()}</td>
                 <td>
                     ${paymentBadge}
+                    ${acctLine}
                     <div class="mt-1">${deliveryBadge}</div>
                 </td>
                 <td class="text-end pe-4">
@@ -288,6 +290,67 @@
             `;
             tbody.appendChild(tr);
         });
+    }
+
+    const tzs = v => 'TZS ' + Math.round(Number(v || 0)).toLocaleString();
+    const escHtml = v => String(v == null ? '' : v).replace(/[&<>"']/g,
+        c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+
+    // "Paid" at the till is only the seller's word. Say whether Accounts has
+    // confirmed it, and into which cash book or bank, right under the badge.
+    function accountsLine(s) {
+        const a = s.accounts || {};
+        const claimed = Number(s.amount_paid || 0);
+        if (a.status === 'posted') {
+            const got = Number(a.confirmed_amount || 0);
+            let html = `<div class="small text-success mt-1" title="Posted by Accounts${a.voucher ? ' — ' + escHtml(a.voucher) : ''}">
+                <i class="bi bi-check-circle-fill"></i> ${got > 0 ? 'In ' + escHtml(a.account || 'books') : 'Posted (on credit)'}</div>`;
+            if (got > 0 && got < claimed) {
+                html += `<div class="small text-danger">${tzs(claimed - got)} not confirmed</div>`;
+            }
+            return html;
+        }
+        if (a.status === 'queried') {
+            return `<div class="small text-danger mt-1" title="${escHtml(a.note)}"><i class="bi bi-question-circle-fill"></i> Queried by Accounts</div>`;
+        }
+        if (claimed > 0) {
+            return `<div class="small text-warning-emphasis mt-1"><i class="bi bi-hourglass-split"></i> Not confirmed by Accounts</div>`;
+        }
+        return '';
+    }
+
+    // The View box: what the seller said, and what Accounts did with it.
+    function paymentSection(sale) {
+        const a = sale.accounts || {};
+        const claims = (sale.money_accounts || []).map(m =>
+            `<div class="d-flex justify-content-between small"><span>${escHtml(m.method)}${m.account ? ' → ' + escHtml(m.account) : ' <span class="text-muted">(no cash book / bank named)</span>'}</span><span>${tzs(m.amount)}</span></div>`
+        ).join('') || '<div class="small text-muted">No payment recorded at the till (credit sale).</div>';
+
+        let acct;
+        if (a.status === 'posted') {
+            const got = Number(a.confirmed_amount || 0);
+            const short = Number(sale.amount_paid || 0) - got;
+            acct = `
+                <div class="d-flex justify-content-between small"><span>Status</span><span class="badge bg-success">Posted</span></div>
+                <div class="d-flex justify-content-between small"><span>Received into</span><span class="fw-semibold">${escHtml(a.account || '—')}</span></div>
+                <div class="d-flex justify-content-between small"><span>Confirmed</span><span>${tzs(got)}${a.method ? ' · ' + escHtml(a.method) : ''}</span></div>
+                ${short > 0 ? `<div class="d-flex justify-content-between small text-danger"><span>Not confirmed</span><span>${tzs(short)}</span></div>` : ''}
+                ${a.voucher ? `<div class="d-flex justify-content-between small"><span>Voucher</span><span>${escHtml(a.voucher)}</span></div>` : ''}
+                ${a.reference ? `<div class="d-flex justify-content-between small"><span>Reference</span><span>${escHtml(a.reference)}</span></div>` : ''}
+                <div class="d-flex justify-content-between small text-muted"><span>Posted by</span><span>${escHtml(a.posted_by || '—')}${a.posted_at ? ', ' + new Date(a.posted_at).toLocaleString() : ''}</span></div>`;
+        } else if (a.status === 'queried') {
+            acct = `<div class="small"><span class="badge bg-danger">Queried</span> ${escHtml(a.note || '')}</div>
+                    <div class="small text-muted mt-1">Not in any cash book or bank until Accounts posts it.</div>`;
+        } else {
+            acct = `<div class="small"><span class="badge bg-warning text-dark">Waiting for Accounts</span></div>
+                    <div class="small text-muted mt-1">Not in any cash book or bank yet — the accountant confirms the payment and posts it in Sales Accounting.</div>`;
+        }
+        return `
+            <hr>
+            <h6 class="fw-bold mb-2">Payment at the till <span class="text-muted fw-normal small">(seller's record)</span></h6>
+            ${claims}
+            <h6 class="fw-bold mt-3 mb-2">Accounts</h6>
+            ${acct}`;
     }
 
     function viewReceipt(id) {
@@ -344,6 +407,7 @@
                     </tr>
                 </tfoot>
             </table>
+            ${paymentSection(sale)}
         `;
         receiptModal.show();
     }

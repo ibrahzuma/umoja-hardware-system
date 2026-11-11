@@ -111,6 +111,18 @@ class SaleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        if self.action in ('list', 'retrieve'):
+            # Reading only: prefetch what the serializer (items, payments, and
+            # `accounts` — the Sales Accounting entry) touches, so a list costs
+            # a fixed handful of queries rather than several per sale. Not for
+            # actions that write: a payment created on a prefetched sale would
+            # leave its signals (CRM, Sales Accounting) reading stale payments.
+            queryset = queryset.select_related(
+                'user', 'approved_by', 'store_keeper', 'dispatch_manager', 'godown', 'vehicle',
+            ).prefetch_related(
+                'items__product', 'transactions__deposit_to',
+                'ledger_entries__confirmed_account', 'ledger_entries__posted_by',
+                'ledger_entries__vouchers')
         # Staff tied to one shop see that shop's sales only.
         from apps.users.permissions import home_branch
         home = home_branch(self.request.user)
