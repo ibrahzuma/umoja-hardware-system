@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+
+{% block title %}SMS Notifications{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h4 class="mb-0"><i class="bi bi-chat-dots"></i> SMS Notifications</h4>
+        <span class="badge {% if sms.enabled and sms.has_credentials %}bg-success{% else %}bg-secondary{% endif %} fs-6">
+            {% if sms.enabled and sms.has_credentials %}On{% elif sms.enabled %}On — no API key{% else %}Off{% endif %}
+        </span>
+    </div>
+
+    {% for message in messages %}
+    <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+
+    <div class="row g-3">
+        <!-- Gateway -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white"><strong>eHub gateway</strong></div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_settings">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" name="enabled" id="enabled" {% if sms.enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="enabled">Send SMS notifications</label>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API key</label>
+                            <input type="password" name="api_key" class="form-control" autocomplete="off"
+                                   placeholder="{% if sms.key %}Saved{% if key_from_env %} (from server environment){% endif %} — leave blank to keep{% else %}Paste from eHub → Developer → API Keys{% endif %}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">API secret</label>
+                            <input type="password" name="api_secret" class="form-control" autocomplete="off"
+                                   placeholder="{% if sms.secret %}Saved — leave blank to keep{% else %}Shown once by eHub when the key is made{% endif %}">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Sender ID</label>
+                            <input type="text" name="sender_name" class="form-control" maxlength="11" value="{{ sms.sender_name }}" required>
+                            <div class="form-text">Must be approved on the eHub account.</div>
+                        </div>
+                        <h6 class="text-secondary mt-4">Events</h6>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" name="notify_pending_sale" id="nps" {% if sms.notify_pending_sale %}checked{% endif %}>
+                            <label class="form-check-label" for="nps">A new sale is waiting for approval → text the approvers below</label>
+                        </div>
+                        <button class="btn btn-primary"><i class="bi bi-save"></i> Save settings</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test & balance -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white"><strong>Test &amp; balance</strong></div>
+                <div class="card-body">
+                    <form method="post" class="mb-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="test">
+                        <div class="mb-2">
+                            <label class="form-label">Phone number</label>
+                            <input type="tel" name="test_number" class="form-control" placeholder="07XXXXXXXX" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Message</label>
+                            <textarea name="test_message" class="form-control" rows="2" maxlength="640">Test from Umoja Hardware: SMS notifications are working.</textarea>
+                        </div>
+                        <button class="btn btn-outline-primary"><i class="bi bi-send"></i> Send test SMS</button>
+                    </form>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="balance">
+                        <button class="btn btn-outline-secondary"><i class="bi bi-wallet2"></i> Check balance</button>
+                    </form>
+                    {% if balance %}
+                    <div class="alert alert-info mt-3 mb-0">
+                        Wallet: <strong>{{ balance.currency|default:"TZS" }} {{ balance.balance }}</strong>
+                        {% if balance.sms_balance is not None %}· SMS credits: <strong>{{ balance.sms_balance }}</strong>{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Recipients -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white"><strong>Who gets texted</strong>
+                    <span class="text-muted small ms-2">Everyone who can approve a sale. Only those with a number and ticked receive SMS.</span>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_recipients">
+                        <div class="table-responsive">
+                            <table class="table align-middle" data-no-paginate>
+                                <thead><tr><th>Name</th><th>Role</th><th style="width:240px">Mobile number</th><th>Receive SMS</th></tr></thead>
+                                <tbody>
+                                {% for u, r in approvers %}
+                                <tr>
+                                    <td>{{ u.get_full_name|default:u.username }}</td>
+                                    <td>{% if u.is_superuser %}Superuser{% else %}{{ u.get_role_display }}{% endif %}</td>
+                                    <td><input type="tel" name="phone_{{ u.pk }}" class="form-control form-control-sm" value="{{ r.phone|default:'' }}" placeholder="07XXXXXXXX"></td>
+                                    <td><input type="checkbox" class="form-check-input" name="active_{{ u.pk }}" {% if not r or r.active %}checked{% endif %}></td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4" class="text-muted">No approvers found.</td></tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button class="btn btn-primary"><i class="bi bi-save"></i> Save recipients</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white"><strong>Recent SMS</strong> <span class="text-muted small">(last 50)</span></div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm" data-export="SMS Log">
+                            <thead><tr><th>When</th><th>To</th><th>Event</th><th>Message</th><th>Status</th></tr></thead>
+                            <tbody>
+                            {% for log in logs %}
+                            <tr>
+                                <td class="text-nowrap">{{ log.created_at|date:"Y-m-d H:i" }}</td>
+                                <td>{{ log.to }}</td>
+                                <td>{{ log.event }}</td>
+                                <td>{{ log.message }}</td>
+                                <td>{% if log.status == 'sent' %}<span class="badge bg-success">Sent</span>{% else %}<span class="badge bg-danger" title="{{ log.error }}">Failed</span><div class="small text-danger">{{ log.error|truncatechars:120 }}</div>{% endif %}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-muted">No SMS sent yet.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
