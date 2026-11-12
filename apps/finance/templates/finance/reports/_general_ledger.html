@@ -3,16 +3,16 @@
 <h6 class="mt-3 mb-1"><a href="{% url 'finance:account_detail' s.account.pk %}">{{ s.account }}</a> <span class="badge text-bg-light text-dark">{{ s.account.ledger_kind }}</span>
   {% if s.account.currency %}<span class="badge text-bg-info">{{ s.account.currency.code }} account</span>{% endif %}</h6>
 <div class="table-responsive"><table class="table table-sm table-bordered mb-3">
-  <thead><tr><th style="width:9%">Date</th><th style="width:13%">Voucher</th><th style="width:20%">Related Ledger Name</th><th>Description</th><th class="num" style="width:13%">Debit</th><th class="num" style="width:13%">Credit</th><th class="num" style="width:13%">Balance</th></tr></thead>
+  <thead><tr><th style="width:9%">Date</th><th style="width:13%">Voucher</th><th style="width:20%">Related Ledger Name</th><th>Description</th><th style="width:8%">PI No.</th><th class="num" style="width:12%">Debit</th><th class="num" style="width:13%">Credit</th><th class="num" style="width:13%">Balance</th></tr></thead>
   <tbody>
-    <tr class="table-light"><td colspan="6">Opening balance</td><td class="num">{{ s.opening|money }}</td></tr>
+    <tr class="table-light"><td colspan="7">Opening balance</td><td class="num">{{ s.opening|money }}</td></tr>
     {% for r in s.rows %}{% with e=r.entry %}
-    <tr><td>{{ e.transaction_date|date:"d/m/Y" }}</td><td><a href="{% url 'finance:voucher_detail' e.voucher_id %}">{{ e.voucher_number }}</a></td><td>{% for a in r.related %}<a href="{% url 'finance:account_detail' a.pk %}">{{ a }}</a>{% if not forloop.last %}<br>{% endif %}{% endfor %}</td><td>{{ e.description }}{% if e.reference %} <span class="text-muted-sm">[{{ e.reference }}]</span>{% endif %}</td>
+    <tr><td>{{ e.transaction_date|date:"d/m/Y" }}</td><td><a href="{% url 'finance:voucher_detail' e.voucher_id %}">{{ e.voucher_number }}</a></td><td>{% for a in r.related %}<a href="{% url 'finance:account_detail' a.pk %}">{{ a }}</a>{% if not forloop.last %}<br>{% endif %}{% endfor %}</td><td>{{ e.description }}{% if e.reference %} <span class="text-muted-sm">[{{ e.reference }}]</span>{% endif %}</td><td>{{ r.pi|default:"" }}</td>
       <td class="num">{{ e.debit|money_or_blank }}{% if e.currency and not e.currency.is_base %}<div class="text-muted-sm">{{ e.currency.code }} {{ e.foreign_debit|money_or_blank }}</div>{% endif %}</td>
       <td class="num">{{ e.credit|money_or_blank }}{% if e.currency and not e.currency.is_base %}<div class="text-muted-sm">{{ e.currency.code }} {{ e.foreign_credit|money_or_blank }}</div>{% endif %}</td>
       <td class="num">{{ r.balance|money }}</td></tr>
     {% endwith %}{% endfor %}
-    <tr class="table-light fw-semibold"><td colspan="4">Period totals / closing balance</td><td class="num">{{ s.debit|money }}</td><td class="num">{{ s.credit|money }}</td><td class="num">{{ s.closing|money }}</td></tr>
+    <tr class="table-light fw-semibold"><td colspan="5">Period totals / closing balance</td><td class="num">{{ s.debit|money }}</td><td class="num">{{ s.credit|money }}</td><td class="num">{{ s.closing|money }}</td></tr>
   </tbody>
 </table></div>
 {% empty %}<p class="text-muted text-center py-4">No ledger activity for the selected criteria.</p>{% endfor %}

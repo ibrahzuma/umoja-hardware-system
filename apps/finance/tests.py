@@ -2160,3 +2160,33 @@ class CorrectPostedSalePaymentTest(LedgerTestCase):
         self.assertEqual(self.correct().status_code, 403)
         self.first.refresh_from_db()
         self.assertEqual(self.first.status, 'posted')
+
+
+class GeneralLedgerShowsPiNumberTest(LedgerTestCase):
+    """The General Ledger report carries the till sale's PI No. on each line,
+    on screen and in the export, so the accountant can match it to paper."""
+
+    def test_pi_number_on_a_posted_sale_and_its_reversal(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        vouchers.open_the_books()
+        Sale.objects.create(invoice_number='GLPI-1', branch=self.branch, customer_name='X',
+                            total_amount=Decimal('5000'), status='approved', pi_number='212156')
+        entry = SalesLedgerEntry.objects.get(invoice_number='GLPI-1')
+        self.client.force_login(self.accountant)
+        self.client.post(f'/api/sales-ledger/{entry.id}/post_entry/', {
+            'method': 'cash', 'account': str(self.cash.id),
+            'invoice_document': SimpleUploadedFile('i.pdf', b'%PDF-1.4', 'application/pdf')})
+        # Correct it, so the cash book holds the original and its reversal too.
+        self.client.post(f'/api/sales-ledger/{entry.id}/correct_payment/', {
+            'method': 'cash', 'amount': '4000', 'account': str(self.cash.id), 'reason': 'short'})
+        data = accounting_reports.general_ledger(account=self.cash)
+        rows = data['sections'][0]['rows']
+        self.assertEqual(len(rows), 3)
+        self.assertEqual({r['pi'] for r in rows}, {'212156'})
+        self.assertIn('PI No.', data['columns'])
+        pi_col = data['columns'].index('PI No.')
+        self.assertEqual(data['export_rows'][1][pi_col], '212156')
+        self.assertTrue(all(len(r) == len(data['columns']) for r in data['export_rows']))
+        page = self.client.get(reverse('finance:report_general_ledger'),
+                               {'account': self.cash.id})
+        self.assertContains(page, '212156')

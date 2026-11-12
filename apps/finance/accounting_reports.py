@@ -48,6 +48,35 @@ REPORT_TITLES = {slug: title for slug, title, _icon, _desc in REPORTS}
 # General Ledger
 # ---------------------------------------------------------------------------
 
+def pi_numbers(voucher_ids):
+    """{voucher id: the store keeper's PI No.} for vouchers tied to a till sale.
+
+    A Sales Accounting voucher reaches its sale through `sales_entry`, its
+    reversal through `reversal_of`; any other voucher whose invoice number or
+    reference is a till invoice number borrows that sale's PI No. Vouchers
+    with no sale behind them are simply left out."""
+    from apps.sales.models import Sale
+    rows = list(Voucher.objects.filter(pk__in=set(voucher_ids)).values(
+        'pk', 'invoice_number', 'reference',
+        'sales_entry__sale__pi_number', 'reversal_of__sales_entry__sale__pi_number'))
+    found, refs = {}, {}
+    for r in rows:
+        pi = r['sales_entry__sale__pi_number'] or r['reversal_of__sales_entry__sale__pi_number']
+        if pi:
+            found[r['pk']] = pi
+        else:
+            for ref in (r['invoice_number'], r['reference']):
+                if ref:
+                    refs.setdefault(ref, []).append(r['pk'])
+    if refs:
+        for inv, pi in (Sale.objects.filter(invoice_number__in=list(refs))
+                        .exclude(pi_number__isnull=True).exclude(pi_number='')
+                        .values_list('invoice_number', 'pi_number')):
+            for pk in refs.get(inv, []):
+                found.setdefault(pk, pi)
+    return found
+
+
 def general_ledger(account=None, start=None, end=None):
     """One ledger's statement, or every ledger that has moved, each with its
     opening figure, its entries and its closing figure."""
@@ -57,26 +86,29 @@ def general_ledger(account=None, start=None, end=None):
         accounts = list(LedgerAccount.objects
                         .filter(is_group=False, gl_entries__isnull=False)
                         .distinct().order_by('code'))
-    columns = ['Date', 'Voucher', 'Related Ledger', 'Description', 'Debit', 'Credit', 'Balance']
+    columns = ['Date', 'Voucher', 'Related Ledger', 'Description', 'PI No.', 'Debit', 'Credit', 'Balance']
     sections, export_rows = [], []
     for ledger in accounts:
         opening, rows, closing = ledger_statement(ledger, start, end)
         if not rows and opening == 0 and account is None:
             continue
+        pis = pi_numbers(r['entry'].voucher_id for r in rows)
+        for row in rows:
+            row['pi'] = pis.get(row['entry'].voucher_id, '')
         sections.append({
             'account': ledger, 'opening': opening, 'rows': rows, 'closing': closing,
             'debit': sum((r['entry'].debit for r in rows), ZERO),
             'credit': sum((r['entry'].credit for r in rows), ZERO),
         })
-        export_rows.append(['', '', ledger.code, f"{ledger.name} — opening balance", '', '', opening])
+        export_rows.append(['', '', ledger.code, f"{ledger.name} — opening balance", '', '', '', opening])
         for row in rows:
             entry = row['entry']
             export_rows.append([
                 entry.date, entry.voucher_number,
                 ', '.join(str(a) for a in row['related']),
-                entry.description, entry.debit, entry.credit, row['balance'],
+                entry.description, row['pi'], entry.debit, entry.credit, row['balance'],
             ])
-        export_rows.append(['', '', ledger.code, f"{ledger.name} — closing balance", '', '', closing])
+        export_rows.append(['', '', ledger.code, f"{ledger.name} — closing balance", '', '', '', closing])
     return {'sections': sections, 'columns': columns, 'export_rows': export_rows,
             'start': start, 'end': end, 'account': account}
 
