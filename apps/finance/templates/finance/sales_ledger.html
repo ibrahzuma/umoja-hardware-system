@@ -147,13 +147,18 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Post Sale &amp; Record Payment</h5>
+                <h5 class="modal-title" id="confirmTitle">Post Sale &amp; Record Payment</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">This takes the sale into the books and records the money as
+                <p class="text-muted small" id="confirmIntro">This takes the sale into the books and records the money as
                     received. Until it is done the sale is out of the P&amp;L and the money counts as not yet in,
                     whatever the till recorded.</p>
+                <div class="alert alert-warning small d-none" id="correctIntro">
+                    Correcting a posted sale reverses its voucher (<strong id="correctVoucher"></strong>) and posts
+                    a corrected one with the figures below. Both stay in the books, with your reason, so the change
+                    can be traced.
+                </div>
                 <form id="confirmForm">
                     <input type="hidden" id="confirmId">
                     <div class="mb-3">
@@ -185,13 +190,18 @@
                             placeholder="Bank ref, transaction ID, cheque no">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Invoice Attachment <span class="text-danger">*</span></label>
+                        <label class="form-label">Invoice Attachment <span class="text-danger" id="confirmFileStar">*</span></label>
                         <input type="file" class="form-control" id="confirmFile"
                             accept="image/*,application/pdf" required>
-                        <small class="text-muted">A picture or PDF of the invoice for this payment.</small>
+                        <small class="text-muted" id="confirmFileHint">A picture or PDF of the invoice for this payment.</small>
+                    </div>
+                    <div class="mb-3 d-none" id="correctReasonWrap">
+                        <label class="form-label">Reason for the correction <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="correctReason" rows="2"
+                            placeholder="e.g. Received in NMB bank, not cash"></textarea>
                     </div>
                     <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" id="confirmSubmit">
                             <i class="bi bi-check-lg"></i> Post it and record the money
                         </button>
                     </div>
@@ -398,7 +408,11 @@
         // One button. Posting a sale and recording its money are the same act.
         const done = e.status === 'posted' && e.payment_status === 'confirmed';
         if (done) {
-            return '<small class="text-muted">' + escapeHtml(e.posted_by_name || '') + '</small>';
+            const gone = e.sale_status === 'cancelled' || e.sale_status === 'deleted';
+            return '<small class="text-muted d-block">' + escapeHtml(e.posted_by_name || '') + '</small>'
+                + (gone ? '' : '<button class="btn btn-sm btn-outline-secondary mt-1" onclick="openCorrect(' + e.id + ')"'
+                    + ' title="Wrong cash book, bank, method or amount? Reverse and re-post it">'
+                    + '<i class="bi bi-pencil-square"></i> Edit payment</button>');
         }
 
         const parts = [
@@ -417,9 +431,54 @@
     let confirmModal;
     let confirmBranch = null;
 
+    // One modal, two jobs: posting a pending sale, or correcting a posted one.
+    let correcting = false;
+    function setMode(correct, e) {
+        correcting = correct;
+        document.getElementById('confirmTitle').innerText =
+            correct ? 'Correct Posted Payment' : 'Post Sale & Record Payment';
+        document.getElementById('confirmIntro').classList.toggle('d-none', correct);
+        document.getElementById('correctIntro').classList.toggle('d-none', !correct);
+        document.getElementById('correctVoucher').innerText = (e && e.voucher && e.voucher.number) || 'its voucher';
+        document.getElementById('correctReasonWrap').classList.toggle('d-none', !correct);
+        document.getElementById('correctReason').required = correct;
+        document.getElementById('correctReason').value = '';
+        document.getElementById('confirmFile').required = !correct;
+        document.getElementById('confirmFileStar').classList.toggle('d-none', correct);
+        document.getElementById('confirmFileHint').innerText = correct
+            ? 'Optional - only to replace the invoice already attached.'
+            : 'A picture or PDF of the invoice for this payment.';
+        document.getElementById('confirmSubmit').innerHTML = correct
+            ? '<i class="bi bi-arrow-repeat"></i> Reverse and re-post with these figures'
+            : '<i class="bi bi-check-lg"></i> Post it and record the money';
+    }
+
+    function openCorrect(id) {
+        const e = entries.find(x => x.id === id);
+        if (!e) return;
+        setMode(true, e);
+        document.getElementById('confirmId').value = e.id;
+        document.getElementById('confirmInvoice').value = e.invoice_number + '  -  ' + e.customer_name;
+        document.getElementById('confirmAmount').value = e.confirmed_amount;
+        document.getElementById('confirmMethod').value = e.confirmed_method || 'cash';
+        confirmBranch = null;
+        MoneyAccounts.fill(document.getElementById('confirmAccount'), e.confirmed_method || 'cash',
+                           e.confirmed_account || null, null);
+        document.getElementById('confirmAccountHint').innerText = e.confirmed_account_name
+            ? 'Currently posted into ' + e.confirmed_account_name + '.'
+            : 'Pick the cash book or bank account the money really went into.';
+        document.getElementById('confirmReference').value = e.confirmed_reference || '';
+        document.getElementById('confirmFile').value = '';
+        if (!confirmModal) {
+            confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+        }
+        confirmModal.show();
+    }
+
     function openConfirm(id) {
         const e = entries.find(x => x.id === id);
         if (!e) return;
+        setMode(false, e);
         document.getElementById('confirmId').value = e.id;
         document.getElementById('confirmInvoice').value =
             e.invoice_number + '  -  ' + e.customer_name;
@@ -447,6 +506,41 @@
         ev.preventDefault();
         const id = document.getElementById('confirmId').value;
         const file = document.getElementById('confirmFile').files[0];
+        if (correcting) {
+            const reason = document.getElementById('correctReason').value.trim();
+            if (!reason) {
+                Swal.fire('Give a reason', 'Say why the posting is being corrected.', 'info');
+                return;
+            }
+            const body = new FormData();
+            body.append('method', document.getElementById('confirmMethod').value);
+            body.append('amount', document.getElementById('confirmAmount').value);
+            body.append('account', document.getElementById('confirmAccount').value);
+            body.append('reference', document.getElementById('confirmReference').value);
+            body.append('reason', reason);
+            if (file) body.append('invoice_document', file);
+            try {
+                const res = await fetch('/api/sales-ledger/' + id + '/correct_payment/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: body
+                });
+                if (res.ok) {
+                    const e = await res.json();
+                    confirmModal.hide();
+                    Swal.fire('Corrected', 'The old voucher was reversed and the sale re-posted'
+                        + (e.voucher ? ' as ' + e.voucher.number : '') + '.', 'success');
+                    loadEntries();
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    Swal.fire('Not corrected', err.detail || 'Could not correct the posting', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                Swal.fire('Error', 'Could not correct the posting', 'error');
+            }
+            return;
+        }
         if (!file) {
             Swal.fire('Attach the invoice', 'A confirmed payment needs its invoice attached.', 'info');
             return;

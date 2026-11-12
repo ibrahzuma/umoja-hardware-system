@@ -283,7 +283,7 @@ def books_voucher(entry):
             .order_by('-id').first())
 
 
-def post_to_books(entry, user, request=None):
+def post_to_books(entry, user, request=None, allow_repost=False):
     """Write the posted sale into the General Ledger as a Sales voucher.
 
     The accountant's Post is one act — the sale goes into the books and the
@@ -310,7 +310,9 @@ def post_to_books(entry, user, request=None):
     from rest_framework.exceptions import ValidationError
 
     existing = books_voucher(entry)
-    if existing is not None:
+    # A reversed voucher only stands aside for a fresh one when the caller is
+    # correcting the posting (`correct_posting`); otherwise this stays idempotent.
+    if existing is not None and (existing.status == 'posted' or not allow_repost):
         return existing
 
     open_the_books()
@@ -357,4 +359,69 @@ def post_to_books(entry, user, request=None):
     except VoucherValidationError as exc:
         raise ValidationError({'detail': exc.errors})
     voucher.refresh_from_db()
+    return voucher
+
+
+def correct_posting(entry, user, *, method, account, amount, reference='', reason='',
+                    document=None, request=None):
+    """Fix a posted sale's payment: the wrong cash book or bank, the wrong
+    method, the wrong amount.
+
+    A posted voucher is never edited. This reverses it — the mirror-image
+    Journal is dated on the original, so the wrong book nets to nothing on the
+    day it was wrongly credited — and posts a fresh Sales voucher with the
+    right figures under the same invoice number. Both documents stay in the
+    books and in the audit trail, with the reason on the reversal.
+
+    The entry keeps its posting date, `confirmed_at` and invoice; only the
+    money fields change. Run inside a transaction: if the books refuse either
+    half (a closed period, missing permission), nothing is kept. Raises
+    DRF `ValidationError` with a readable `detail`.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from rest_framework.exceptions import ValidationError
+    from .posting import VoucherReversalService, VoucherValidationError
+
+    if entry.status != 'posted' or entry.payment_status != 'confirmed':
+        raise ValidationError({'detail': 'Only a posted sale can be corrected — post it instead.'})
+    if entry.sale_status in ('cancelled', 'deleted'):
+        raise ValidationError({'detail': 'This sale was cancelled or deleted at the till. '
+                                         'Reverse it or keep it from Accounting Home instead.'})
+    if not reason.strip():
+        raise ValidationError({'detail': 'Say why the posting is being corrected.'})
+
+    with transaction.atomic():
+        old = books_voucher(entry)
+        if old is not None and old.status == 'posted':
+            try:
+                VoucherReversalService(old, user, request).reverse(
+                    reversal_date=old.date, reason=f'Payment corrected: {reason.strip()}')
+            except VoucherValidationError as exc:
+                raise ValidationError({'detail': ' '.join(str(e) for e in exc.errors)})
+
+        before = (f"{entry.get_confirmed_method_display() or entry.confirmed_method} "
+                  f"{entry.confirmed_amount:,.0f} into "
+                  f"{entry.confirmed_account.name if entry.confirmed_account else 'default book'}")
+        entry.confirmed_method = method
+        entry.confirmed_amount = amount
+        entry.confirmed_account = account
+        entry.confirmed_reference = reference
+        if document is not None:
+            entry.invoice_document = document
+        stamp = timezone.localtime().strftime('%Y-%m-%d %H:%M')
+        who = user.get_full_name() or user.username
+        line = f"[{stamp}] Corrected by {who} (was {before}): {reason.strip()}"
+        entry.note = f"{entry.note}\n{line}".strip() if entry.note else line
+        entry.save()
+
+        try:
+            voucher = post_to_books(entry, user, request, allow_repost=True)
+        except ValidationError as exc:
+            detail = exc.detail.get('detail', exc.detail) if isinstance(exc.detail, dict) else exc.detail
+            if isinstance(detail, dict):
+                detail = next(iter(detail.values()), '')
+            if isinstance(detail, (list, tuple)):
+                detail = ' '.join(str(d) for d in detail)
+            raise ValidationError({'detail': f'The books refused the corrected posting: {detail}'})
     return voucher

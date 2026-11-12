@@ -24,7 +24,7 @@ from apps.core.notify import notify
 from apps.core.models import SystemSettings
 from .credit import credit_balances, available_credit, pending_credit_use, spendable_credit
 from .statements import profit_and_loss, cash_flow, balance_sheet, period_from
-from .sales_ledger import post_to_books, till_account
+from .sales_ledger import post_to_books, till_account, correct_posting
 from django.urls import reverse_lazy
 from django.views.generic import ListView, CreateView, TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -900,6 +900,49 @@ class SalesLedgerViewSet(viewsets.ReadOnlyModelViewSet):
                 detail = ' '.join(str(d) for d in detail)
             return Response({'detail': f'The books refused this sale: {detail}'}, status=400)
         # Re-read it: the vouchers were prefetched before this one existed.
+        entry = self.get_queryset().get(pk=entry.pk)
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=['post'],
+            parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def correct_payment(self, request, pk=None):
+        """Edit a posted sale's payment — received into the wrong cash book or
+        bank, the wrong method or amount. Reverses its voucher and posts a
+        corrected one (see `sales_ledger.correct_posting`); needs the reverse
+        permission, which Accounts hold, and a reason."""
+        from .posting import may_reverse
+        if not may_reverse(request.user):
+            return Response({'detail': 'You do not have permission to correct a posted sale.'},
+                            status=403)
+        entry = self.get_object()
+
+        method = (request.data.get('method') or '').strip()
+        if method not in dict(SalesLedgerEntry.CONFIRMED_METHODS):
+            return Response({'detail': 'Say how the money came in.'}, status=400)
+        raw_account = request.data.get('account')
+        account = (LedgerAccount.objects
+                   .filter(pk=raw_account, kind__in=LedgerAccount.MONEY_KINDS,
+                           is_group=False, is_active=True).first()
+                   if str(raw_account or '').isdigit() else None)
+        if account is None:
+            return Response({'detail': 'Pick the cash book or bank account the money went into.'},
+                            status=400)
+        try:
+            amount = Decimal(str(request.data.get('amount')))
+        except (InvalidOperation, TypeError):
+            return Response({'detail': 'That amount is not a number.'}, status=400)
+        if amount <= 0:
+            return Response({'detail': 'A confirmed payment has to be more than nothing.'}, status=400)
+
+        try:
+            correct_posting(
+                entry, request.user, method=method, account=account, amount=amount,
+                reference=(request.data.get('reference') or '').strip()[:100],
+                reason=(request.data.get('reason') or ''),
+                document=request.FILES.get('invoice_document'), request=request)
+        except ValidationError as exc:
+            detail = exc.detail.get('detail', exc.detail) if isinstance(exc.detail, dict) else exc.detail
+            return Response({'detail': str(detail)}, status=400)
         entry = self.get_queryset().get(pk=entry.pk)
         return Response(self.get_serializer(entry).data)
 

@@ -2074,3 +2074,89 @@ class CustomerDetailOutstandingMatchesBooksTest(LedgerTestCase):
         self.assertEqual(res.context['outstanding_total'], Decimal('0.00'))
         self.assertEqual(list(res.context['outstanding_invoices']), [])
         self.assertEqual(res.context['balance'], Decimal('0.00'))
+
+
+class CorrectPostedSalePaymentTest(LedgerTestCase):
+    """Edit payment on Sales Accounting: a sale posted into the wrong cash book
+    or bank is reversed and re-posted, never edited in place."""
+
+    def setUp(self):
+        super().setUp()
+        vouchers.open_the_books()
+        Sale.objects.create(invoice_number='FIX-1', branch=self.branch, customer=None,
+                            customer_name='Walk-in Customer', total_amount=Decimal('4800000'),
+                            status='approved')
+        self.entry = SalesLedgerEntry.objects.get(invoice_number='FIX-1')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.accountant)
+        res = self.client.post(f'/api/sales-ledger/{self.entry.id}/post_entry/', {
+            'method': 'cash', 'amount': '4780000', 'account': str(self.cash.id),
+            'invoice_document': SimpleUploadedFile('inv.pdf', b'%PDF-1.4', 'application/pdf')})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.first = Voucher.objects.get(sales_entry=self.entry)
+
+    def net(self, ledger):
+        rows = GeneralLedgerEntry.objects.filter(account=ledger)
+        return sum((r.debit - r.credit for r in rows), Decimal('0'))
+
+    def correct(self, **data):
+        payload = {'method': 'bank', 'amount': '4800000', 'account': str(self.bank_ledger.id),
+                   'reason': 'Received in NMB, not cash'}
+        payload.update(data)
+        return self.client.post(f'/api/sales-ledger/{self.entry.id}/correct_payment/', payload)
+
+    def test_moves_the_money_to_the_right_account(self):
+        res = self.correct()
+        self.assertEqual(res.status_code, 200, res.content)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.status, 'reversed')
+        fresh = Voucher.objects.get(sales_entry=self.entry, status='posted')
+        self.assertNotEqual(fresh.pk, self.first.pk)
+        self.assertEqual(fresh.invoice_number, 'FIX-1')
+        # The wrong cash book nets to nothing; the bank holds the full amount.
+        self.assertEqual(self.net(self.cash), Decimal('0'))
+        self.assertEqual(self.net(self.bank_ledger), Decimal('4800000'))
+        self.assertEqual(self.net(self.sales), Decimal('-4800000'))
+        # The reversal is dated on the original, so no day shows a phantom balance.
+        reversal = Voucher.objects.get(reversal_of=self.first)
+        self.assertEqual(reversal.date, self.first.date)
+        self.entry.refresh_from_db()
+        self.assertEqual((self.entry.confirmed_method, self.entry.confirmed_amount, self.entry.confirmed_account_id),
+                         ('bank', Decimal('4800000'), self.bank_ledger.id))
+        self.assertIn('Received in NMB', self.entry.note)
+        self.assertEqual(res.json()['voucher']['number'], fresh.number)
+
+    def test_can_be_corrected_twice(self):
+        self.assertEqual(self.correct().status_code, 200)
+        res = self.correct(method='cash', account=str(self.cash.id), reason='Actually cash after all')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(Voucher.objects.filter(sales_entry=self.entry, status='posted').count(), 1)
+        self.assertEqual(self.net(self.bank_ledger), Decimal('0'))
+        self.assertEqual(self.net(self.cash), Decimal('4800000'))
+
+    def test_the_pnl_still_counts_the_sale_once(self):
+        from apps.finance.statements import profit_and_loss
+        before = profit_and_loss(date(2000, 1, 1), date(2100, 1, 1))
+        self.correct()
+        after = profit_and_loss(date(2000, 1, 1), date(2100, 1, 1))
+        self.assertEqual(before['net_profit'], after['net_profit'])
+
+    def test_needs_a_reason(self):
+        res = self.correct(reason='  ')
+        self.assertEqual(res.status_code, 400)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.status, 'posted')
+
+    def test_a_pending_sale_cannot_be_corrected(self):
+        Sale.objects.create(invoice_number='FIX-2', branch=self.branch, customer_name='X',
+                            total_amount=Decimal('1000'), status='approved')
+        other = SalesLedgerEntry.objects.get(invoice_number='FIX-2')
+        res = self.client.post(f'/api/sales-ledger/{other.id}/correct_payment/', {
+            'method': 'bank', 'amount': '1000', 'account': str(self.bank_ledger.id), 'reason': 'x'})
+        self.assertEqual(res.status_code, 400)
+
+    def test_the_cashier_cannot_correct(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.correct().status_code, 403)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.status, 'posted')
