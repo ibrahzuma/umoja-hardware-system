@@ -18,7 +18,7 @@ from .views_report import CommissionReportView
 
 def _uom(product):
     """The unit a document prints beside a quantity: the product's own
-    measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags), in capitals."""
+    measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles, Tins), in capitals."""
     return (product.get_unit_display() if getattr(product, 'unit', '') else 'Pcs').upper()
 
 

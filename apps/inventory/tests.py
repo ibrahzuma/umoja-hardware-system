@@ -459,7 +459,7 @@ class ProductImportTypeTest(TestCase):
 
 
 class ProductImportUnitTest(TestCase):
-    """The Unit (measuring unit) column: Nos, Kgs, Pcs, Boxes, Tons, Bags."""
+    """The Unit (measuring unit) column: Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles, Tins."""
 
     HEADER = 'Name,SKU,Category,Type,Unit,Cost,Price,Weight (kg),Description,Opening Stock,Low Stock Alert\r\n'
 
@@ -486,6 +486,14 @@ class ProductImportUnitTest(TestCase):
         self.assertEqual(res.json()['errors'], [])
         self.assertEqual([self.unit(n) for n in ('CEMENT', 'NAILS', 'PIPE', 'BOLT', 'TILES', 'STEEL')],
                          ['bags', 'kgs', 'pcs', 'nos', 'boxes', 'tons'])
+
+    def test_rolls_bundles_and_tins(self):
+        res = self.upload('WIRE,,WIRE,,Roll,1,2,,,1,\r\n'
+                          'RODS,,STEEL,,Bundles,1,2,,,1,\r\n'
+                          'PAINT,,PAINT,,TIN,1,2,,,1,\r\n')
+        self.assertEqual(res.json()['errors'], [])
+        self.assertEqual([self.unit(n) for n in ('WIRE', 'RODS', 'PAINT')],
+                         ['rolls', 'bundles', 'tins'])
 
     def test_a_blank_unit_comes_from_the_description_then_defaults_to_pcs(self):
         self.upload('ANDIKA POWDER,,POWDER,,,1,2,,BAGS ,1,\r\n'

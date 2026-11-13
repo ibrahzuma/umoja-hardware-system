@@ -493,7 +493,7 @@ are untracked, ad-hoc tooling — they hardcode prod URLs and credentials, so do
 - **CRM balances are derived, never stored.** `amount_paid`/`balance`/`payment_status` come from the payments table;
   list views annotate `paid_total` so a page costs one query. Customer credit = credits in − `CrmPayment`s with
   `from_credit=True` (`crm/models.py::credit_balances`).
-- **Units and vehicle loads.** `Product.unit` is the measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags) and
+- **Units and vehicle loads.** `Product.unit` is the measuring unit (Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles, Tins) and
   every sales document prints it (`sales/views.py::_uom`) — never a hardcoded PCS. `Product.weight` is the weight
   of **one unit** in kg; read it through `Product.unit_weight`, which returns 1 for Kgs, 1000 for Tons, the
   Weight field otherwise, and **None when that is 0** — unknown, not weightless. `sales.models.load_of(items)`

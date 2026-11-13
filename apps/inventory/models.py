@@ -91,9 +91,12 @@ class Product(models.Model):
         ('boxes', 'Boxes'),
         ('tons', 'Tons'),
         ('bags', 'Bags'),
+        ('rolls', 'Rolls'),
+        ('bundles', 'Bundles'),
+        ('tins', 'Tins'),
     )
     unit = models.CharField(max_length=10, choices=UNIT_CHOICES, default='pcs',
-                            help_text="Measuring unit: Nos, Kgs, Pcs, Boxes, Tons or Bags")
+                            help_text="Measuring unit: Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles or Tins")
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     cost = models.DecimalField(max_digits=10, decimal_places=2)
@@ -111,7 +114,7 @@ class Product(models.Model):
         """What one unit weighs, in kg — or None when nobody has said.
 
         A product sold in Kgs or Tons weighs what its unit says, so its Weight
-        field is ignored. Anything counted (Nos, Pcs, Boxes, Bags) weighs what
+        field is ignored. Anything counted (Nos, Pcs, Boxes, Bags, Rolls, ...) weighs what
         its Weight field says, and a zero there means *unknown*, not weightless:
         a load check must not call a truck safe on goods it cannot weigh.
         """

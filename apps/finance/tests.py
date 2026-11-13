@@ -2163,7 +2163,7 @@ class CorrectPostedSalePaymentTest(LedgerTestCase):
 
 
 class GeneralLedgerShowsPiNumberTest(LedgerTestCase):
-    """The General Ledger report carries the till sale's PI No. on each line,
+    """The General Ledger report carries the till sale's PI No. in each line's description,
     on screen and in the export, so the accountant can match it to paper."""
 
     def test_pi_number_on_a_posted_sale_and_its_reversal(self):
@@ -2183,10 +2183,9 @@ class GeneralLedgerShowsPiNumberTest(LedgerTestCase):
         rows = data['sections'][0]['rows']
         self.assertEqual(len(rows), 3)
         self.assertEqual({r['pi'] for r in rows}, {'212156'})
-        self.assertIn('PI No.', data['columns'])
-        pi_col = data['columns'].index('PI No.')
-        self.assertEqual(data['export_rows'][1][pi_col], '212156')
+        desc_col = data['columns'].index('Description')
+        self.assertTrue(data['export_rows'][1][desc_col].startswith('PI No. 212156'))
         self.assertTrue(all(len(r) == len(data['columns']) for r in data['export_rows']))
         page = self.client.get(reverse('finance:report_general_ledger'),
                                {'account': self.cash.id})
-        self.assertContains(page, '212156')
+        self.assertContains(page, 'PI No. 212156')

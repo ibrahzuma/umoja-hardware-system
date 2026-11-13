@@ -86,7 +86,7 @@ def general_ledger(account=None, start=None, end=None):
         accounts = list(LedgerAccount.objects
                         .filter(is_group=False, gl_entries__isnull=False)
                         .distinct().order_by('code'))
-    columns = ['Date', 'Voucher', 'Related Ledger', 'Description', 'PI No.', 'Debit', 'Credit', 'Balance']
+    columns = ['Date', 'Voucher', 'Related Ledger', 'Description', 'Debit', 'Credit', 'Balance']
     sections, export_rows = [], []
     for ledger in accounts:
         opening, rows, closing = ledger_statement(ledger, start, end)
@@ -100,15 +100,16 @@ def general_ledger(account=None, start=None, end=None):
             'debit': sum((r['entry'].debit for r in rows), ZERO),
             'credit': sum((r['entry'].credit for r in rows), ZERO),
         })
-        export_rows.append(['', '', ledger.code, f"{ledger.name} — opening balance", '', '', '', opening])
+        export_rows.append(['', '', ledger.code, f"{ledger.name} — opening balance", '', '', opening])
         for row in rows:
             entry = row['entry']
             export_rows.append([
                 entry.date, entry.voucher_number,
                 ', '.join(str(a) for a in row['related']),
-                entry.description, row['pi'], entry.debit, entry.credit, row['balance'],
+                f"PI No. {row['pi']} · {entry.description}" if row['pi'] else entry.description,
+                entry.debit, entry.credit, row['balance'],
             ])
-        export_rows.append(['', '', ledger.code, f"{ledger.name} — closing balance", '', '', '', closing])
+        export_rows.append(['', '', ledger.code, f"{ledger.name} — closing balance", '', '', closing])
     return {'sections': sections, 'columns': columns, 'export_rows': export_rows,
             'start': start, 'end': end, 'account': account}
 

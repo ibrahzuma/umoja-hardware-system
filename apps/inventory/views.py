@@ -62,6 +62,9 @@ UNIT_ALIASES = {
     'boxes': 'boxes', 'box': 'boxes', 'bx': 'boxes',
     'tons': 'tons', 'ton': 'tons', 'tonne': 'tons', 'tonnes': 'tons', 't': 'tons',
     'bags': 'bags', 'bag': 'bags',
+    'rolls': 'rolls', 'roll': 'rolls', 'rls': 'rolls',
+    'bundles': 'bundles', 'bundle': 'bundles', 'bdl': 'bundles', 'bdls': 'bundles',
+    'tins': 'tins', 'tin': 'tins',
 }
 
 
@@ -149,7 +152,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
                         product_type = import_product_type(get_val('Type', ''))
 
-                        # Unit: Nos, Kgs, Pcs, Boxes, Tons or Bags. A blank cell
+                        # Unit: Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles, Tins, Rolls, Bundles or Tins. A blank cell
                         # falls back to a unit written in the Description
                         # ("BAGS", "PCS"), then to Pcs; anything else is an error
                         # rather than a guess.
@@ -157,7 +160,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                         unit = import_unit(raw_unit)
                         if raw_unit and unit is None:
                             errors.append(f"Row {i+2}: Unit '{raw_unit}' is not one of "
-                                          "Nos, Kgs, Pcs, Boxes, Tons, Bags")
+                                          "Nos, Kgs, Pcs, Boxes, Tons, Bags, Rolls, Bundles, Tins")
                             continue
                         unit_given = unit is not None
                         # "Weight per unit (kg)" in the template; the old
