@@ -21,6 +21,7 @@ urlpatterns = [
     
     path('supplier-payments/', views.SupplierPaymentListView.as_view(), name='supplier_payment_list'),
     path('supplier-payments/by-supplier/', views.SupplierAccountListView.as_view(), name='supplier_accounts'),
+    path('supplier-statements/', views.SupplierStatementView.as_view(), name='supplier_statements'),
     path('supplier-payments/approvals/', views.SupplierPaymentApprovalView.as_view(),
          name='supplier_payment_approvals'),
 

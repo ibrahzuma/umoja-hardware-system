@@ -410,6 +410,36 @@ class SupplierAccountListView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
     def test_func(self):
         return can_record_supplier_payment(self.request.user)
 
+class SupplierStatementView(LoginRequiredMixin, UserPassesTestMixin, TemplateView):
+    """Read-only supplier statements for Afisa Ugavi (and the admins, the
+    accountant and the cash desk): orders against approved payments."""
+    template_name = 'finance/supplier_statements.html'
+
+    def test_func(self):
+        from .supplier_statement import can_view_supplier_statements
+        return can_view_supplier_statements(self.request.user)
+
+    def get_context_data(self, **kwargs):
+        from django.utils.dateparse import parse_date
+        from . import supplier_statement as ss
+        ctx = super().get_context_data(**kwargs)
+        q = self.request.GET
+        start = parse_date(q.get('date_from') or '') if q.get('date_from') else None
+        end = parse_date(q.get('date_to') or '') if q.get('date_to') else None
+        supplier = None
+        if (q.get('supplier') or '').isdigit():
+            supplier = Supplier.objects.filter(pk=int(q['supplier'])).first()
+        ctx.update({
+            'suppliers': Supplier.objects.order_by('name'),
+            'supplier': supplier, 'date_from': start, 'date_to': end,
+        })
+        if supplier:
+            ctx.update(ss.statement(supplier, start, end))
+        else:
+            ctx['summary'] = ss.summary()
+        return ctx
+
+
 class TaxPaymentViewSet(viewsets.ModelViewSet):
     queryset = TaxPayment.objects.all().order_by('-payment_date')
     serializer_class = TaxPaymentSerializer

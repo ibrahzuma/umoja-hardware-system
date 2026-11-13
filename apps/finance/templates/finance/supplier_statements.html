@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Supplier Statements{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1">Supplier Statements</h2>
+        <p class="text-muted mb-0 small">What was ordered from each supplier against what they have been paid
+            (Admin-approved payments), with the balance still owed.</p>
+    </div>
+</div>
+
+<form method="get" class="card shadow-sm border-0 mb-4">
+    <div class="card-body row g-2 align-items-end">
+        <div class="col-md-5">
+            <label class="form-label small fw-bold">Supplier</label>
+            <select name="supplier" class="form-select" onchange="this.form.submit()">
+                <option value="">All suppliers (summary)</option>
+                {% for s in suppliers %}
+                <option value="{{ s.pk }}" {% if supplier and supplier.pk == s.pk %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-bold">From</label>
+            <input type="date" name="date_from" class="form-control" value="{{ date_from|date:'Y-m-d' }}">
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small fw-bold">To</label>
+            <input type="date" name="date_to" class="form-control" value="{{ date_to|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+            <button class="btn btn-primary"><i class="bi bi-funnel"></i> Show</button>
+            <a href="{% url 'finance:supplier_statements' %}" class="btn btn-outline-secondary">Clear</a>
+        </div>
+    </div>
+</form>
+
+{% if supplier %}
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <h5 class="fw-bold mb-1">{{ supplier.name }}</h5>
+        <p class="text-muted small mb-3">
+            {% if supplier.contact_name %}{{ supplier.contact_name }} · {% endif %}{% if supplier.phone %}{{ supplier.phone }}{% endif %}
+            {% if date_from or date_to %}<br>Period: {{ date_from|date:"d/m/Y"|default:"start" }} to {{ date_to|date:"d/m/Y"|default:"today" }}{% endif %}
+        </p>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle" data-export="Supplier Statement - {{ supplier.name }}">
+                <thead class="table-light">
+                    <tr><th>Date</th><th>Reference</th><th>Description</th>
+                        <th class="text-end">Ordered (TZS)</th><th class="text-end">Paid (TZS)</th><th class="text-end">Balance owed (TZS)</th></tr>
+                </thead>
+                <tbody>
+                    <tr class="table-light"><td colspan="5">Opening balance</td><td class="text-end">{{ opening|floatformat:0|intcomma }}</td></tr>
+                    {% for r in rows %}
+                    <tr{% if r.kind == 'credit' %} class="text-muted"{% endif %}>
+                        <td>{{ r.date|date:"d/m/Y" }}</td>
+                        <td>{{ r.reference }}</td>
+                        <td>{{ r.description }}{% if r.kind == 'credit' %} - TZS {{ r.credit_amount|floatformat:0|intcomma }}{% endif %}</td>
+                        <td class="text-end">{% if r.ordered %}{{ r.ordered|floatformat:0|intcomma }}{% endif %}</td>
+                        <td class="text-end">{% if r.paid %}{{ r.paid|floatformat:0|intcomma }}{% endif %}</td>
+                        <td class="text-end">{{ r.balance|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted">No orders or payments in this period.</td></tr>
+                    {% endfor %}
+                    <tr class="table-light fw-semibold"><td colspan="3">Period totals / closing balance</td>
+                        <td class="text-end">{{ ordered_total|floatformat:0|intcomma }}</td>
+                        <td class="text-end">{{ paid_total|floatformat:0|intcomma }}</td>
+                        <td class="text-end">{{ closing|floatformat:0|intcomma }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+        {% if closing < 0 %}
+        <p class="small text-success mb-2">A negative balance means the supplier has been overpaid and holds that much credit.</p>
+        {% endif %}
+        {% if pending %}
+        <div class="alert alert-warning small mb-0">
+            <strong>Awaiting Admin approval:</strong> {{ pending|length }} payment{{ pending|length|pluralize }},
+            TZS {{ pending_total|floatformat:0|intcomma }} - not counted in the balance until approved.
+            <ul class="mb-0 mt-1">
+                {% for p in pending %}<li>{{ p.payment_date|date:"d/m/Y" }} · TZS {{ p.amount|floatformat:0|intcomma }}{% if p.purchase_order_id %} · PO #{{ p.purchase_order_id }}{% endif %}{% if p.reference %} · {{ p.reference }}{% endif %}</li>{% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" data-export="Supplier Balances">
+                <thead class="table-light">
+                    <tr><th>Supplier</th><th class="text-end">Ordered (TZS)</th><th class="text-end">Paid (TZS)</th>
+                        <th class="text-end">Balance owed (TZS)</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for r in summary %}
+                    <tr>
+                        <td>{{ r.supplier.name }}</td>
+                        <td class="text-end">{{ r.ordered|floatformat:0|intcomma }}</td>
+                        <td class="text-end">{{ r.paid|floatformat:0|intcomma }}</td>
+                        <td class="text-end fw-semibold">{{ r.balance|floatformat:0|intcomma }}</td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="?supplier={{ r.supplier.pk }}"><i class="bi bi-file-text"></i> Statement</a></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted">No suppliers yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

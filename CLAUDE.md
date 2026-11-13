@@ -106,6 +106,9 @@ See `DEPLOYMENT.md` for one-time server setup.
     `YYYY-MM-DD` string, never a parsed `Date`, so money cannot slide between months on a timezone shift.
     `/api/supplier-payments/by_supplier/` backs the **By Supplier** screen (ordered vs paid vs still owed per
     supplier; `?month=` narrows the paid side only).
+    **Supplier Statements** (`/finance/supplier-statements/`, `apps/finance/supplier_statement.py`) is the
+    read-only, line-by-line version for Afisa Ugavi (also admin, accountant, cashier): POs vs approved payments
+    with a running balance; `from_credit` payments are listed but move no balance, pending ones are listed apart.
   - **Supplier credit** (`apps/finance/credit.py`) — overpay a 10m order by 10m and the supplier holds 10m of
     ours. Derived, never stored, like the CRM's customer credit:
     `credit = Σ per-order overpayment (approved cash only, never negative per order) − Σ approved
