@@ -146,12 +146,22 @@ def _books_look_open():
     # chart with no party behind it yet. Left bare it never reaches the till,
     # the register or the Banks screen, so there is still work for the sweep
     # to do (ensure_party_for).
+    from django.db.models import F
     if (LedgerAccount.objects.filter(kind='customer', customer__isnull=True,
                                      is_group=False, is_customer_control=False).exists()
             or LedgerAccount.objects.filter(kind='supplier', supplier__isnull=True,
                                             is_group=False, is_supplier_control=False).exists()
             or LedgerAccount.objects.filter(kind='bank', bank_account__isnull=True,
                                             is_group=False).exists()):
+        return False
+    # Linked pairs whose names drifted (the sweep forces the party to the
+    # ledger's name, the chart being authoritative).
+    if (BankAccount.objects.filter(ledger__isnull=False)
+                           .exclude(name=F('ledger__name')).exists()
+            or Customer.objects.filter(ledger__isnull=False)
+                               .exclude(name=F('ledger__name')).exists()
+            or Supplier.objects.filter(ledger__isnull=False)
+                               .exclude(name=F('ledger__name')).exists()):
         return False
     return True
 
@@ -284,6 +294,21 @@ def sync_chart_of_accounts():
         .update(parent=receivable)
     LedgerAccount.objects.filter(kind='supplier', supplier__isnull=False, parent__isnull=True)\
         .update(parent=payable)
+
+    # Keep linked pairs in step on the name. The chart of accounts is the
+    # authoritative side — the accountant writes the official name there and
+    # it is the name that prints on reports and vouchers; the Banks screen,
+    # the customer register and the supplier list follow it. .update() is
+    # used so no save-signal fires back the other way.
+    for bank in BankAccount.objects.filter(ledger__isnull=False).select_related('ledger'):
+        if bank.ledger.name and bank.ledger.name != bank.name:
+            BankAccount.objects.filter(pk=bank.pk).update(name=bank.ledger.name)
+    for customer in Customer.objects.filter(ledger__isnull=False).select_related('ledger'):
+        if customer.ledger.name and customer.ledger.name != customer.name:
+            Customer.objects.filter(pk=customer.pk).update(name=customer.ledger.name)
+    for supplier in Supplier.objects.filter(ledger__isnull=False).select_related('ledger'):
+        if supplier.ledger.name and supplier.ledger.name != supplier.name:
+            Supplier.objects.filter(pk=supplier.pk).update(name=supplier.ledger.name)
     return created
 
 
