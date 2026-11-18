@@ -37,6 +37,26 @@
     </div>
 </div>
 
+{% if po.delivery_invoice_number or po.delivery_efd_number or po.delivery_dn_number or po.delivery_invoice_date %}
+<div class="card shadow-sm mb-4 border-start border-primary border-4">
+    <div class="card-body py-3">
+        <div class="small text-muted text-uppercase mb-2 fw-semibold">
+            <i class="bi bi-receipt"></i> Supplier paperwork (from Afisa Ugavi)
+        </div>
+        <div class="row small">
+            <div class="col-6 col-md-3"><span class="text-muted">Invoice Date:</span>
+                <div class="fw-semibold">{{ po.delivery_invoice_date|default:"—" }}</div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">Invoice No.:</span>
+                <div class="fw-semibold">{{ po.delivery_invoice_number|default:"—" }}</div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">EFD Rct No.:</span>
+                <div class="fw-semibold">{{ po.delivery_efd_number|default:"—" }}</div></div>
+            <div class="col-6 col-md-3"><span class="text-muted">DN No.:</span>
+                <div class="fw-semibold">{{ po.delivery_dn_number|default:"—" }}</div></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <span class="fw-semibold">Items to check</span>
@@ -59,10 +79,17 @@
                 </thead>
                 <tbody>
                     {% for item in pending_items %}
-                    <tr class="item-row" data-item="{{ item.id }}" data-expected="{{ item.outstanding }}">
+                    <tr class="item-row" data-item="{{ item.id }}" data-expected="{{ item.outstanding }}"
+                        data-declared="{{ item.declared_quantity|default_if_none:'' }}">
                         <td class="ps-4">
                             <div class="fw-semibold">{{ item.product.name }}</div>
                             <div class="text-muted small">{{ item.get_unit_display }}</div>
+                            {% if item.declared_quantity is not None %}
+                            <div class="small text-primary mt-1">
+                                <i class="bi bi-receipt"></i>
+                                Afisa declared: <strong>{{ item.declared_quantity }}</strong>
+                            </div>
+                            {% endif %}
                         </td>
                         <td class="text-center">{{ item.quantity }}</td>
                         <td class="text-center text-muted">{{ item.received_quantity }}</td>
@@ -82,7 +109,8 @@
                                 <div class="input-group input-group-sm mb-1">
                                     <span class="input-group-text">Arrived</span>
                                     <input type="number" class="form-control delivered-input text-center"
-                                           min="0" max="{{ item.outstanding }}" value="0"
+                                           min="0" max="{{ item.outstanding }}"
+                                           value="{{ item.declared_quantity|default:0 }}"
                                            oninput="onDeliveredChange(this)">
                                     <span class="input-group-text">of {{ item.outstanding }}</span>
                                 </div>
@@ -137,6 +165,14 @@
                     {{ check.checked_by.username|default:"—" }}</span>
             </div>
             <div class="small text-muted mb-1">{{ check.get_decision_display }}</div>
+            {% if check.invoice_number or check.efd_number or check.dn_number or check.invoice_date %}
+            <div class="small text-muted mb-1">
+                {% if check.invoice_date %}Inv. Date {{ check.invoice_date }} · {% endif %}
+                {% if check.invoice_number %}Inv. No. {{ check.invoice_number }} · {% endif %}
+                {% if check.efd_number %}EFD {{ check.efd_number }} · {% endif %}
+                {% if check.dn_number %}DN {{ check.dn_number }}{% endif %}
+            </div>
+            {% endif %}
             <ul class="small mb-1">
                 {% for line in check.lines.all %}
                 <li>{{ line.item.product.name }}: {{ line.delivered_quantity }} of {{ line.expected_quantity }}
@@ -267,6 +303,31 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', refreshProgress);
+    // Pre-fill from Afisa Ugavi's declared quantity when one was keyed at
+    // "confirm" time. Afisa's full outstanding delivery lands on "All arrived";
+    // a short one opens the short box with the declared amount in it. Store
+    // Manager still has to click to confirm — pre-fill is a hint, not a yes.
+    function applyDeclaredDefaults() {
+        document.querySelectorAll('.item-row').forEach(row => {
+            const declared = row.dataset.declared;
+            if (declared === '' || declared == null) return;
+            const n = parseInt(declared);
+            const expected = parseInt(row.dataset.expected);
+            if (!isFinite(n)) return;
+            if (n >= expected) {
+                markAll(row.querySelector('.btn-all'));
+            } else {
+                markShort(row.querySelector('.btn-short'));
+                const input = row.querySelector('.delivered-input');
+                input.value = n;
+                onDeliveredChange(input);
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        applyDeclaredDefaults();
+        refreshProgress();
+    });
 </script>
 {% endblock %}

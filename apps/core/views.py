@@ -93,6 +93,14 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 return context
 
         # --- Operations dashboard (admin / manager / store manager) ---
+        # Its figures come from /api/dashboard/ (apps/core/dashboard.py); the
+        # page only needs to know what to lay out.
+        from .dashboard import can_see_money
+        from apps.users.permissions import home_branch
+        context['dash_money'] = can_see_money(user)
+        context['dash_home_branch'] = home_branch(user)
+
+        # --- Operations dashboard (admin / manager / store manager) ---
         # Store managers (is_manager, not the privileged "manager" role) own
         # dispatch and the fleet, so they get the operations-center figures too.
         if is_privileged or user.is_manager or user.is_store_manager:

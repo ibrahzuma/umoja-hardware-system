@@ -525,6 +525,153 @@ class SaleViewSet(viewsets.ModelViewSet):
         return Response({"message": msg, "status": sale.status,
                          "total_amount": str(sale.total_amount)})
 
+    @action(detail=True, methods=['POST'], permission_classes=[permissions.IsAuthenticated])
+    def edit_details(self, request, pk=None):
+        """Admin-only correction of a sale's header: customer and the reference
+        numbers people search by (PI No., LP No., Order No.), plus the total
+        amount recorded at the till (`amount_paid`).
+
+        Covers typos and after-the-fact tidying. Items/prices still change
+        through ``amend``, and payment status still flips through
+        ``set_payment`` — this is only for the fields *around* the goods.
+
+        A sale Accounts have already posted is frozen: reverse the voucher in
+        Sales Accounting first.
+        """
+        from rest_framework.response import Response
+        from rest_framework import status as http
+        from django.db import transaction as db_transaction
+
+        u = request.user
+        if not (u.is_superuser or u.is_admin_role):
+            return Response({"error": "Only an admin can edit a receipt's details."},
+                            status=http.HTTP_403_FORBIDDEN)
+
+        sale = self.get_object()
+
+        from apps.finance.sales_ledger import SalesLedgerEntry
+        if (sale.invoice_number and SalesLedgerEntry.objects
+                .filter(invoice_number=sale.invoice_number, status='posted').exists()):
+            return Response(
+                {"error": "Accounts have already posted this sale to the books. "
+                          "Reverse it in Sales Accounting before editing it."},
+                status=http.HTTP_400_BAD_REQUEST)
+
+        data = request.data or {}
+        updates = {}
+
+        # Customer: pick one on file (id), or type a walk-in name.
+        if 'customer' in data:
+            cust_id = data.get('customer')
+            if cust_id in (None, '', 'null'):
+                sale.customer = None
+                updates['customer'] = None
+            else:
+                customer = Customer.objects.filter(pk=cust_id).first()
+                if customer is None:
+                    return Response({"error": "That customer was not found."},
+                                    status=http.HTTP_400_BAD_REQUEST)
+                sale.customer = customer
+                sale.customer_name = customer.name
+                updates['customer'] = customer.pk
+                updates['customer_name'] = customer.name
+        if 'customer_name' in data:
+            name = (data.get('customer_name') or '').strip()
+            if not name:
+                return Response({"error": "A customer name is required."},
+                                status=http.HTTP_400_BAD_REQUEST)
+            sale.customer_name = name
+            updates['customer_name'] = name
+
+        # Reference numbers. PI No. is kept unique across sales (it is a key
+        # supplier bill people search by) — a repeat on another sale is a typing
+        # mistake and must be rejected.
+        for field in ('pi_number', 'lp_number', 'order_number'):
+            if field in data:
+                val = (data.get(field) or '').strip()
+                if field == 'pi_number' and val:
+                    clash = (Sale.objects.filter(pi_number__iexact=val)
+                             .exclude(pk=sale.pk).first())
+                    if clash is not None:
+                        return Response(
+                            {"error": f'PI No. "{val}" is already on invoice '
+                                      f'{clash.invoice_number}.'},
+                            status=http.HTTP_400_BAD_REQUEST)
+                setattr(sale, field, val)
+                updates[field] = val
+
+        # Amount recorded at the till. Keeping the sale total alone — that
+        # follows the items — this only moves the till transactions to add up
+        # to the figure the admin has set, scaling the existing rows' amounts
+        # so the split (cash vs bank, which account) is preserved. A credit
+        # sale with no transactions is given one if the admin asks for
+        # paid > 0: cash into the branch cash book, which is as close to "the
+        # one the shop handles" as the admin can be inferred to mean.
+        if 'amount_paid' in data:
+            from decimal import Decimal, ROUND_HALF_UP
+            try:
+                new_paid = Decimal(str(data.get('amount_paid') or '0'))
+            except Exception:
+                return Response({"error": "Amount paid is not a number."},
+                                status=http.HTTP_400_BAD_REQUEST)
+            if new_paid < 0:
+                return Response({"error": "Amount paid cannot be negative."},
+                                status=http.HTTP_400_BAD_REQUEST)
+            if new_paid > (sale.total_amount or Decimal('0')):
+                return Response(
+                    {"error": "Amount paid cannot exceed the sale total "
+                              f"(TZS {sale.total_amount:,.0f})."},
+                    status=http.HTTP_400_BAD_REQUEST)
+
+            txns = list(sale.transactions.filter(transaction_type='income'))
+            current = sum((t.amount for t in txns), Decimal('0'))
+            with db_transaction.atomic():
+                if not txns:
+                    if new_paid > 0:
+                        from .serializers import money_account
+                        account = money_account(data.get('account'), 'account')
+                        Transaction.objects.create(
+                            sale=sale, amount=new_paid, payment_method='cash',
+                            deposit_to=account, transaction_type='income',
+                        )
+                elif current == 0:
+                    # Rows exist but sum to zero; put the whole new amount on the first.
+                    txns[0].amount = new_paid
+                    txns[0].save(update_fields=['amount'])
+                    for extra in txns[1:]:
+                        extra.delete()
+                else:
+                    # Scale each row so the sum lands on new_paid exactly.
+                    scaled = []
+                    running = Decimal('0')
+                    for i, t in enumerate(txns):
+                        if i == len(txns) - 1:
+                            amt = new_paid - running
+                        else:
+                            amt = (t.amount * new_paid / current).quantize(
+                                Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            running += amt
+                        scaled.append((t, amt))
+                    for t, amt in scaled:
+                        if amt == 0:
+                            t.delete()
+                        else:
+                            t.amount = amt
+                            t.save(update_fields=['amount'])
+            updates['amount_paid'] = str(new_paid)
+
+        if not updates:
+            return Response({"error": "Nothing to change."},
+                            status=http.HTTP_400_BAD_REQUEST)
+
+        # All updates applied above either via setattr or helpers; persist what
+        # setattr changed (customer, names, references).
+        sale.save()
+        return Response({
+            "message": f"Receipt {sale.invoice_number} updated.",
+            "updates": updates,
+        })
+
     @action(detail=True, methods=['GET'])
     def receipt(self, request, pk=None):
         sale = self.get_object()

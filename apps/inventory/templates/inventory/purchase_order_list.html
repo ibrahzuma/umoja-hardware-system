@@ -127,22 +127,116 @@
     }
 
     async function confirmOrder(id, isBalance = false) {
+        // Load the order so Afisa can key the received quantity per line, with
+        // the invoice/EFD/DN that paperwork arrived with. A short delivery is
+        // allowed — the balance follows in a later round.
+        let po;
+        try { po = await (await fetch(`/api/purchase-orders/${id}/`)).json(); }
+        catch (e) { Swal.fire('Error', 'Could not load the order.', 'error'); return; }
+
+        const outstanding = (po.items || []).filter(it => (it.outstanding == null ? it.quantity : it.outstanding) > 0);
+        if (!outstanding.length) {
+            Swal.fire('Nothing owed', 'Every item on this order has already been received.', 'info');
+            return;
+        }
+
+        const esc = v => String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        const rows = outstanding.map(it => {
+            const owed = it.outstanding == null ? it.quantity : it.outstanding;
+            const unit = esc(it.unit || '');
+            return `<tr>
+                <td style="text-align:left;">${esc(it.product_name || it.product)}</td>
+                <td class="text-muted">${owed} ${unit}</td>
+                <td><input type="number" class="form-control form-control-sm cfm-qty"
+                           data-item="${it.id}" min="0" max="${owed}" step="1" value="${owed}" style="width:100px;"></td>
+                </tr>`;
+        }).join('');
+
+        const today = new Date().toISOString().slice(0, 10);
+        const headline = isBalance
+            ? `PO-${String(po.id).padStart(5, '0')} — Balance delivery`
+            : `PO-${String(po.id).padStart(5, '0')} — Confirm delivery`;
+
         const result = await Swal.fire({
-            icon: 'question',
-            title: isBalance ? 'Confirm the balance delivery?' : 'Confirm this order?',
-            text: isBalance
-                ? 'The Store Manager will check the outstanding items against what has now arrived.'
-                : 'It will be sent to the Store Manager to cross-check the delivered goods against what was ordered.',
-            showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Yes, confirm'
+            title: headline,
+            width: 740,
+            html: `
+                <div class="text-start small mb-3 text-muted">
+                    Enter the quantity actually received against each line. Anything short stays
+                    pending; a later delivery clears the balance. The paperwork below goes with the
+                    order so everyone can trace back what arrived on which invoice.
+                </div>
+
+                <div class="row g-2 mb-3 text-start">
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1 fw-semibold">Invoice Date</label>
+                        <input type="date" id="cfmInvDate" class="form-control form-control-sm" value="${today}">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1 fw-semibold">Invoice No.</label>
+                        <input type="text" id="cfmInvNo" class="form-control form-control-sm" maxlength="50">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1 fw-semibold">EFD Rct No.</label>
+                        <input type="text" id="cfmEfd" class="form-control form-control-sm" maxlength="50">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small mb-1 fw-semibold">DN No.</label>
+                        <input type="text" id="cfmDn" class="form-control form-control-sm" maxlength="50">
+                    </div>
+                </div>
+
+                <table class="table table-sm align-middle" data-no-paginate>
+                    <thead class="table-light">
+                        <tr>
+                            <th style="text-align:left;">Item</th>
+                            <th>Ordered / Owed</th>
+                            <th>Received now</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `,
+            showCancelButton: true,
+            confirmButtonColor: '#198754',
+            confirmButtonText: 'Send to Store Manager',
+            focusConfirm: false,
+            preConfirm: () => {
+                const items = [];
+                document.querySelectorAll('.cfm-qty').forEach(inp => {
+                    const n = Number(inp.value);
+                    items.push({
+                        item: Number(inp.dataset.item),
+                        declared_quantity: isFinite(n) && n >= 0 ? Math.floor(n) : 0,
+                    });
+                });
+                return {
+                    items,
+                    invoice_date: document.getElementById('cfmInvDate').value || '',
+                    invoice_number: document.getElementById('cfmInvNo').value.trim(),
+                    efd_number: document.getElementById('cfmEfd').value.trim(),
+                    dn_number: document.getElementById('cfmDn').value.trim(),
+                };
+            }
         });
         if (!result.isConfirmed) return;
+
         try {
             const res = await fetch(`/api/purchase-orders/${id}/confirm/`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' }
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify(result.value),
             });
             const data = await res.json();
-            if (res.ok) { Swal.fire({ icon: 'success', title: 'Sent for cross-check', text: data.detail, timer: 2200, showConfirmButton: false }); fetchData(); }
-            else { Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed.'), 'error'); }
+            if (res.ok) {
+                Swal.fire({ icon: 'success', title: 'Sent for cross-check', text: data.detail,
+                            timer: 2200, showConfirmButton: false });
+                fetchData();
+            } else {
+                Swal.fire('Error', data.detail || (res.status === 403 ? "You don't have permission." : 'Failed.'), 'error');
+            }
         } catch (e) { Swal.fire('Error', 'Network error.', 'error'); }
     }
 

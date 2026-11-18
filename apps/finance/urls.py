@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views, views_accounting as acc
+from . import views, views_accounting as acc, views_reconciliation as rec
 
 router = DefaultRouter()
 router.register(r'expenses', views.ExpenseViewSet)
@@ -124,6 +124,18 @@ urlpatterns = [
     path('debtors/', views.DebtorListView.as_view(), name='debtors_list'),
     path('receipts/', views.PaymentReceiptListView.as_view(), name='payment_receipt_list'),
     path('banks/', views.BankListView.as_view(), name='bank_list'),
-    
+
+    # Bank statement reconciliation
+    path('bank-reconciliation/', rec.BankReconciliationListView.as_view(),
+         name='bank_reconciliation'),
+    path('bank-reconciliation/upload/', rec.BankReconciliationUploadView.as_view(),
+         name='bank_reconciliation_upload'),
+    path('bank-reconciliation/<int:pk>/', rec.BankReconciliationDetailView.as_view(),
+         name='bank_reconciliation_detail'),
+    path('bank-reconciliation/<int:pk>/auto-match/', rec.BankReconciliationAutoMatchView.as_view(),
+         name='bank_reconciliation_auto_match'),
+    path('bank-reconciliation/lines/<int:pk>/match/', rec.BankReconciliationMatchView.as_view(),
+         name='bank_reconciliation_match'),
+
     path('api/', include(router.urls)),
 ]

@@ -72,3 +72,94 @@ class SidebarRoleVisibilityTest(TestCase):
         admin = User.objects.create_user(username='boss', password='pw', role='admin')
         self.client.force_login(admin)
         self.assertIn(approvals, self.client.get(reverse('dashboard')).content.decode())
+
+
+class DashboardOverviewTest(TestCase):
+    """The operations dashboard's figures (/api/dashboard/): each period beside
+    the one before it, cancelled sales left out, money shown only to those who
+    may see it."""
+
+    def setUp(self):
+        from datetime import timedelta
+        from decimal import Decimal
+        from django.utils import timezone
+        from apps.inventory.models import Category, Product, Stock
+        from apps.sales.models import Customer, Sale, SaleItem, Transaction
+        self.Decimal = Decimal
+        self.branch = Branch.objects.create(name='Main')
+        self.admin = User.objects.create_superuser(username='boss', password='pw', role='admin')
+        cat = Category.objects.create(name='POWDER')
+        self.cement = Product.objects.create(name='CEMENT', category=cat, unit='bags', cost=15000, price=20000)
+        Stock.objects.create(product=self.cement, branch=self.branch, quantity=40)
+        kibo = Customer.objects.create(name='Kibo')
+        now = timezone.now()
+
+        def sale(number, qty, when, status='approved', customer=None, paid=0):
+            s = Sale.objects.create(invoice_number=number, branch=self.branch, customer=customer,
+                                    total_amount=Decimal(qty * 20000), status=status)
+            Sale.objects.filter(pk=s.pk).update(created_at=when)
+            SaleItem.objects.create(sale=s, product=self.cement, quantity=qty,
+                                    price_at_sale=20000, subtotal=qty * 20000)
+            if paid:
+                Transaction.objects.create(sale=s, amount=Decimal(paid))
+            return s
+
+        sale('D-1', 5, now, customer=kibo, paid=100000)          # this period, paid
+        sale('D-2', 2, now, paid=10000)                           # this period, part paid
+        sale('D-3', 9, now, status='cancelled')                   # never counts
+        sale('D-4', 1, now - timedelta(days=40), customer=kibo)   # last period, on credit
+
+    def get(self, user, **params):
+        self.client.force_login(user)
+        res = self.client.get('/api/dashboard/', {'days': 30, **params})
+        self.assertEqual(res.status_code, 200, res.content)
+        return res.json()
+
+    def test_each_figure_beside_last_period(self):
+        d = self.get(self.admin)
+        D = self.Decimal
+        self.assertEqual(d['kpis']['orders'], {'now': 2, 'before': 1})
+        self.assertEqual(D(str(d['kpis']['revenue']['now'])), D('140000'))
+        self.assertEqual(D(str(d['kpis']['revenue']['before'])), D('20000'))
+        # 7 bags at 20,000 less 7 at 15,000.
+        self.assertEqual(D(str(d['profit']['now'])), D('35000'))
+        self.assertEqual(len(d['profit']['series']), 30)
+        self.assertEqual(len(d['profit']['previous_series']), 30)
+
+    def test_settlement_best_sellers_and_repeat(self):
+        d = self.get(self.admin)
+        self.assertEqual(d['settlement']['paid']['count'], 1)
+        self.assertEqual(d['settlement']['part']['count'], 1)
+        self.assertEqual(d['settlement']['credit']['count'], 0)
+        best = d['best_sellers'][0]
+        self.assertEqual((best['name'], best['sold'], best['unit'], best['stock']), ('CEMENT', 7, 'Bags', 40))
+        # Kibo bought last period too.
+        self.assertEqual(d['repeat'], {'rate': 100.0, 'buyers': 1, 'returning': 1})
+        self.assertEqual(sum(d['weekdays']), 2)
+
+    def test_money_is_only_for_those_who_may_see_it(self):
+        keeper = User.objects.create_user(username='sm', password='pw', role='store_manager')
+        d = self.get(keeper)
+        self.assertFalse(d['can_see_money'])
+        self.assertNotIn('revenue', d['kpis'])
+        self.assertNotIn('profit', d)
+        self.assertNotIn('revenue', d['best_sellers'][0])
+        self.assertNotIn('amount', d['settlement']['paid'])
+
+    def test_the_page_renders_the_new_dashboard(self):
+        self.client.force_login(self.admin)
+        res = self.client.get('/')
+        self.assertContains(res, 'id="dash"')
+        self.assertContains(res, 'id="dashProfitChart"')
+        self.assertContains(res, 'dashboard_overview.js')
+
+    def test_a_calendar_month_compares_with_the_month_before(self):
+        from datetime import date
+        from apps.core.dashboard import period_for
+        self.assertEqual(period_for({'range': 'month'}, today=date(2026, 10, 14)),
+                         (date(2026, 10, 1), date(2026, 10, 14), date(2026, 9, 1), date(2026, 9, 14)))
+        self.assertEqual(period_for({'range': 'last_month'}, today=date(2026, 3, 10)),
+                         (date(2026, 2, 1), date(2026, 2, 28), date(2026, 1, 1), date(2026, 1, 31)))
+        start, end, ps, pe = period_for({'days': '7'}, today=date(2026, 10, 14))
+        self.assertEqual((start, end, ps, pe),
+                         (date(2026, 10, 8), date(2026, 10, 14), date(2026, 10, 1), date(2026, 10, 7)))

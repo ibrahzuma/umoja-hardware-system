@@ -179,6 +179,67 @@
     </div>
 </div>
 
+<!-- Edit Receipt Details Modal (admin only — header fields and amount paid) -->
+<div class="modal fade" id="editDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Edit Receipt Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Invoice <span class="fw-bold" id="edInvoice">—</span> &middot;
+                    Total <span class="fw-bold" id="edTotal">—</span>.
+                    For items/prices use <em>Items</em>; for cash ↔ credit use <em>Payment</em>.
+                </p>
+
+                <div class="mb-3">
+                    <label class="form-label">Customer <span class="text-muted">(on file)</span></label>
+                    <select class="form-select" id="edCustomerSelect" onchange="edCustomerPicked()">
+                        <option value="">— Walk-in / type name below —</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Customer name</label>
+                    <input type="text" class="form-control" id="edCustomerName"
+                           placeholder="Printed on the receipt" maxlength="100">
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">PI No.</label>
+                        <input type="text" class="form-control" id="edPiNumber" maxlength="50">
+                        <div class="form-text small">Rejected if already on another invoice.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">LP No.</label>
+                        <input type="text" class="form-control" id="edLpNumber" maxlength="50">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">Order No.</label>
+                        <input type="text" class="form-control" id="edOrderNumber" maxlength="50">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Amount paid at the till (TZS)</label>
+                    <input type="number" class="form-control" id="edAmountPaid" min="0" step="any"
+                           placeholder="0">
+                    <div class="form-text small">
+                        Must not exceed the total. Resizes existing payment rows so the split (cash / bank)
+                        is kept. If there is no till payment yet, one is created against the branch cash book.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="edSaveBtn" onclick="saveEditDetails()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Receipt Modal (Simple View) -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -208,11 +269,15 @@
     const receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
     const paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
     const editOrderModal = new bootstrap.Modal(document.getElementById('editOrderModal'));
+    const editDetailsModal = new bootstrap.Modal(document.getElementById('editDetailsModal'));
     let payingSale = null;
+    let editingSale = null;
 
     // Who may reshape an order's goods (the roles that raise/approve sales).
     // The server enforces this too; this only decides whether to show the button.
     const CAN_EDIT_ITEMS = {% if user.is_superuser or user.is_admin_role or user.is_manager or user.is_sales_manager or user.is_sales_rep %}true{% else %}false{% endif %};
+    // Admin-only "Edit" of the header fields (customer / references / amount).
+    const CAN_EDIT_DETAILS = {% if user.is_superuser or user.is_admin_role %}true{% else %}false{% endif %};
 
     document.addEventListener('DOMContentLoaded', fetchSales);
 
@@ -281,6 +346,11 @@
                     <button class="btn btn-sm btn-outline-secondary ms-1" onclick="editPayment(${s.id})">
                         <i class="bi bi-cash-coin"></i> Payment
                     </button>
+                    ${CAN_EDIT_DETAILS ? `
+                    <button class="btn btn-sm btn-outline-warning ms-1" onclick="editDetails(${s.id})"
+                            title="Edit customer, PI No., amount">
+                        <i class="bi bi-pencil"></i> Edit
+                    </button>` : ''}
                     <!-- Only show delete for dispatched orders if logic permits, or generally allow deleting history if authorized -->
                     <!-- Assuming 'dispatched' status orders are final but deletable by admin -->
                     <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteSale(${s.id})">
@@ -729,6 +799,82 @@
         } catch (e) {
             console.error(e);
             Swal.fire('Error', 'Could not update the order.', 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // --- Edit details (admin): header fields + amount paid --------------
+    async function editDetails(id) {
+        const sale = sales.find(s => s.id === id);
+        if (!sale) return;
+        editingSale = sale;
+
+        document.getElementById('edInvoice').textContent = sale.invoice_number;
+        document.getElementById('edTotal').textContent =
+            'TZS ' + Math.round(Number(sale.total_amount || 0)).toLocaleString();
+        document.getElementById('edCustomerName').value = sale.customer_name || '';
+        document.getElementById('edPiNumber').value = sale.pi_number || '';
+        document.getElementById('edLpNumber').value = sale.lp_number || '';
+        document.getElementById('edOrderNumber').value = sale.order_number || '';
+        document.getElementById('edAmountPaid').value =
+            Number(sale.amount_paid || 0);
+
+        // Fill the customer dropdown (reusing loadCustomers from the payment flow).
+        const sel = document.getElementById('edCustomerSelect');
+        const rows = await loadCustomers();
+        rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        sel.innerHTML = '<option value="">— Walk-in / type name below —</option>';
+        rows.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id; opt.textContent = c.name;
+            sel.appendChild(opt);
+        });
+        if (sale.customer != null && rows.some(c => String(c.id) === String(sale.customer))) {
+            sel.value = String(sale.customer);
+        } else {
+            sel.value = '';
+        }
+
+        editDetailsModal.show();
+    }
+
+    function edCustomerPicked() {
+        const sel = document.getElementById('edCustomerSelect');
+        if (!sel.value) return;
+        const opt = sel.options[sel.selectedIndex];
+        if (opt) document.getElementById('edCustomerName').value = opt.textContent;
+    }
+
+    async function saveEditDetails() {
+        if (!editingSale) return;
+        const body = {
+            customer: document.getElementById('edCustomerSelect').value || null,
+            customer_name: document.getElementById('edCustomerName').value.trim(),
+            pi_number: document.getElementById('edPiNumber').value.trim(),
+            lp_number: document.getElementById('edLpNumber').value.trim(),
+            order_number: document.getElementById('edOrderNumber').value.trim(),
+            amount_paid: document.getElementById('edAmountPaid').value || '0',
+        };
+        const btn = document.getElementById('edSaveBtn');
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/sales/${editingSale.id}/edit_details/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                editDetailsModal.hide();
+                Swal.fire('Saved', data.message || 'Receipt updated.', 'success');
+                fetchSales();
+            } else {
+                Swal.fire('Not changed', data.error || 'Could not save the receipt.', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            Swal.fire('Error', 'Could not save the receipt.', 'error');
         } finally {
             btn.disabled = false;
         }

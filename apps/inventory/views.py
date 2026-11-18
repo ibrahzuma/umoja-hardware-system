@@ -450,15 +450,65 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
 
         Also used for the balance of a partially received order: when the rest
         of the goods turn up he confirms again and a fresh check round starts.
+
+        Optional body carries the paperwork for the delivery Afisa holds (so the
+        Store Manager sees it when counting, and it is kept against the order):
+
+            invoice_date, invoice_number, efd_number, dn_number
+            items: [{item: <po_item_id>, declared_quantity: <int>}]
+
+        Everything is optional — a bare POST still works for the existing flow.
+        Quantities are clamped to each line's outstanding so Afisa cannot
+        declare more arrived than was ordered.
         """
+        from datetime import date as _date
+
         po = self.get_object()
         if po.status not in ('draft', 'sent', 'partial'):
             return Response({'detail': 'Only draft, sent or partially received orders can be confirmed.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        data = request.data or {}
+        fields = ['status']
+
+        # Invoice paperwork (per round — each delivery carries its own).
+        raw_date = (data.get('invoice_date') or '').strip()
+        if raw_date:
+            try:
+                po.delivery_invoice_date = _date.fromisoformat(raw_date)
+            except ValueError:
+                return Response({'detail': 'Invoice date must be YYYY-MM-DD.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            fields.append('delivery_invoice_date')
+        for key, field in (('invoice_number', 'delivery_invoice_number'),
+                           ('efd_number', 'delivery_efd_number'),
+                           ('dn_number', 'delivery_dn_number')):
+            if key in data:
+                setattr(po, field, (data.get(key) or '').strip()[:50])
+                fields.append(field)
+
+        # Afisa's declared received quantities (hint for the Store Manager).
+        declared = {}
+        for ln in (data.get('items') or []):
+            try:
+                item_id = int(ln.get('item'))
+            except (TypeError, ValueError):
+                continue
+            try:
+                qty = max(0, int(ln.get('declared_quantity') or 0))
+            except (TypeError, ValueError):
+                qty = 0
+            declared[item_id] = qty
+        if declared:
+            for it in po.outstanding_items():
+                if it.id in declared:
+                    # Clamp to what is still owed — a round cannot take more.
+                    it.declared_quantity = min(declared[it.id], it.outstanding)
+                    it.save(update_fields=['declared_quantity'])
+
         is_balance = po.status == 'partial'
         po.status = 'awaiting_check'
-        po.save(update_fields=['status'])
+        po.save(update_fields=fields)
 
         detail = ('Balance delivery confirmed and sent to the Store Manager for cross-check.'
                   if is_balance else
@@ -514,6 +564,12 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 round_number=po.next_round_number,
                 checked_by=request.user,
                 store_note=note,
+                # Supplier paperwork that arrived with this round, carried over
+                # from Afisa's confirm. Each round keeps its own copy.
+                invoice_date=po.delivery_invoice_date,
+                invoice_number=po.delivery_invoice_number,
+                efd_number=po.delivery_efd_number,
+                dn_number=po.delivery_dn_number,
             )
             for it in pending:
                 expected = it.outstanding
@@ -525,7 +581,10 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                     delivered_quantity=delivered, note=notes_map.get(it.id, ''),
                 )
                 it.delivered_quantity = delivered
-                it.save(update_fields=['delivered_quantity'])
+                # Round over — clear Afisa's declaration so the next round
+                # starts blank rather than inheriting stale numbers.
+                it.declared_quantity = None
+                it.save(update_fields=['delivered_quantity', 'declared_quantity'])
                 if delivered != expected:
                     mismatch = True
 
@@ -538,6 +597,12 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
             po.store_note = note
             po.has_discrepancy = mismatch
             po.status = 'discrepancy' if mismatch else 'received'
+            # Each round's paperwork stays on its DeliveryCheck; clear the PO's
+            # copy so the next confirm comes in clean.
+            po.delivery_invoice_date = None
+            po.delivery_invoice_number = ''
+            po.delivery_efd_number = ''
+            po.delivery_dn_number = ''
 
             if not mismatch:
                 # Full delivery needs no admin sign-off — receive it now.

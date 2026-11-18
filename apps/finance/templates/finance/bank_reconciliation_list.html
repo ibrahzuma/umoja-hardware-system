@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Bank Reconciliation{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <h2 class="text-primary fw-bold mb-1"><i class="bi bi-bank2 me-2"></i>Bank Reconciliation</h2>
+        <p class="text-muted mb-0 small">
+            Upload a bank statement (Excel or CSV) and match each row against the bank ledger.
+            Anything left unmatched is what needs chasing — a cheque not yet cleared, a charge
+            no-one has keyed, a receipt not yet posted.
+        </p>
+    </div>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+        <i class="bi bi-upload"></i> Upload Statement
+    </button>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+
+<div class="row g-3">
+    {% for row in banks %}
+    <div class="col-md-6 col-xl-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title fw-bold mb-0">{{ row.bank.name }}</h5>
+                    <span class="badge bg-light text-dark border">{{ row.upload_count }} statement{{ row.upload_count|pluralize }}</span>
+                </div>
+                {% if row.bank.account_number %}
+                <div class="small text-muted mb-3">
+                    Acct # {{ row.bank.account_number }}{% if row.bank.branch %} · {{ row.bank.branch }}{% endif %}
+                </div>
+                {% endif %}
+
+                {% if row.uploads %}
+                <div class="list-group list-group-flush small">
+                    {% for up in row.uploads %}
+                    <a class="list-group-item list-group-item-action px-0"
+                       href="{% url 'finance:bank_reconciliation_detail' pk=up.pk %}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ up.period_start|default:"?" }} → {{ up.period_end|default:"?" }}</strong>
+                                <br>
+                                <span class="text-muted">{{ up.uploaded_at|date:"d M Y H:i" }} · {{ up.uploaded_by.username|default:"—" }}</span>
+                            </span>
+                            <span class="text-end">
+                                {% if up.matched_count == up.line_count and up.line_count %}
+                                    <span class="badge bg-success">Done</span>
+                                {% elif up.line_count %}
+                                    <span class="badge bg-warning text-dark">{{ up.matched_count }}/{{ up.line_count }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Empty</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-muted small text-center py-3">
+                    <i class="bi bi-inbox d-block mb-2 fs-4"></i>
+                    No statements uploaded yet.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body text-center text-muted py-5">
+                <i class="bi bi-bank display-6 d-block mb-3"></i>
+                No bank accounts set up yet. Add one from
+                <a href="{% url 'finance:bank_list' %}">Banks</a>.
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="post" enctype="multipart/form-data"
+              action="{% url 'finance:bank_reconciliation_upload' %}">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Upload Bank Statement</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Bank Account</label>
+                    <select class="form-select" name="bank_account" required>
+                        <option value="">— Pick one —</option>
+                        {% for row in banks %}
+                        <option value="{{ row.bank.id }}">{{ row.bank.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Statement File</label>
+                    <input type="file" class="form-control" name="file"
+                           accept=".xlsx,.xls,.csv,.pdf" required>
+                    <div class="form-text small">
+                        Excel or CSV works best. PDF is not auto-parsed — export from the bank portal as Excel.
+                        <br>Column names searched for: Date, Description/Narration, Reference, Debit, Credit, Balance.
+                    </div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6 mb-3">
+                        <label class="form-label small">Opening Balance (TZS)</label>
+                        <input type="number" class="form-control" name="opening_balance" step="any">
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="form-label small">Closing Balance (TZS)</label>
+                        <input type="number" class="form-control" name="closing_balance" step="any">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small">Note (optional)</label>
+                    <textarea class="form-control" name="note" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

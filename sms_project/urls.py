@@ -21,7 +21,7 @@ from apps.finance.api_accounting import (
 from apps.finance.views import ExpenseViewSet, ExpenseCategoryViewSet, IncomeViewSet, TaxPaymentViewSet, SupplierPaymentViewSet, PaymentReceiptViewSet, BankAccountViewSet, PettyCashViewSet, PettyCashRequestViewSet, OtherPaymentViewSet, SalesLedgerViewSet, ProfitLossViewSet, CashFlowViewSet, BalanceSheetViewSet, LedgerAccountViewSet, VoucherViewSet, GeneralLedgerViewSet
 from apps.users.views import UserViewSet, GroupViewSet, PermissionViewSet
 from apps.crm.views import CrmCreditViewSet, CrmPaymentViewSet, CustomerRecordViewSet
-from apps.core.api_views import ActivityViewSet, NotificationViewSet
+from apps.core.api_views import ActivityViewSet, NotificationViewSet, DashboardViewSet
 from apps.hr.views import (
     DepartmentViewSet, JobPositionViewSet, EmployeeViewSet, LeaveTypeViewSet,
     LeaveRequestViewSet, AttendanceRecordViewSet, PayrollPeriodViewSet,
@@ -32,6 +32,7 @@ from apps.hr.views import (
 router = DefaultRouter()
 router.register(r'activities', ActivityViewSet)
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'dashboard', DashboardViewSet, basename='dashboard')
 router.register(r'branches', BranchViewSet)
 router.register(r'godowns', GodownViewSet)
 router.register(r'categories', CategoryViewSet)

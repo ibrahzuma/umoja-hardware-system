@@ -255,6 +255,19 @@ class PurchaseOrder(models.Model):
     decided_at = models.DateTimeField(null=True, blank=True)
     admin_note = models.TextField(blank=True, help_text="Admin's reason for confirming or rejecting a short delivery")
 
+    # Paperwork for the delivery Afisa Ugavi is confirming (the latest round).
+    # Carries supplier's invoice details so the Store Manager sees them while
+    # cross-checking, and so they are kept against the order for later lookup.
+    # Cleared between rounds: each delivery carries its own invoice/EFD/DN.
+    delivery_invoice_date = models.DateField(null=True, blank=True,
+                                             help_text="Date on the supplier's invoice for this delivery")
+    delivery_invoice_number = models.CharField(max_length=50, blank=True,
+                                               help_text="Supplier's invoice number for this delivery")
+    delivery_efd_number = models.CharField(max_length=50, blank=True,
+                                           help_text="EFD Receipt No. for this delivery")
+    delivery_dn_number = models.CharField(max_length=50, blank=True,
+                                          help_text="Delivery Note No. for this delivery")
+
     class Meta:
         ordering = ['-created_at', '-id']
 
@@ -291,6 +304,12 @@ class PurchaseOrderItem(models.Model):
     quantity = models.PositiveIntegerField()
     delivered_quantity = models.PositiveIntegerField(null=True, blank=True,
                                                      help_text="Quantity delivered in the latest cross-check round")
+    # Afisa Ugavi's declared received quantity for the pending delivery round,
+    # entered against the supplier's invoice. The Store Manager sees it as the
+    # pre-filled "expected" on their cross-check and may adjust if the count
+    # doesn't match. Cleared once the round is received.
+    declared_quantity = models.PositiveIntegerField(null=True, blank=True,
+                                                    help_text="Afisa Ugavi's declared received quantity for the pending round")
     received_quantity = models.PositiveIntegerField(
         default=0,
         help_text="Cumulative quantity accepted into stock across all delivery rounds",
@@ -347,6 +366,14 @@ class DeliveryCheck(models.Model):
                                    blank=True, related_name='delivery_decisions')
     decided_at = models.DateTimeField(null=True, blank=True)
     admin_note = models.TextField(blank=True, help_text="Admin's reason for confirming or rejecting")
+
+    # Supplier paperwork that arrived with this round — copied from the PO at
+    # cross-check time so each round keeps its own invoice/EFD/DN against which
+    # items were counted.
+    invoice_date = models.DateField(null=True, blank=True)
+    invoice_number = models.CharField(max_length=50, blank=True)
+    efd_number = models.CharField(max_length=50, blank=True)
+    dn_number = models.CharField(max_length=50, blank=True)
 
     class Meta:
         ordering = ['-round_number']

@@ -1,8 +1,16 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Dashboard · Umoja Hardware{% endblock %}
 
+{% block extra_css %}
+{% if not is_accountant_dashboard and not is_procurement_dashboard and not is_sales_rep_dashboard and not is_stock_controller_dashboard and not is_store_keeper_dashboard %}
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endif %}
+{% endblock %}
+
 {% block page_header %}
+{% if is_accountant_dashboard or is_procurement_dashboard or is_sales_rep_dashboard or is_stock_controller_dashboard or is_store_keeper_dashboard %}
 <div class="page-header">
     <div>
         <div class="eyebrow">Overview</div>
@@ -130,6 +138,55 @@
         {% endif %}
     </div>
 </div>
+{% else %}
+<div class="dash-header">
+    <div>
+        <h2>Dashboard</h2>
+        <div class="dash-sub">Welcome back, {{ user.get_full_name|default:user.username }}{% if dash_home_branch %} · {{ dash_home_branch.name }}{% endif %}</div>
+    </div>
+    <div class="dash-tools">
+        <div class="dash-range">
+            <span class="dash-dates"><i class="bi bi-calendar3 me-2 text-muted"></i><span id="dashDates">…</span></span>
+            <select id="dashPeriod" aria-label="Period">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="month">This month</option>
+                <option value="last_month">Last month</option>
+            </select>
+        </div>
+        {% if not dash_home_branch %}
+        <div class="dash-range">
+            <select id="dashBranch" aria-label="Shop"><option value="">All shops</option></select>
+        </div>
+        {% endif %}
+        <div class="dropdown">
+            <button class="dash-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning-charge"></i> Quick actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                {% if user.is_superuser or perms.sales.add_sale %}
+                <li><a class="dropdown-item" href="{% url 'sales:pos' %}"><i class="bi bi-cart-plus me-2 text-muted"></i>New sale</a></li>
+                {% endif %}
+                {% if user.is_superuser or perms.inventory.add_product %}
+                <li><a class="dropdown-item" href="{% url 'inventory:product_create' %}"><i class="bi bi-box-seam me-2 text-muted"></i>Add product</a></li>
+                {% endif %}
+                {% if user.is_superuser or perms.finance.add_expense %}
+                <li><a class="dropdown-item" href="{% url 'finance:expense_create' %}"><i class="bi bi-receipt me-2 text-muted"></i>Record expense</a></li>
+                {% endif %}
+                {% if user.is_superuser or user.is_manager or user.is_store_manager %}
+                <li><a class="dropdown-item" href="{% url 'sales:dispatch_dashboard' %}"><i class="bi bi-truck me-2 text-muted"></i>Dispatch board</a></li>
+                {% endif %}
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="loadStats(); return false;"><i class="bi bi-arrow-clockwise me-2 text-muted"></i>Refresh</a></li>
+            </ul>
+        </div>
+        <button class="dash-btn is-primary" type="button" id="dashExport">
+            <i class="bi bi-download"></i> Export
+        </button>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -146,64 +203,7 @@
 {% include 'partials/dashboard_store_keeper.html' %}
 {% else %}
 
-{% include 'partials/dashboard_manager_operations.html' %}
-{% include 'partials/dashboard_sales_operations.html' %}
-{% include 'partials/dashboard_metrics.html' %}
-
-<div class="row g-4">
-    {% include 'partials/dashboard_charts.html' %}
-    {% include 'partials/dashboard_live_activity.html' %}
-</div>
-
-<div class="mt-4">
-    <h6 class="fw-semibold text-uppercase text-muted mb-3" style="letter-spacing: 0.08em; font-size: 0.72rem;">Shortcuts</h6>
-    <div class="row g-3">
-        {% if user.is_superuser or perms.sales.add_sale %}
-        <div class="col-sm-6 col-lg-4">
-            <a href="{% url 'sales:pos' %}" class="quick-action-card">
-                <div class="qa-icon"><i class="bi bi-pc-display"></i></div>
-                <div>
-                    <h6>Open POS</h6>
-                    <small>Record a new transaction</small>
-                </div>
-            </a>
-        </div>
-        {% endif %}
-        {% if user.is_superuser or perms.inventory.view_stock or perms.inventory.view_product %}
-        <div class="col-sm-6 col-lg-4">
-            <a href="{% url 'inventory:inventory_list' %}" class="quick-action-card" style="background: linear-gradient(135deg, var(--info-500), var(--info-700));">
-                <div class="qa-icon"><i class="bi bi-clipboard-pulse"></i></div>
-                <div>
-                    <h6>Inventory check</h6>
-                    <small>Current stock availability</small>
-                </div>
-            </a>
-        </div>
-        {% endif %}
-        {% if user.is_superuser or perms.finance.view_expense %}
-        <div class="col-sm-6 col-lg-4">
-            <a href="{% url 'finance:expenses_list' %}" class="quick-action-card" style="background: linear-gradient(135deg, #7209b7, #4a0d87);">
-                <div class="qa-icon"><i class="bi bi-wallet2"></i></div>
-                <div>
-                    <h6>View expenses</h6>
-                    <small>Track outgoing cash</small>
-                </div>
-            </a>
-        </div>
-        {% endif %}
-        {% if user.is_superuser or user.is_manager or user.is_store_manager %}
-        <div class="col-sm-6 col-lg-4">
-            <a href="{% url 'sales:dispatch_dashboard' %}" class="quick-action-card" style="background: linear-gradient(135deg, var(--warning-500), #b85c00);">
-                <div class="qa-icon"><i class="bi bi-truck"></i></div>
-                <div>
-                    <h6>Dispatch board</h6>
-                    <small>Pending deliveries</small>
-                </div>
-            </a>
-        </div>
-        {% endif %}
-    </div>
-</div>
+{% include 'partials/dashboard_overview.html' %}
 {% endif %}
 {% endblock %}
 
@@ -362,199 +362,8 @@
 </script>
 {% elif is_store_keeper_dashboard %}
 {% else %}
-<script src="/static/js/api_service.js"></script>
-<script src="/static/js/socket_service.js"></script>
-<script>
-    const api = new ApiService();
-    const socket = new SocketService('stock');
-    let salesChart;
-
-    document.addEventListener('DOMContentLoaded', () => {
-        initChart();
-        loadStats();
-        loadActivities();
-        initSocket();
-    });
-
-    async function loadActivities() {
-        try {
-            const data = await api.get('/api/activities/');
-            const activities = Array.isArray(data) ? data : data.results;
-            const list = document.getElementById('stock-updates-list');
-            list.innerHTML = '';
-
-            if (activities.length === 0) {
-                list.innerHTML = `
-                    <div class="text-center py-4 text-muted" id="activity-placeholder">
-                        <i class="bi bi-broadcast text-success animate__animated animate__pulse animate__infinite fs-4"></i>
-                        <p class="small mb-0 mt-2 fw-semibold">System live</p>
-                        <p class="small text-muted mb-0">Waiting for events…</p>
-                    </div>`;
-                return;
-            }
-
-            activities.forEach(act => {
-                addActivityItem(act.description, act.activity_type === 'low_stock' ? 'danger' : 'info', act.icon_class, act.time_ago, false);
-            });
-        } catch (e) { console.error(e); }
-    }
-
-    function initChart() {
-        const canvas = document.getElementById('salesChart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const gradient = ctx.createLinearGradient(0, 0, 0, 320);
-        gradient.addColorStop(0, 'rgba(64, 85, 230, 0.25)');
-        gradient.addColorStop(1, 'rgba(64, 85, 230, 0)');
-
-        salesChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: {{ sales_chart_labels|default:"[]"|safe }},
-                datasets: [{
-                    label: 'Revenue',
-                    data: {{ sales_chart_data|default:"[]"|safe }},
-                    borderColor: '#4055e6',
-                    backgroundColor: gradient,
-                    fill: true,
-                    tension: 0.4,
-                    borderWidth: 2.5,
-                    pointRadius: 3,
-                    pointHoverRadius: 6,
-                    pointBackgroundColor: '#4055e6'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: 'rgba(225, 230, 238, 0.5)' },
-                        ticks: { color: '#6b7686', callback: value => 'TZS ' + Math.round(value).toLocaleString() }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#6b7686' }
-                    }
-                }
-            }
-        });
-    }
-
-    async function loadStats() {
-        try {
-            const [productsData, salesData, stockData] = await Promise.all([
-                api.get('/api/products/'),
-                api.get('/api/sales/'),
-                api.get('/api/stocks/')
-            ]);
-
-            const products = Array.isArray(productsData) ? productsData : productsData.results;
-            const sales = Array.isArray(salesData) ? salesData : salesData.results;
-            const stocks = Array.isArray(stockData) ? stockData : stockData.results;
-
-            // This month so far, and last month up to the same day, so the
-            // comparison is like for like. Cancelled sales are not revenue.
-            const now = new Date();
-            const thisStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            const lastStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            const lastDays = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
-            const lastSameDay = new Date(now.getFullYear(), now.getMonth() - 1,
-                                         Math.min(now.getDate(), lastDays), 23, 59, 59);
-            let monthlyTotal = 0, lastTotal = 0, monthCount = 0, lastCount = 0;
-            sales.forEach(sale => {
-                if (sale.status === 'cancelled') return;
-                const d = new Date(sale.created_at);
-                const amount = parseFloat(sale.total_amount) || 0;
-                if (d >= thisStart) { monthlyTotal += amount; monthCount++; }
-                else if (d >= lastStart && d <= lastSameDay) { lastTotal += amount; lastCount++; }
-            });
-
-            setText('monthly-revenue', 'TZS ' + Math.round(monthlyTotal).toLocaleString());
-            setText('total-sales-count', sales.length.toLocaleString());
-            setTrend('revenue-trend', monthlyTotal, lastTotal);
-            const orders = document.getElementById('orders-trend');
-            if (orders) orders.innerText = monthCount.toLocaleString() + ' this month';
-
-            let totalStockVal = 0;
-            let lowStockCount = 0;
-            stocks.forEach(s => {
-                const p = products.find(x => x.id === s.product);
-                if (p) totalStockVal += s.quantity * parseFloat(p.cost || 0);
-                if (s.quantity <= s.low_stock_threshold) lowStockCount++;
-            });
-
-            setText('stock-value', 'TZS ' + Math.round(totalStockVal).toLocaleString());
-            setText('low-stock-count', lowStockCount);
-        } catch (error) {
-            console.error("Failed to load dashboard data", error);
-        }
-    }
-
-    // A real change against last month, or plain words when there is nothing
-    // to compare with — never a made-up percentage.
-    function setTrend(id, now, before) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.classList.remove('trend-up', 'trend-down', 'trend-flat');
-        if (!before) {
-            el.classList.add('trend-flat');
-            el.innerText = now ? 'No sales last month to compare' : 'No sales yet this month';
-            return;
-        }
-        const pct = (now - before) / before * 100;
-        const up = pct >= 0;
-        el.classList.add(Math.abs(pct) < 0.05 ? 'trend-flat' : (up ? 'trend-up' : 'trend-down'));
-        el.innerHTML = `<i class="bi bi-arrow-${up ? 'up' : 'down'}-short"></i> ${up ? '+' : ''}${pct.toFixed(1)}% vs last month`;
-    }
-
-    function setText(id, value) {
-        const el = document.getElementById(id);
-        if (el) el.innerText = value;
-    }
-
-    function initSocket() {
-        socket.connect();
-        socket.on('stock_update', () => loadStats());
-        socket.on('activity_update', (data) => {
-            addActivityItem(data.description, data.type === 'low_stock' ? 'danger' : 'info', data.icon, data.time);
-            loadStats();
-        });
-    }
-
-    function addActivityItem(text, type, icon = 'bi-info-circle', time = 'Just now', prepend = true) {
-        const list = document.getElementById('stock-updates-list');
-        const placeholder = document.getElementById('activity-placeholder');
-        if (placeholder) placeholder.remove();
-
-        const item = document.createElement('div');
-        item.className = 'update-item animate__animated animate__fadeInLeft';
-
-        if (type === 'danger') item.classList.add('is-danger');
-        else if (type === 'sale' || type === 'success') item.classList.add('is-success');
-        else if (type === 'warning') item.classList.add('is-warning');
-
-        let iconColor = 'text-muted';
-        if (type === 'danger') iconColor = 'text-danger';
-        else if (type === 'sale' || type === 'success') iconColor = 'text-success';
-
-        item.innerHTML = `
-            <div class="d-flex align-items-center justify-content-between gap-2">
-                <div class="d-flex align-items-center gap-2 text-truncate">
-                    <i class="bi ${icon} ${iconColor}"></i>
-                    <span class="fw-semibold text-truncate">${text}</span>
-                </div>
-                <span class="text-muted smaller" style="white-space: nowrap;">${time}</span>
-            </div>
-        `;
-
-        if (prepend) list.prepend(item);
-        else list.appendChild(item);
-
-        if (list.children.length > 15) list.lastChild.remove();
-    }
-</script>
+<script src="{% static 'js/api_service.js' %}"></script>
+<script src="{% static 'js/socket_service.js' %}"></script>
+<script src="{% static 'js/dashboard_overview.js' %}"></script>
 {% endif %}
 {% endblock %}

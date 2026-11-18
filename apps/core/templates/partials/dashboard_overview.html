@@ -1,0 +1,167 @@
+{% load static %}
+<!-- Operations dashboard: filled by static/js/dashboard_overview.js from /api/dashboard/ -->
+<div class="dash" id="dash" data-money="{{ dash_money|yesno:'1,0' }}">
+
+    <!-- KPI cards -->
+    <div class="row g-3 mb-3">
+        {% if dash_money %}
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Revenue</span><i class="bi bi-cash-stack text-primary"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value" data-kpi="revenue">—</span><span class="dash-pill" data-pill="revenue"></span></div>
+                <div class="dash-kpi-foot" data-foot="revenue">&nbsp;</div>
+            </div>
+        </div>
+        {% endif %}
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Orders</span><i class="bi bi-receipt text-primary"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value" data-kpi="orders">—</span><span class="dash-pill" data-pill="orders"></span></div>
+                <div class="dash-kpi-foot" data-foot="orders">&nbsp;</div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Customers</span><i class="bi bi-people-fill text-primary"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value" data-kpi="customers">—</span><span class="dash-pill" data-pill="customers"></span></div>
+                <div class="dash-kpi-foot" data-foot="customers">&nbsp;</div>
+            </div>
+        </div>
+        {% if dash_money %}
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Average Sale</span><i class="bi bi-basket2-fill text-primary"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value" data-kpi="average">—</span><span class="dash-pill" data-pill="average"></span></div>
+                <div class="dash-kpi-foot" data-foot="average">&nbsp;</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Ready to Dispatch</span><i class="bi bi-truck text-primary"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value" data-attn-big="ready_to_dispatch">—</span></div>
+                <div class="dash-kpi-foot">Approved orders waiting to leave</div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+            <div class="dash-card dash-kpi">
+                <div class="dash-kpi-head"><span>Low Stock</span><i class="bi bi-exclamation-octagon text-danger"></i></div>
+                <div class="dash-kpi-body"><span class="dash-kpi-value text-danger" data-attn-big="low_stock">—</span></div>
+                <div class="dash-kpi-foot">Items at or below their alert level</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="row g-3">
+        <!-- Left column -->
+        <div class="col-xl-8 d-flex flex-column gap-3">
+            {% if dash_money %}
+            <div class="dash-card">
+                <div class="row g-3 align-items-stretch">
+                    <div class="col-md-4 d-flex flex-column">
+                        <div class="dash-title">Gross Profit</div>
+                        <div class="mt-auto">
+                            <div class="dash-big" data-profit="now">—</div>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <span class="dash-pill" data-pill="profit"></span>
+                                <span class="text-muted small">vs. last period</span>
+                            </div>
+                            <div class="text-muted smaller mt-2">Sales less the cost of the goods sold.</div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="dash-chart"><canvas id="dashProfitChart"></canvas></div>
+                        <div class="dash-legend">
+                            <span><i class="dash-key"></i>This period</span>
+                            <span><i class="dash-key is-dashed"></i>Last period</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-inner mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="fw-semibold">Sales by settlement</div>
+                        <a href="{% url 'sales:credit_sales' %}" class="dash-more" title="Credit sales"><i class="bi bi-three-dots"></i></a>
+                    </div>
+                    <div class="dash-split" id="dashSplit"></div>
+                </div>
+            </div>
+            {% else %}
+            <div class="dash-card">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="dash-title">Sales by settlement</div>
+                </div>
+                <div class="dash-split" id="dashSplit"></div>
+            </div>
+            {% endif %}
+
+            <div class="dash-card">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="dash-title">Best Selling Products</div>
+                    <a href="{% url 'sales:sale_list' %}" class="dash-more" title="Sales history"><i class="bi bi-three-dots"></i></a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table dash-table align-middle mb-0" data-no-paginate>
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Name</th>
+                                <th class="text-end">Sold</th>
+                                {% if dash_money %}<th class="text-end">Revenue</th>{% endif %}
+                                <th class="text-end">In stock</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashBest">
+                            <tr><td colspan="5" class="text-center text-muted py-4">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="dash-card">
+                <div class="dash-title mb-2"><i class="bi bi-broadcast text-danger me-1"></i> Live Activity</div>
+                <div id="stock-updates-list" class="dash-activity">
+                    <div class="text-center py-4 text-muted" id="activity-placeholder">
+                        <i class="bi bi-broadcast text-success fs-4"></i>
+                        <p class="small mb-0 mt-2 fw-semibold">System live</p>
+                        <p class="small text-muted mb-0">Waiting for events…</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column -->
+        <div class="col-xl-4 d-flex flex-column gap-3">
+            <div class="dash-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="dash-title">Busiest Day</div>
+                    <span class="text-muted small" id="dashDayNote"></span>
+                </div>
+                <div class="dash-days" id="dashDays"></div>
+            </div>
+
+            <div class="dash-card text-center">
+                <div class="d-flex justify-content-between align-items-center text-start">
+                    <div class="dash-title">Repeat Customer Rate</div>
+                    <a href="{% url 'sales:customers_list' %}" class="dash-more" title="Customers"><i class="bi bi-three-dots"></i></a>
+                </div>
+                <div class="dash-gauge">
+                    <svg viewBox="0 0 240 140" id="dashGauge" aria-hidden="true"></svg>
+                    <div class="dash-gauge-label">
+                        <div class="dash-gauge-value" id="dashRepeat">—</div>
+                        <div class="text-muted smaller" id="dashRepeatNote">&nbsp;</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-card">
+                <div class="dash-title mb-2">Needs Attention</div>
+                <div class="dash-attn">
+                    <a href="{% url 'sales:order_management' %}"><span><i class="bi bi-hourglass-split text-warning"></i> Awaiting approval</span><b data-attn="pending_approval">—</b></a>
+                    <a href="{% url 'sales:dispatch_dashboard' %}"><span><i class="bi bi-truck text-primary"></i> Ready to dispatch</span><b data-attn="ready_to_dispatch">—</b></a>
+                    <a href="{% url 'inventory:inventory_list' %}"><span><i class="bi bi-exclamation-octagon text-danger"></i> Low stock items</span><b data-attn="low_stock">—</b></a>
+                    <a href="{% url 'sales:vehicle_list' %}"><span><i class="bi bi-car-front text-success"></i> Active vehicles</span><b data-attn="active_vehicles">—</b></a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

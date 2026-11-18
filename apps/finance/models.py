@@ -1802,3 +1802,112 @@ class GeneralLedgerEntry(models.Model):
 
     def __str__(self):
         return f"{self.date} {self.voucher_number} {self.account}: Dr {self.debit} Cr {self.credit}"
+
+
+# -----------------------------------------------------------------------
+# Bank statement reconciliation
+# -----------------------------------------------------------------------
+#
+# Reconciliation starts with an uploaded supplier statement (`BankStatementUpload`)
+# whose rows (`BankStatementLine`) are compared line by line against the GL
+# entries on the matching bank ledger. A match links the statement row to a
+# GL row — nothing else moves. An unmatched row on either side tells the
+# accountant what to chase: a receipt not yet posted, a cheque not yet cleared,
+# or a bank charge nobody has keyed.
+
+def _statement_upload_path(instance, filename):
+    """media/bank_statements/<bank_id>/<YYYY>/<MM>/<filename>."""
+    stamp = timezone.now()
+    bank = instance.bank_account_id or 'unknown'
+    return f'bank_statements/{bank}/{stamp.year}/{stamp.month:02d}/{filename}'
+
+
+class BankStatementUpload(models.Model):
+    """One statement file imported into the system.
+
+    Carries the raw file (for audit) plus the period it covers and the opening
+    and closing balances typed off the paper — both are kept so a reconciliation
+    sheet can show "per statement: X, per books: Y, difference: Z".
+    """
+    bank_account = models.ForeignKey(BankAccount, on_delete=models.CASCADE,
+                                     related_name='statements')
+    file = models.FileField(upload_to=_statement_upload_path,
+                            help_text="Excel (.xlsx/.xls), CSV or PDF")
+    original_name = models.CharField(max_length=255, blank=True)
+    content_type = models.CharField(max_length=80, blank=True)
+
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+    opening_balance = models.DecimalField(max_digits=14, decimal_places=2,
+                                          null=True, blank=True)
+    closing_balance = models.DecimalField(max_digits=14, decimal_places=2,
+                                          null=True, blank=True)
+
+    uploaded_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
+                                    related_name='bank_statements_uploaded')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-uploaded_at', '-id']
+
+    def __str__(self):
+        return f"{self.bank_account.name} — {self.period_start} to {self.period_end}"
+
+    @property
+    def line_count(self):
+        return self.lines.count()
+
+    @property
+    def matched_count(self):
+        return self.lines.filter(matched_entry__isnull=False).count()
+
+
+class BankStatementLine(models.Model):
+    """One row of a bank statement.
+
+    `debit` is money leaving the bank (a payment, a charge) and `credit` is
+    money coming in (a receipt). Both are positive; exactly one is set per
+    row (the other is 0). `balance` is the running balance read off the
+    statement, kept for display and ordering but never reconciled.
+    """
+    upload = models.ForeignKey(BankStatementUpload, on_delete=models.CASCADE,
+                               related_name='lines')
+    date = models.DateField()
+    description = models.CharField(max_length=500, blank=True)
+    reference = models.CharField(max_length=120, blank=True,
+                                 help_text="Cheque no, transaction id, etc.")
+    debit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    credit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    balance = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    # The GL row this statement line was matched against (nullable while
+    # unmatched). A statement line matches at most one GL row; the reverse
+    # link `GeneralLedgerEntry.statement_lines` lists everything matched to it,
+    # so a GL row split across several statement entries is possible.
+    matched_entry = models.ForeignKey(
+        'finance.GeneralLedgerEntry', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='statement_lines',
+    )
+    matched_at = models.DateTimeField(null=True, blank=True)
+    matched_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True,
+                                   blank=True, related_name='bank_matches')
+
+    class Meta:
+        ordering = ['date', 'id']
+        indexes = [models.Index(fields=['date']),
+                   models.Index(fields=['matched_entry'])]
+
+    @property
+    def amount(self):
+        return self.debit if self.debit else self.credit
+
+    @property
+    def signed_amount(self):
+        """Positive for money in, negative for money out — the direction the
+        bank ledger would see it (a credit on the statement is a debit on our
+        books, since the bank is on our asset side)."""
+        return self.credit - self.debit
+
+    def __str__(self):
+        return f"{self.date} {self.description[:40]} {self.amount}"

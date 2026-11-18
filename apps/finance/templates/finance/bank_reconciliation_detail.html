@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Reconcile — {{ upload.bank_account.name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+    <div>
+        <nav class="small mb-1">
+            <a href="{% url 'finance:bank_reconciliation' %}">Bank Reconciliation</a>
+            <span class="text-muted">/</span>
+            {{ upload.bank_account.name }}
+        </nav>
+        <h3 class="text-primary fw-bold mb-1">
+            {{ upload.period_start|default:"?" }} → {{ upload.period_end|default:"?" }}
+        </h3>
+        <p class="text-muted mb-0 small">
+            {{ upload.original_name }} · uploaded {{ upload.uploaded_at|date:"d M Y H:i" }}
+            by {{ upload.uploaded_by.username|default:"—" }}
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        {% if suggestion_count %}
+        <form method="post" action="{% url 'finance:bank_reconciliation_auto_match' pk=upload.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="bi bi-magic"></i> Auto-match ({{ suggestion_count }})
+            </button>
+        </form>
+        {% endif %}
+        <a href="{% url 'finance:bank_reconciliation' %}" class="btn btn-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+
+{% if no_ledger %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i>
+    No ledger account with the name "<strong>{{ upload.bank_account.name }}</strong>" was found in
+    the chart of accounts. The system normally creates one on save — add a voucher against this bank
+    to seed it, then come back.
+</div>
+{% endif %}
+
+<!-- Summary band -->
+<div class="row g-3 mb-3">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="small text-muted text-uppercase">Statement — in</div>
+                <h5 class="fw-bold mb-0 text-success">TZS {{ statement_credits|floatformat:0|intcomma }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="small text-muted text-uppercase">Statement — out</div>
+                <h5 class="fw-bold mb-0 text-danger">TZS {{ statement_debits|floatformat:0|intcomma }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="small text-muted text-uppercase">Matched</div>
+                <h5 class="fw-bold mb-0 text-primary">{{ matched_count }} / {{ statement_lines|length }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="small text-muted text-uppercase">Ledger unmatched</div>
+                <h5 class="fw-bold mb-0 text-warning">{{ ledger_unmatched_count }}</h5>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Side-by-side reconciliation -->
+<div class="row g-3">
+    <div class="col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white d-flex justify-content-between">
+                <span class="fw-semibold"><i class="bi bi-receipt"></i> Statement rows</span>
+                <small class="text-muted">
+                    <label class="small">
+                        <input type="checkbox" id="hideMatched" class="form-check-input"> Hide matched
+                    </label>
+                </small>
+            </div>
+            <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
+                <table data-no-paginate class="table table-sm table-hover align-middle mb-0">
+                    <thead class="bg-light sticky-top">
+                        <tr>
+                            <th class="ps-3">Date</th>
+                            <th>Description</th>
+                            <th class="text-end">In</th>
+                            <th class="text-end">Out</th>
+                            <th class="pe-3" style="width: 200px;">Match</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statementRows">
+                        {% for line in statement_lines %}
+                        <tr class="stmt-row {% if line.matched_entry %}table-success matched{% endif %}"
+                            data-id="{{ line.id }}"
+                            data-credit="{{ line.credit }}" data-debit="{{ line.debit }}"
+                            data-date="{{ line.date|date:'Y-m-d' }}">
+                            <td class="ps-3 small text-muted">{{ line.date|date:"d M" }}</td>
+                            <td>
+                                <div class="small">{{ line.description|truncatechars:80 }}</div>
+                                {% if line.reference %}<div class="text-muted small">{{ line.reference }}</div>{% endif %}
+                            </td>
+                            <td class="text-end small">{% if line.credit %}<span class="text-success">+{{ line.credit|floatformat:0|intcomma }}</span>{% endif %}</td>
+                            <td class="text-end small">{% if line.debit %}<span class="text-danger">−{{ line.debit|floatformat:0|intcomma }}</span>{% endif %}</td>
+                            <td class="pe-3">
+                                {% if line.matched_entry %}
+                                <div class="small text-success fw-semibold">
+                                    <i class="bi bi-check2-circle"></i> {{ line.matched_entry.voucher_number }}
+                                </div>
+                                <button class="btn btn-sm btn-link text-danger p-0" onclick="unmatch({{ line.id }})">
+                                    Unmatch
+                                </button>
+                                {% else %}
+                                <select class="form-select form-select-sm stmt-pick" data-line="{{ line.id }}">
+                                    <option value="">— pick a ledger row —</option>
+                                </select>
+                                <button class="btn btn-sm btn-primary mt-1 w-100" onclick="matchLine({{ line.id }})">
+                                    Match
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center py-4 text-muted">No statement lines.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white">
+                <span class="fw-semibold"><i class="bi bi-journal-text"></i>
+                    Ledger (unmatched) — {{ upload.bank_account.name }}</span>
+            </div>
+            <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
+                <table data-no-paginate class="table table-sm table-hover align-middle mb-0">
+                    <thead class="bg-light sticky-top">
+                        <tr>
+                            <th class="ps-3">Date</th>
+                            <th>Voucher</th>
+                            <th>Narration</th>
+                            <th class="text-end pe-3">Signed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in ledger_entries %}
+                        <tr>
+                            <td class="ps-3 small text-muted">{{ e.date|date:"d M" }}</td>
+                            <td class="small"><a href="{% url 'finance:voucher_detail' pk=e.voucher_id %}">{{ e.voucher_number }}</a></td>
+                            <td class="small">{{ e.narration|default:""|truncatechars:60 }}</td>
+                            <td class="text-end pe-3 small">
+                                {% if e.debit %}<span class="text-success">+{{ e.debit|floatformat:0|intcomma }}</span>
+                                {% elif e.credit %}<span class="text-danger">−{{ e.credit|floatformat:0|intcomma }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-center py-4 text-muted">
+                            Every ledger row for this period is already matched.
+                        </td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ledger candidates for the dropdowns (served inline so the page needs no fetch). -->
+<script id="ledgerData" type="application/json">
+[
+{% for e in ledger_entries %}
+    {
+      "id": {{ e.id }},
+      "date": "{{ e.date|date:'Y-m-d' }}",
+      "voucher": "{{ e.voucher_number|escapejs }}",
+      "debit": "{{ e.debit }}",
+      "credit": "{{ e.credit }}",
+      "narration": "{{ e.narration|default:''|escapejs }}"
+    }{% if not forloop.last %},{% endif %}
+{% endfor %}
+]
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const LEDGER = JSON.parse(document.getElementById('ledgerData').textContent || '[]');
+    const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || CSRF_TOKEN || '';
+
+    // Fill each unmatched statement row's dropdown with ledger candidates that
+    // have the opposite sign and a matching amount. Best candidates first.
+    document.querySelectorAll('.stmt-pick').forEach(sel => {
+        const row = sel.closest('.stmt-row');
+        const credit = Number(row.dataset.credit || 0);
+        const debit = Number(row.dataset.debit || 0);
+        const want = credit > 0 ? credit : -debit;        // signed, matches ledger signed amount
+        const stmtDate = row.dataset.date;
+
+        // Rank: exact amount + exact date > exact amount > rest
+        const exact = [], loose = [];
+        LEDGER.forEach(e => {
+            const signed = Number(e.debit || 0) - Number(e.credit || 0);
+            if (signed === want) {
+                if (e.date === stmtDate) exact.unshift(e); else exact.push(e);
+            } else {
+                loose.push(e);
+            }
+        });
+        const picks = exact.concat(loose);
+        picks.forEach(e => {
+            const sign = Number(e.debit || 0) > 0 ? '+' : '−';
+            const amt = Math.abs(Number(e.debit || 0) - Number(e.credit || 0));
+            const opt = document.createElement('option');
+            opt.value = e.id;
+            opt.textContent = `${e.date} · ${e.voucher} · ${sign}${Math.round(amt).toLocaleString()}`;
+            sel.appendChild(opt);
+        });
+        if (exact.length === 1) {
+            sel.value = exact[0].id;
+            sel.classList.add('border-success');
+        }
+    });
+
+    async function matchLine(id) {
+        const row = document.querySelector(`.stmt-row[data-id="${id}"]`);
+        const sel = row.querySelector('.stmt-pick');
+        if (!sel || !sel.value) { alert('Pick a ledger row first.'); return; }
+        const data = new FormData();
+        data.append('gl_entry', sel.value);
+        data.append('csrfmiddlewaretoken', CSRF);
+        const r = await fetch(`/finance/bank-reconciliation/lines/${id}/match/`, {
+            method: 'POST', body: data, headers: { 'X-CSRFToken': CSRF },
+        });
+        if (r.ok) location.reload();
+        else { const e = await r.json().catch(() => ({})); alert(e.error || 'Could not match.'); }
+    }
+
+    async function unmatch(id) {
+        if (!confirm('Unmatch this row?')) return;
+        const data = new FormData();
+        data.append('action', 'unmatch');
+        data.append('csrfmiddlewaretoken', CSRF);
+        const r = await fetch(`/finance/bank-reconciliation/lines/${id}/match/`, {
+            method: 'POST', body: data, headers: { 'X-CSRFToken': CSRF },
+        });
+        if (r.ok) location.reload();
+    }
+
+    document.getElementById('hideMatched').addEventListener('change', (e) => {
+        document.querySelectorAll('.matched').forEach(r => {
+            r.style.display = e.target.checked ? 'none' : '';
+        });
+    });
+
+    // Hidden CSRF input mirrors Django's — handy for the inline forms.
+    if (!document.querySelector('[name=csrfmiddlewaretoken]')) {
+        const i = document.createElement('input');
+        i.type = 'hidden'; i.name = 'csrfmiddlewaretoken'; i.value = CSRF_TOKEN || '';
+        document.body.appendChild(i);
+    }
+</script>
+{% endblock %}

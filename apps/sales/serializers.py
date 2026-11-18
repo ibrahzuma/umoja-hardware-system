@@ -146,6 +146,21 @@ class SaleSerializer(serializers.ModelSerializer):
         dispatch — this only refuses to promise goods the branch does not have,
         counting what earlier undispatched sales have already spoken for.
         """
+        # PI No. is unique across sales — a repeat is a keying mistake and
+        # must be rejected rather than filed twice against the same supplier
+        # bill. Blank is fine (most sales have none).
+        pi = (attrs.get('pi_number') or '').strip()
+        if pi:
+            clash = Sale.objects.filter(pi_number__iexact=pi)
+            if self.instance:
+                clash = clash.exclude(pk=self.instance.pk)
+            other = clash.first()
+            if other is not None:
+                raise serializers.ValidationError({
+                    'pi_number': (f'PI No. "{pi}" is already on invoice '
+                                  f'{other.invoice_number}.'),
+                })
+
         items = attrs.get('items') or []
         for line in items:
             # The seller may change the price on a line; never below nothing.

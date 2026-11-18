@@ -25,6 +25,7 @@ records (an opening quantity typed in with the product, say) shows up as the
 brought-forward opening rather than as a silent discrepancy at the bottom.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -35,6 +36,8 @@ from django.utils import timezone
 from .models import (
     DeliveryCheckItem, GRNItem, Purchase, StockAdjustment, StockTransfer,
 )
+
+logger = logging.getLogger(__name__)
 
 # Delivery rounds whose quantities reached stock. A short round only counts once
 # an Admin has confirmed it; everything else is still in flight.
@@ -198,112 +201,147 @@ def collect_movements(product_ids, branch_id=None):
     rows = []
     scope = dict(product_ids=product_ids, branch_id=branch_id)
 
+    # Each row is read defensively. Old data occasionally carries a null where
+    # the model now forbids one (a branch deleted with SET_DEFAULT when CASCADE
+    # replaced it, a sale whose customer FK was lost in a migration); a single
+    # bad row must not 500 the whole report.
+    def _branch_name(branch):
+        return branch.name if branch else '—'
+
     for line in _po_lines(**scope):
-        check = line.delivery_check
-        po = check.purchase_order
-        label = 'PO delivery'
-        if check.round_number > 1:
-            label = f'PO delivery (round {check.round_number})'
-        rows.append(Movement(
-            date=check.checked_at,
-            reference=reference_for('PO', po.id),
-            kind='po',
-            label=label,
-            detail=po.supplier.name if po.supplier else 'Supplier',
-            branch=po.branch.name,
-            product_id=line.item.product_id,
-            qty_in=line.delivered_quantity,
-        ))
+        try:
+            check = line.delivery_check
+            po = check.purchase_order
+            label = 'PO delivery'
+            if check.round_number > 1:
+                label = f'PO delivery (round {check.round_number})'
+            rows.append(Movement(
+                date=check.checked_at,
+                reference=reference_for('PO', po.id),
+                kind='po',
+                label=label,
+                detail=po.supplier.name if po.supplier else 'Supplier',
+                branch=_branch_name(po.branch),
+                product_id=line.item.product_id,
+                qty_in=line.delivered_quantity,
+            ))
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     for purchase in _purchases(**scope):
-        rows.append(Movement(
-            date=purchase.date_purchased,
-            reference=reference_for('PUR', purchase.id),
-            kind='purchase',
-            label='Purchase',
-            detail=purchase.supplier.name if purchase.supplier else 'Supplier',
-            branch=purchase.branch.name,
-            product_id=purchase.product_id,
-            qty_in=purchase.quantity,
-        ))
+        try:
+            rows.append(Movement(
+                date=purchase.date_purchased,
+                reference=reference_for('PUR', purchase.id),
+                kind='purchase',
+                label='Purchase',
+                detail=purchase.supplier.name if purchase.supplier else 'Supplier',
+                branch=_branch_name(purchase.branch),
+                product_id=purchase.product_id,
+                qty_in=purchase.quantity,
+            ))
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     for item in _grn_items(**scope):
-        grn = item.grn
-        detail = 'Goods received note'
-        if grn.purchase_order_id:
-            detail = f'Against {reference_for("PO", grn.purchase_order_id)}'
-        rows.append(Movement(
-            date=grn.received_date,
-            reference=grn.receipt_number or reference_for('GRN', grn.id),
-            kind='grn',
-            label='Goods received',
-            detail=detail,
-            branch=grn.branch.name,
-            product_id=item.product_id,
-            qty_in=item.quantity_received,
-        ))
+        try:
+            grn = item.grn
+            detail = 'Goods received note'
+            if grn.purchase_order_id:
+                detail = f'Against {reference_for("PO", grn.purchase_order_id)}'
+            rows.append(Movement(
+                date=grn.received_date,
+                reference=grn.receipt_number or reference_for('GRN', grn.id),
+                kind='grn',
+                label='Goods received',
+                detail=detail,
+                branch=_branch_name(grn.branch),
+                product_id=item.product_id,
+                qty_in=item.quantity_received,
+            ))
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     for transfer in _transfers(**scope):
-        reference = reference_for('TRF', transfer.id)
-        # No branch filter means both sides of the move belong to the ledger,
-        # and they net to nothing — which is exactly what a transfer does.
-        if not branch_id or transfer.to_branch_id == int(branch_id):
-            rows.append(Movement(
-                date=transfer.date,
-                reference=reference,
-                kind='transfer_in',
-                label='Transfer in',
-                detail=f'From {transfer.from_branch.name}',
-                branch=transfer.to_branch.name,
-                product_id=transfer.product_id,
-                qty_in=transfer.quantity,
-            ))
-        if not branch_id or transfer.from_branch_id == int(branch_id):
-            rows.append(Movement(
-                date=transfer.date,
-                reference=reference,
-                kind='transfer_out',
-                label='Transfer out',
-                detail=f'To {transfer.to_branch.name}',
-                branch=transfer.from_branch.name,
-                product_id=transfer.product_id,
-                qty_out=transfer.quantity,
-            ))
+        try:
+            reference = reference_for('TRF', transfer.id)
+            from_name = _branch_name(transfer.from_branch)
+            to_name = _branch_name(transfer.to_branch)
+            # No branch filter means both sides of the move belong to the
+            # ledger, and they net to nothing — which is exactly what a
+            # transfer does.
+            if not branch_id or transfer.to_branch_id == int(branch_id):
+                rows.append(Movement(
+                    date=transfer.date,
+                    reference=reference,
+                    kind='transfer_in',
+                    label='Transfer in',
+                    detail=f'From {from_name}',
+                    branch=to_name,
+                    product_id=transfer.product_id,
+                    qty_in=transfer.quantity,
+                ))
+            if not branch_id or transfer.from_branch_id == int(branch_id):
+                rows.append(Movement(
+                    date=transfer.date,
+                    reference=reference,
+                    kind='transfer_out',
+                    label='Transfer out',
+                    detail=f'To {to_name}',
+                    branch=from_name,
+                    product_id=transfer.product_id,
+                    qty_out=transfer.quantity,
+                ))
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     for adj in _adjustments(**scope):
-        who = adj.user.get_username() if adj.user else 'system'
-        reason = (adj.reason or '').strip().splitlines()[0] if adj.reason else ''
-        detail = f'{reason} — by {who}' if reason else f'By {who}'
-        row = Movement(
-            date=adj.created_at,
-            reference=reference_for('ADJ', adj.id),
-            kind=f'adjust_{adj.adjustment_type}',
-            label=adj.get_adjustment_type_display(),
-            detail=detail,
-            branch=adj.branch.name,
-            product_id=adj.product_id,
-        )
-        if adj.adjustment_type == 'addition':
-            row.qty_in = adj.quantity
-        elif adj.adjustment_type == 'deduction':
-            row.qty_out = adj.quantity
-        else:
-            row.set_to = adj.quantity
-        rows.append(row)
+        try:
+            who = adj.user.get_username() if adj.user else 'system'
+            reason = (adj.reason or '').strip().splitlines()[0] if adj.reason else ''
+            detail = f'{reason} — by {who}' if reason else f'By {who}'
+            row = Movement(
+                date=adj.created_at,
+                reference=reference_for('ADJ', adj.id),
+                kind=f'adjust_{adj.adjustment_type}',
+                label=adj.get_adjustment_type_display(),
+                detail=detail,
+                branch=_branch_name(adj.branch),
+                product_id=adj.product_id,
+            )
+            if adj.adjustment_type == 'addition':
+                row.qty_in = adj.quantity
+            elif adj.adjustment_type == 'deduction':
+                row.qty_out = adj.quantity
+            else:
+                row.set_to = adj.quantity
+            rows.append(row)
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     for item in _sale_items(**scope):
-        sale = item.sale
-        customer = sale.customer.name if sale.customer else (sale.customer_name or 'Walk-in Customer')
-        rows.append(Movement(
-            date=sale.created_at,
-            reference=sale.invoice_number,
-            kind='sale',
-            label='Sale dispatched',
-            detail=customer,
-            branch=sale.branch.name,
-            product_id=item.product_id,
-            qty_out=item.delivered_quantity,
-        ))
+        try:
+            sale = item.sale
+            customer = (sale.customer.name if sale.customer
+                        else (sale.customer_name or 'Walk-in Customer'))
+            rows.append(Movement(
+                date=sale.created_at,
+                reference=sale.invoice_number or f'SALE-{sale.id}',
+                kind='sale',
+                label='Sale dispatched',
+                detail=customer,
+                branch=_branch_name(sale.branch),
+                product_id=item.product_id,
+                qty_out=item.delivered_quantity,
+            ))
+        except Exception as e:
+            logger.warning("stock movement: skipping bad row (%s)", e)
+            continue
 
     return rows
 

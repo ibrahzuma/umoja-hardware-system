@@ -64,9 +64,11 @@
                         <i class="bi bi-list"></i>
                     </button>
                     <h6 class="mb-0 d-lg-none fw-semibold">Umoja</h6>
-                    <div class="topbar-search d-none d-lg-block">
+                    <div class="topbar-search d-none d-lg-block" id="globalSearchWrap">
                         <i class="bi bi-search"></i>
-                        <input type="search" placeholder="Search products, sales, customers…" aria-label="Search">
+                        <input type="search" id="globalSearchInput" placeholder="Search products, sales, customers…"
+                               aria-label="Search" autocomplete="off">
+                        <div class="search-dropdown" id="globalSearchDropdown" hidden></div>
                     </div>
                 </div>
 
@@ -224,5 +226,6 @@
     {# Loaded last so they see the rows a page's own script has just drawn. #}
     <script src="{% static 'js/table_pager.js' %}"></script>
     <script src="{% static 'js/table_export.js' %}"></script>
+    <script src="{% static 'js/global_search.js' %}"></script>
 </body>
 </html>
