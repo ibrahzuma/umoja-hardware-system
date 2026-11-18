@@ -235,7 +235,18 @@ def sync_chart_of_accounts():
     receivable = control_account('customer')
     payable = control_account('supplier')
 
+    # Pair up unlinked rows on either side first: a LedgerAccount with
+    # kind='bank' and no `bank_account`, keyed directly in the chart of
+    # accounts, is the same thing as a `BankAccount` with no ledger that the
+    # cashier created from the Banks screen — if they share a name, adopt
+    # rather than duplicate.
+    unlinked_ledgers = {l.name.strip().lower(): l for l in LedgerAccount.objects
+                        .filter(kind='bank', bank_account__isnull=True, is_group=False)}
     for bank in BankAccount.objects.filter(ledger__isnull=True):
+        match = unlinked_ledgers.pop((bank.name or '').strip().lower(), None)
+        if match is not None:
+            LedgerAccount.objects.filter(pk=match.pk).update(bank_account=bank)
+            continue
         LedgerAccount.objects.create(kind='bank', name=bank.name, bank_account=bank,
                                      is_active=bank.is_active)
         created += 1
@@ -249,14 +260,19 @@ def sync_chart_of_accounts():
         created += 1
 
     # A party ledger keyed straight into the chart (no sales.Customer /
-    # inventory.Supplier behind it) gets its party, so the till and the register
-    # see it too — the mirror of the loops above.
+    # inventory.Supplier / finance.BankAccount behind it) gets its party, so
+    # the till, the register and the Banks screen see it too — the mirror of
+    # the loops above.
     for ledger in LedgerAccount.objects.filter(
             kind='customer', customer__isnull=True, is_group=False, is_customer_control=False):
         if ensure_party_for(ledger) is not None:
             created += 1
     for ledger in LedgerAccount.objects.filter(
             kind='supplier', supplier__isnull=True, is_group=False, is_supplier_control=False):
+        if ensure_party_for(ledger) is not None:
+            created += 1
+    for ledger in LedgerAccount.objects.filter(
+            kind='bank', bank_account__isnull=True, is_group=False):
         if ensure_party_for(ledger) is not None:
             created += 1
 
@@ -313,13 +329,14 @@ def _adopt_ledger(ledger, field, party):
 def ensure_party_for(ledger):
     """The mirror image of `ensure_ledger_for`.
 
-    A customer or supplier ledger keyed straight into the chart of accounts
-    (the New Ledger form, a bulk import) carries no `sales.Customer` /
-    `inventory.Supplier` behind it, so the till, the POS dropdown and the party
-    register never see it. This gives it one, so a customer created in either
-    place shows up in both. A ledger that already names its party, a group or a
-    control account is left alone — and so is a cash/bank/income/… ledger, which
-    stands for no party.
+    A customer, supplier or bank ledger keyed straight into the chart of
+    accounts (the New Ledger form, a bulk import) carries no
+    `sales.Customer` / `inventory.Supplier` / `finance.BankAccount` behind it,
+    so the till, the POS dropdown, the party register — and, for a bank, the
+    Banks screen — never see it. This gives it one, so an account created in
+    either place shows up in both. A ledger that already names its party, a
+    group or a control account is left alone — and so is a cash/income/…
+    ledger, which stands for nothing on the shop floor.
 
     Returns the party created, or None when nothing was needed.
     """
@@ -336,6 +353,10 @@ def ensure_party_for(ledger):
         supplier = Supplier.objects.create(name=name)
         _adopt_ledger(ledger, 'supplier', supplier)
         return supplier
+    if ledger.kind == 'bank' and ledger.bank_account_id is None:
+        bank = BankAccount.objects.create(name=name, is_active=ledger.is_active)
+        _adopt_ledger(ledger, 'bank_account', bank)
+        return bank
     return None
 
 

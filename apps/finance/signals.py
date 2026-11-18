@@ -78,19 +78,33 @@ for _model, _uid in (('finance.BankAccount', 'ledger_for_bank'),
 
 @receiver(post_save, sender='finance.LedgerAccount', dispatch_uid='party_for_ledger')
 def _party_follows_ledger(sender, instance, created, raw=False, **kwargs):
-    """The mirror of the above: a customer/supplier ledger keyed straight into
-    the chart of accounts grows the sales.Customer / inventory.Supplier it
-    stands for, so a customer created there shows on the POS and in the register
-    too. No-op for a ledger that already names its party (the usual path) or one
-    that is not a party ledger — see vouchers.ensure_party_for."""
+    """The mirror of the above: a customer/supplier/bank ledger keyed straight
+    into the chart of accounts grows the sales.Customer / inventory.Supplier /
+    finance.BankAccount it stands for, so an account created there shows up on
+    the POS, the party register and the Banks screen too. A rename of a linked
+    bank ledger renames the bank on the other side as well — the two pages must
+    show the same accounts. No-op for a group or a control account."""
     if raw:
         return
-    if instance.kind not in ('customer', 'supplier') or instance.is_group:
+    if instance.kind not in ('customer', 'supplier', 'bank') or instance.is_group:
         return
     if instance.is_customer_control or instance.is_supplier_control:
         return
+
+    # Already linked? Mirror a rename back to the party. Only name is mirrored —
+    # the `is_active` flag and the rest stay in step through `ensure_ledger_for`.
+    if instance.bank_account_id:
+        try:
+            from .models import BankAccount
+            bank = BankAccount.objects.filter(pk=instance.bank_account_id).first()
+            if bank and bank.name != instance.name:
+                BankAccount.objects.filter(pk=bank.pk).update(name=instance.name)
+        except Exception:
+            logger.exception('Could not mirror bank name from ledger %s', instance.pk)
+        return
     if instance.customer_id or instance.supplier_id:
         return
+
     try:
         from . import vouchers
         vouchers.ensure_party_for(instance)
