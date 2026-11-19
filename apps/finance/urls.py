@@ -130,6 +130,8 @@ urlpatterns = [
          name='bank_reconciliation'),
     path('bank-reconciliation/upload/', rec.BankReconciliationUploadView.as_view(),
          name='bank_reconciliation_upload'),
+    path('bank-reconciliation/template/', rec.BankReconciliationTemplateView.as_view(),
+         name='bank_reconciliation_template'),
     path('bank-reconciliation/<int:pk>/', rec.BankReconciliationDetailView.as_view(),
          name='bank_reconciliation_detail'),
     path('bank-reconciliation/<int:pk>/auto-match/', rec.BankReconciliationAutoMatchView.as_view(),

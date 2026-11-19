@@ -31,16 +31,33 @@ from .models import BankStatementLine, BankStatementUpload
 # compare, so "Transaction Date" and "DATE_POSTED" both land on 'date'.
 # --------------------------------------------------------------------------
 
+# NB: within a key, the first PATTERN that matches a column name wins; the
+# `_map_columns` loop then tries the next key. Columns are scanned left to
+# right, so the first matching COLUMN on each key wins. For the standard
+# TZ bank layout (Book Date | Value Date | Ref 1 | Narration | Ref 2 |
+# Cheque No | DEBIT | CREDIT | BALANCE), 'Book Date' is picked over
+# 'Value Date' because it sits in the earlier column.
 HEADER_PATTERNS = {
-    'date': ('date', 'transactiondate', 'posteddate', 'valuedate', 'txndate'),
-    'description': ('description', 'narration', 'particulars', 'details', 'memo'),
-    'reference': ('reference', 'ref', 'transactionid', 'txnid', 'chequeno',
-                  'chqno', 'documentno', 'docno', 'refno'),
+    'date': ('bookdate', 'date', 'transactiondate', 'posteddate', 'valuedate',
+             'txndate'),
+    'description': ('narration', 'description', 'particulars', 'details', 'memo'),
+    'reference': ('ref1', 'reference', 'ref', 'transactionid', 'txnid',
+                  'chequeno', 'chqno', 'documentno', 'docno', 'refno'),
     'debit': ('debit', 'dr', 'withdrawal', 'moneyout', 'amountout', 'paid'),
     'credit': ('credit', 'cr', 'deposit', 'moneyin', 'amountin', 'received'),
-    'amount': ('amount', 'value'),
+    # Just 'amount' — a plain 'value' would collide with 'Value Date' and
+    # hijack that column, mis-reading the date as a number on any row whose
+    # debit/credit are both blank.
+    'amount': ('amount', 'txnamount', 'transactionamount'),
     'balance': ('balance', 'runningbalance', 'closingbalance'),
 }
+
+# The empty template the "Download Template" button hands out — one row per
+# column, headers only. Order matches what the TZ banks export.
+TEMPLATE_HEADERS = (
+    'Book Date', 'Value Date', 'Ref 1', 'Narration', 'Ref 2',
+    'Cheque No', 'DEBIT', 'CREDIT', 'BALANCE',
+)
 
 
 def _normalise(header: str) -> str:

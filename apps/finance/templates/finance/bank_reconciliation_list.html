@@ -13,9 +13,15 @@
             no-one has keyed, a receipt not yet posted.
         </p>
     </div>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
-        <i class="bi bi-upload"></i> Upload Statement
-    </button>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary"
+           href="{% url 'finance:bank_reconciliation_template' %}">
+            <i class="bi bi-file-earmark-excel"></i> Download Template
+        </a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+            <i class="bi bi-upload"></i> Upload Statement
+        </button>
+    </div>
 </div>
 
 {% if messages %}
@@ -113,8 +119,12 @@
                     <input type="file" class="form-control" name="file"
                            accept=".xlsx,.xls,.csv,.pdf" required>
                     <div class="form-text small">
-                        Excel or CSV works best. PDF is not auto-parsed — export from the bank portal as Excel.
-                        <br>Column names searched for: Date, Description/Narration, Reference, Debit, Credit, Balance.
+                        Upload the bank's Excel or CSV export, or
+                        <a href="{% url 'finance:bank_reconciliation_template' %}">download the template</a>,
+                        paste your rows in, and upload that.
+                        <br>Template columns: <strong>Book Date · Value Date · Ref 1 · Narration ·
+                        Ref 2 · Cheque No · DEBIT · CREDIT · BALANCE</strong>.
+                        PDF is not auto-parsed — export as Excel.
                     </div>
                 </div>
                 <div class="row g-2">

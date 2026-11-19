@@ -5,11 +5,12 @@ a bank, open one to reconcile it against the ledger, upload a new statement,
 match/unmatch rows. Access is the same admin + accountant predicate the
 rest of the books use.
 """
+import io
 from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.generic import TemplateView, View
@@ -154,6 +155,49 @@ class BankReconciliationMatchView(_Reconciler, View):
             'voucher': gl.voucher_number,
             'voucher_id': gl.voucher_id,
         })
+
+
+class BankReconciliationTemplateView(_Reconciler, View):
+    """Hand out an empty .xlsx with the columns the parser expects — the same
+    layout the TZ banks export, so the user can paste rows straight in."""
+    def get(self, request):
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Statement'
+
+        headers = reconciliation.TEMPLATE_HEADERS
+        ws.append(list(headers))
+
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill('solid', fgColor='1F4E78')
+        center = Alignment(horizontal='center', vertical='center')
+        for col_idx, _ in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center
+
+        # Reasonable column widths so Narration isn't squeezed.
+        widths = (12, 12, 14, 42, 14, 14, 14, 14, 16)
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+
+        ws.freeze_panes = 'A2'
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        response = HttpResponse(
+            buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = (
+            'attachment; filename="bank_statement_template.xlsx"'
+        )
+        return response
 
 
 class BankReconciliationAutoMatchView(_Reconciler, View):
