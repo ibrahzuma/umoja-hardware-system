@@ -1770,6 +1770,20 @@ class StockMovementReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
             item['expanded'] = expanded
 
         clean = {k: v for k, v in params.items() if k not in ('page', 'format') and v}
+        direction = filters['direction']
+        if direction == 'in':
+            heading = 'Goods In'
+            subtitle = ("Every item that received stock — purchases, transfers in, "
+                        "positive adjustments — with a running balance.")
+        elif direction == 'out':
+            heading = 'Goods Out'
+            subtitle = ("Every item that left stock — sales, transfers out, "
+                        "negative adjustments — with a running balance.")
+        else:
+            heading = 'Stock In vs Out'
+            subtitle = ("Every item on its own: what came in, what went out, "
+                        "and the balance left — each movement with its date and "
+                        "its reference number.")
         ctx.update({
             'items': items,
             'page_obj': page,
@@ -1782,7 +1796,10 @@ class StockMovementReportView(LoginRequiredMixin, UserPassesTestMixin, TemplateV
             'categories': Category.objects.all().order_by('name'),
             'filter_querystring': urlencode(clean),
             'f': params,
-            'title': 'Stock In vs Out',
+            'title': heading,
+            'heading': heading,
+            'subtitle': subtitle,
+            'direction': direction,
         })
         return ctx
 
