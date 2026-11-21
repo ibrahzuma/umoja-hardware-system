@@ -219,6 +219,9 @@
                         <div class="form-text" id="customerHint">
                             Type the walk-in's name for the invoice (reference only), or leave it blank for an anonymous walk-in.
                         </div>
+                        <!-- Running account for the picked customer: credit from past
+                             overpayments vs money they still owe. -->
+                        <div id="customerAccountNotice" class="mt-2 d-none small p-2 rounded"></div>
                     </div>
 
                     <!-- Document reference numbers kept against the sale. -->
@@ -323,9 +326,14 @@
         document.querySelectorAll('input[name="payment_method"]').forEach(r => r.addEventListener('change', toggleDepositSection));
         document.getElementById('depositAmount').addEventListener('input', updateCreditBalance);
         document.getElementById('addCustomerBtn').addEventListener('click', addNewCustomer);
-        document.getElementById('customerSelect').addEventListener('change', toggleWalkinName);
-        toggleWalkinName();
+        document.getElementById('customerSelect').addEventListener('change', onCustomerChange);
+        onCustomerChange();
     });
+
+    function onCustomerChange() {
+        toggleWalkinName();
+        showCustomerAccount();
+    }
 
     /** The walk-in name box only matters when no registered customer is picked. */
     function toggleWalkinName() {
@@ -335,6 +343,39 @@
         const walkin = !sel.value;
         box.classList.toggle('d-none', !walkin);
         if (!walkin) box.value = '';
+    }
+
+    /** Fetch this customer's running credit vs what they still owe, and show
+     *  a one-line notice. Walk-ins have no record — the notice stays hidden. */
+    async function showCustomerAccount() {
+        const sel = document.getElementById('customerSelect');
+        const notice = document.getElementById('customerAccountNotice');
+        if (!sel || !notice) return;
+        const id = sel.value;
+        if (!id) { notice.classList.add('d-none'); notice.innerHTML = ''; return; }
+        notice.className = 'mt-2 small p-2 rounded bg-light text-muted';
+        notice.innerHTML = '<i class="bi bi-hourglass"></i> Checking account…';
+        try {
+            const res = await fetch(`/api/customers/${id}/account/`,
+                { headers: { 'X-CSRFToken': CSRF_TOKEN } });
+            if (!res.ok) throw new Error(res.statusText);
+            const a = await res.json();
+            const credit = Number(a.credit || 0);
+            const owed = Number(a.owed || 0);
+            const fmt = n => 'TZS ' + Math.round(n).toLocaleString();
+            if (credit > 0) {
+                notice.className = 'mt-2 small p-2 rounded border border-success bg-success-subtle text-success-emphasis';
+                notice.innerHTML = `<i class="bi bi-wallet2"></i> <strong>${fmt(credit)}</strong> credit on account from a previous overpayment — reduce today's cash by this amount if the customer wants to use it.`;
+            } else if (owed > 0) {
+                notice.className = 'mt-2 small p-2 rounded border border-warning bg-warning-subtle text-dark';
+                notice.innerHTML = `<i class="bi bi-exclamation-triangle"></i> Customer owes <strong>${fmt(owed)}</strong> from previous sales.`;
+            } else {
+                notice.className = 'mt-2 small p-2 rounded bg-light text-muted';
+                notice.innerHTML = '<i class="bi bi-check2-circle"></i> Account is settled — no credit, no balance owed.';
+            }
+        } catch (e) {
+            notice.classList.add('d-none');
+        }
     }
 
     // --- Credit deposit (partial payment now, rest on credit) ---
@@ -786,7 +827,7 @@
             customers.push(created);          // available immediately
             renderCustomerOptions();
             document.getElementById('customerSelect').value = created.id;
-            toggleWalkinName();
+            onCustomerChange();
         } catch (err) {
             Swal.fire('Customer', err.message, 'error');
         }

@@ -253,6 +253,11 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button class="btn btn-outline-warning d-none" id="receiptEditBtn"
+                        onclick="editDetailsFromReceipt()"
+                        title="Edit customer name, PI No., amount">
+                    <i class="bi bi-pencil"></i> Edit
+                </button>
                 <button class="btn btn-primary" onclick="printReceipt()"><i class="bi bi-printer"></i> Print</button>
             </div>
         </div>
@@ -423,9 +428,24 @@
             ${acct}`;
     }
 
+    // Which receipt the view modal is on — so the Edit button in its footer
+    // knows which sale to hand to editDetails().
+    let viewingSaleId = null;
+
+    function editDetailsFromReceipt() {
+        if (viewingSaleId == null) return;
+        receiptModal.hide();
+        editDetails(viewingSaleId);
+    }
+
     function viewReceipt(id) {
         const sale = sales.find(s => s.id === id);
         if (!sale) return;
+        viewingSaleId = id;
+
+        // Only admins can edit; everyone else sees Close + Print only.
+        const editBtn = document.getElementById('receiptEditBtn');
+        if (editBtn) editBtn.classList.toggle('d-none', !CAN_EDIT_DETAILS);
 
         const body = document.getElementById('receiptBody');
         // Simple Receipt Layout

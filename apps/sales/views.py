@@ -918,6 +918,39 @@ class CustomerViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [permissions.DjangoModelPermissions]
 
+    @action(detail=True, methods=['GET'], permission_classes=[permissions.IsAuthenticated])
+    def account(self, request, pk=None):
+        """Running account for this customer: credit they have with us (from
+        overpayments on earlier sales) and balance they still owe.
+
+        Derived from `Sale`s + their `Transaction`s so there is nothing to
+        keep in sync — same approach the receipt uses. Cancelled sales are
+        left out; a sale on credit counts towards what's owed just the same
+        as an underpaid cash sale. Services and goods are not distinguished.
+        """
+        customer = self.get_object()
+        sales = Sale.objects.filter(customer=customer).exclude(status='cancelled')
+        totals = Decimal('0')
+        paid = Decimal('0')
+        for sale in sales:
+            totals += sale.total_amount or Decimal('0')
+            for t in sale.transactions.all():
+                if t.transaction_type == 'income':
+                    paid += t.amount or Decimal('0')
+                else:
+                    paid -= t.amount or Decimal('0')
+        net = paid - totals
+        credit = net if net > 0 else Decimal('0')
+        owed = -net if net < 0 else Decimal('0')
+        return Response({
+            'customer_id': customer.id,
+            'customer_name': customer.name,
+            'credit': str(credit),   # amount the customer has with us
+            'owed': str(owed),       # amount the customer still owes us
+            'net': str(net),         # credit − owed, signed
+            'sale_count': sales.count(),
+        })
+
     @action(detail=False, methods=['POST'], url_path='import')
     def import_customers(self, request):
         file = request.FILES.get('file')
