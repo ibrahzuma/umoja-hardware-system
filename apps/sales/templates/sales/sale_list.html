@@ -471,15 +471,40 @@
                         <th colspan="2">Paid</th>
                         <th class="text-end">TZS ${Math.round(Number(sale.amount_paid || 0)).toLocaleString()}</th>
                     </tr>
-                    <tr>
-                        <th colspan="2">Balance</th>
-                        <th class="text-end text-danger">TZS ${Math.round(Number(sale.balance || 0)).toLocaleString()}</th>
-                    </tr>
+                    ${balanceRow(sale)}
                 </tfoot>
             </table>
             ${paymentSection(sale)}
         `;
         receiptModal.show();
+    }
+
+    // Three-way balance line so an overpayment reads as a credit due to the
+    // customer, not as 'unpaid'. The old receipt showed "Balance TZS -25,000"
+    // in red when the customer paid 25k over — identical colour to an actual
+    // short-payment, which users read as still owing.
+    function balanceRow(sale) {
+        const bal = Math.round(Number(sale.balance || 0));
+        if (bal > 0) {
+            return `
+                <tr>
+                    <th colspan="2">Balance</th>
+                    <th class="text-end text-danger">TZS ${bal.toLocaleString()}</th>
+                </tr>`;
+        }
+        if (bal < 0) {
+            const over = Math.abs(bal).toLocaleString();
+            return `
+                <tr>
+                    <th colspan="2">Overpaid <span class="text-muted fw-normal small">(credit due to customer)</span></th>
+                    <th class="text-end text-warning">TZS ${over}</th>
+                </tr>`;
+        }
+        return `
+            <tr>
+                <th colspan="2">Balance</th>
+                <th class="text-end text-success">TZS 0 <span class="fw-normal small">· paid in full</span></th>
+            </tr>`;
     }
 
     function printReceipt() {
@@ -523,7 +548,12 @@
             <table>
               ${moneyRows}
               <tr class="tot"><td>Total paid</td><td class="r">${fmt(s.amount_paid)}</td></tr>
-              <tr><td class="k">Balance</td><td class="r">${fmt(s.balance)}</td></tr>
+              ${(() => {
+                const bal = Math.round(Number(s.balance || 0));
+                if (bal > 0) return `<tr><td class="k">Balance</td><td class="r credit">${fmt(bal)}</td></tr>`;
+                if (bal < 0) return `<tr><td class="k">Overpaid (credit to customer)</td><td class="r">${fmt(Math.abs(bal))}</td></tr>`;
+                return `<tr><td class="k">Balance</td><td class="r">TZS 0 &middot; paid in full</td></tr>`;
+              })()}
             </table>
             </body></html>`;
         const w = window.open('', '_blank', 'width=430,height=620');
@@ -580,9 +610,14 @@
             'TZS ' + Math.round(Number(sale.total_amount)).toLocaleString();
         const status = sale.payment_status || 'Paid';
         const badge = status === 'Paid' ? 'success' : (status === 'Partial' ? 'warning text-dark' : 'danger');
+        const bal = Math.round(Number(sale.balance || 0));
+        const balText = bal > 0
+            ? `Balance TZS ${bal.toLocaleString()}`
+            : bal < 0
+                ? `Overpaid TZS ${Math.abs(bal).toLocaleString()} (credit due to customer)`
+                : 'Balance TZS 0 &middot; paid in full';
         document.getElementById('payNow').innerHTML =
-            `<span class="badge bg-${badge}">${status}</span>` +
-            ` &middot; Balance TZS ${Math.round(Number(sale.balance || 0)).toLocaleString()}`;
+            `<span class="badge bg-${badge}">${status}</span> &middot; ${balText}`;
 
         // Default the dropdown to the opposite of where the sale is now.
         document.getElementById('payMode').value = status === 'Paid' ? 'credit' : 'paid';
