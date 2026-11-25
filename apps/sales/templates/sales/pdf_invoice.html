@@ -212,6 +212,8 @@
                 <div style="font-size: 14px; color: #555;">
                     {{ sale.customer.phone }}<br>
                     {{ sale.customer.address|default:"Customer Address, City, TZ" }}
+                    {% if sale.customer.tin %}<br>TIN: {{ sale.customer.tin }}{% endif %}
+                    {% if sale.customer.vrn %}<br>VRN: {{ sale.customer.vrn }}{% endif %}
                 </div>
                 {% endif %}
             </td>

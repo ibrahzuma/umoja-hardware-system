@@ -58,6 +58,10 @@ class SaleSerializer(serializers.ModelSerializer):
     approved_by_name = serializers.CharField(source='approved_by.username', read_only=True)
     dispatch_manager_name = serializers.CharField(source='dispatch_manager.username', read_only=True)
     created_by_name = serializers.CharField(source='user.username', read_only=True)
+    customer_tin = serializers.CharField(source='customer.tin', read_only=True, default='')
+    customer_vrn = serializers.CharField(source='customer.vrn', read_only=True, default='')
+    customer_phone = serializers.CharField(source='customer.phone', read_only=True, default='')
+    customer_address = serializers.CharField(source='customer.address', read_only=True, default='')
     
     vehicle_details = VehicleSerializer(source='vehicle', read_only=True)
     godown_name = serializers.CharField(source='godown.name', read_only=True, default='')
@@ -70,6 +74,7 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'invoice_number', 'status', 'branch', 'godown', 'godown_name', 'user','created_by_name',
             'customer', 'customer_name',
+            'customer_tin', 'customer_vrn', 'customer_phone', 'customer_address',
             'lp_number', 'pi_number', 'order_number',
             'total_amount', 'discount', 'total_weight', 'unweighed_items', 'created_at', 'items', 'items_response', 'payment_details',
             'amount_paid', 'balance', 'payment_status', 'money_accounts', 'accounts', 'approved_by', 'approved_by_name',
