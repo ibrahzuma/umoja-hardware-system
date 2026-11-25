@@ -23,12 +23,15 @@
                         <th>Phone</th>
                         <th>Email</th>
                         <th>Address</th>
+                        <th>TIN</th>
+                        <th>VRN</th>
                         <th>Registered</th>
+                        <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="customerTableBody">
                     <tr>
-                        <td colspan="5" class="text-center py-4">Loading...</td>
+                        <td colspan="8" class="text-center py-4">Loading...</td>
                     </tr>
                 </tbody>
             </table>
@@ -48,7 +51,7 @@
             tbody.innerHTML = '';
 
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No customers found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No customers found</td></tr>';
                 return;
             }
 
@@ -59,6 +62,8 @@
                     <td>${c.phone || '-'}</td>
                     <td>${c.email || '-'}</td>
                     <td>${c.address || '-'}</td>
+                    <td>${c.tin || '-'}</td>
+                    <td>${c.vrn || '-'}</td>
                     <td class="text-muted">${new Date(c.created_at).toLocaleDateString()}</td>
                     <td class="text-end pe-4">
                         <a href="/sales/customers/create/?id=${c.id}" class="btn btn-sm btn-outline-primary me-2">

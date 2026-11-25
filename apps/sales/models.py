@@ -7,6 +7,10 @@ class Customer(models.Model):
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
     address = models.TextField(blank=True)
+    # Kept as free text, not validated as a number, so the operator may key
+    # them with the usual dashes/spaces they are written with on invoices.
+    tin = models.CharField('TIN', max_length=30, blank=True)
+    vrn = models.CharField('VRN', max_length=30, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

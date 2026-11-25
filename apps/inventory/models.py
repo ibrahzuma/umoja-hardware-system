@@ -166,6 +166,9 @@ class Supplier(models.Model):
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
+    # Free text — the same reasoning as on sales.Customer.
+    tin = models.CharField('TIN', max_length=30, blank=True)
+    vrn = models.CharField('VRN', max_length=30, blank=True)
 
     class Meta:
         ordering = ['name']

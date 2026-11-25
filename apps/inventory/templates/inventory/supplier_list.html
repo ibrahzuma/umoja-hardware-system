@@ -19,12 +19,14 @@
                         <th>Contact Person</th>
                         <th>Email</th>
                         <th>Phone</th>
+                        <th>TIN</th>
+                        <th>VRN</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="supplierTableBody">
                     <tr>
-                        <td colspan="5" class="text-center py-4">Loading suppliers...</td>
+                        <td colspan="7" class="text-center py-4">Loading suppliers...</td>
                     </tr>
                 </tbody>
             </table>
@@ -59,6 +61,24 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Phone</label>
                             <input type="text" class="form-control" id="supplierPhone">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <textarea class="form-control" id="supplierAddress" rows="2"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">TIN</label>
+                            <input type="text" class="form-control" id="supplierTin"
+                                   maxlength="30" autocomplete="off"
+                                   placeholder="Tax ID (as on invoices)">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">VRN</label>
+                            <input type="text" class="form-control" id="supplierVrn"
+                                   maxlength="30" autocomplete="off"
+                                   placeholder="VAT Registration No. (if registered)">
                         </div>
                     </div>
                     <div class="d-grid">
@@ -100,7 +120,7 @@
         tbody.innerHTML = '';
 
         if (data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No suppliers found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No suppliers found</td></tr>';
             return;
         }
 
@@ -111,6 +131,8 @@
                 <td>${s.contact_name || '-'}</td>
                 <td><a href="mailto:${s.email}" class="text-decoration-none">${s.email || '-'}</a></td>
                 <td>${s.phone || '-'}</td>
+                <td>${s.tin || '-'}</td>
+                <td>${s.vrn || '-'}</td>
                 <td class="text-end pe-4">
                     <button class="btn btn-sm btn-outline-primary me-2" onclick="editSupplier(${s.id})">
                         <i class="bi bi-pencil"></i>
@@ -135,10 +157,13 @@
         const s = suppliers.find(x => x.id === id);
         if (s) {
             document.getElementById('supplierId').value = s.id;
-            document.getElementById('supplierName').value = s.name;
-            document.getElementById('contactName').value = s.contact_name;
-            document.getElementById('supplierEmail').value = s.email;
-            document.getElementById('supplierPhone').value = s.phone;
+            document.getElementById('supplierName').value = s.name || '';
+            document.getElementById('contactName').value = s.contact_name || '';
+            document.getElementById('supplierEmail').value = s.email || '';
+            document.getElementById('supplierPhone').value = s.phone || '';
+            document.getElementById('supplierAddress').value = s.address || '';
+            document.getElementById('supplierTin').value = s.tin || '';
+            document.getElementById('supplierVrn').value = s.vrn || '';
             document.getElementById('modalTitle').innerText = 'Edit Supplier';
             modal.show();
         }
@@ -151,7 +176,10 @@
             name: document.getElementById('supplierName').value,
             contact_name: document.getElementById('contactName').value,
             email: document.getElementById('supplierEmail').value,
-            phone: document.getElementById('supplierPhone').value
+            phone: document.getElementById('supplierPhone').value,
+            address: document.getElementById('supplierAddress').value,
+            tin: document.getElementById('supplierTin').value,
+            vrn: document.getElementById('supplierVrn').value
         };
 
         const method = id ? 'PUT' : 'POST';

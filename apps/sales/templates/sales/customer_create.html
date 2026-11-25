@@ -27,6 +27,20 @@
                         <label class="form-label">Address</label>
                         <textarea class="form-control" id="address" rows="3"></textarea>
                     </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">TIN</label>
+                            <input type="text" class="form-control" id="tin"
+                                   maxlength="30" autocomplete="off"
+                                   placeholder="Tax ID (as on invoices)">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">VRN</label>
+                            <input type="text" class="form-control" id="vrn"
+                                   maxlength="30" autocomplete="off"
+                                   placeholder="VAT Registration No. (if registered)">
+                        </div>
+                    </div>
 
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg fw-bold">Save Customer</button>
@@ -54,10 +68,12 @@
         try {
             const res = await fetch(`/api/customers/${id}/`);
             const data = await res.json();
-            document.getElementById('name').value = data.name;
-            document.getElementById('phone').value = data.phone;
-            document.getElementById('email').value = data.email;
-            document.getElementById('address').value = data.address;
+            document.getElementById('name').value = data.name || '';
+            document.getElementById('phone').value = data.phone || '';
+            document.getElementById('email').value = data.email || '';
+            document.getElementById('address').value = data.address || '';
+            document.getElementById('tin').value = data.tin || '';
+            document.getElementById('vrn').value = data.vrn || '';
         } catch (e) { console.error(e); }
     }
 
@@ -67,7 +83,9 @@
             name: document.getElementById('name').value,
             phone: document.getElementById('phone').value,
             email: document.getElementById('email').value,
-            address: document.getElementById('address').value
+            address: document.getElementById('address').value,
+            tin: document.getElementById('tin').value,
+            vrn: document.getElementById('vrn').value
         };
 
         const method = customerId ? 'PUT' : 'POST';

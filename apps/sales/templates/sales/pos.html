@@ -796,18 +796,28 @@
         const { value: form } = await Swal.fire({
             title: 'New customer',
             html:
-                '<input id="swalCustName" class="swal2-input" placeholder="Name">' +
-                '<input id="swalCustPhone" class="swal2-input" placeholder="Phone (optional)">',
+                '<input id="swalCustName" class="swal2-input" placeholder="Name *" style="width:94%">' +
+                '<input id="swalCustPhone" class="swal2-input" placeholder="Phone (optional)" style="width:94%">' +
+                '<input id="swalCustAddress" class="swal2-input" placeholder="Address (optional)" style="width:94%">' +
+                '<input id="swalCustTin" class="swal2-input" placeholder="TIN (optional)" maxlength="30" style="width:94%">' +
+                '<input id="swalCustVrn" class="swal2-input" placeholder="VRN (optional)" maxlength="30" style="width:94%">',
             focusConfirm: false,
             showCancelButton: true,
             confirmButtonText: 'Add',
             preConfirm: () => {
-                const name = (document.getElementById('swalCustName').value || '').trim();
+                const g = id => (document.getElementById(id).value || '').trim();
+                const name = g('swalCustName');
                 if (!name) {
                     Swal.showValidationMessage('A name is required.');
                     return false;
                 }
-                return { name, phone: (document.getElementById('swalCustPhone').value || '').trim() };
+                return {
+                    name,
+                    phone:   g('swalCustPhone'),
+                    address: g('swalCustAddress'),
+                    tin:     g('swalCustTin'),
+                    vrn:     g('swalCustVrn'),
+                };
             }
         });
         if (!form) return;
