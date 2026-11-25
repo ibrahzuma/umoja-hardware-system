@@ -11,6 +11,9 @@ db.sqlite3-journal
 media/
 staticfiles/
 
+# Backups (database dumps, media tarballs) — never check these in
+backup/
+
 # Environments
 .env
 .venv
